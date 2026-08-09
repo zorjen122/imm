@@ -2,6 +2,7 @@
 #include "Configer.h"
 #include "GateServer.h"
 #include "IocPool.h"
+#include "Logger.h"
 #include "StateClient.h"
 
 #include "Mysql.h"
@@ -12,8 +13,9 @@
 #include <jsoncpp/json/reader.h>
 #include <jsoncpp/json/value.h>
 
-int main()
+int main(int argc, char* argv[])
 {
+    wimi::initializeLoggers(argv[0]);
     try {
         const char* configPath = std::getenv("WIMI_CONFIG");
         auto existConfig = Configer::loadConfig(configPath ? configPath : "../conf/gate.yaml");

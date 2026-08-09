@@ -17,6 +17,7 @@
 
 int main(int argc, char** argv)
 {
+    wimi::initializeLoggers(argv[0]);
     const char* configPath = std::getenv("WIMI_CONFIG");
     if (!configPath && argc > 1)
         configPath = argv[1];

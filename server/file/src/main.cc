@@ -1,4 +1,5 @@
 #include "Configer.h"
+#include "Logger.h"
 #include "Service.h"
 
 #include <cstdlib>
@@ -22,6 +23,7 @@ std::filesystem::path ResolveStorageRoot(const std::filesystem::path& configured
 
 int main(int argc, char* argv[])
 {
+    wimi::initializeLoggers(argv[0]);
     const char* configPath = std::getenv("WIMI_CONFIG");
     if (configPath == nullptr && argc > 1) {
         configPath = argv[1];

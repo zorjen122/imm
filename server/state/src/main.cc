@@ -1,4 +1,5 @@
 #include "Configer.h"
+#include "Logger.h"
 #include "service.h"
 #include <cstdlib>
 #include <grpcpp/server_builder.h>
@@ -6,8 +7,9 @@
 /*
  * 注意：该状态服务只是一个微服务，运行在网关服务器主机，其目的仅在后续扩展以及独立网关服务器的路由职责。[2025-3-18]
  */
-int main()
+int main(int argc, char* argv[])
 {
+    wimi::initializeLoggers(argv[0]);
     const char* configPath = std::getenv("WIMI_CONFIG");
     auto existConfig = Configer::loadConfig(configPath ? configPath : "../conf/state-single.yaml");
     if (!existConfig) {
