@@ -6,11 +6,21 @@
     "patch": 0
   },
   "configurePresets": [
+      {
+      "name": "client",
+      "displayName": "Linux (Qt 6, Clang)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build/",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "BUILD_TESTING": "ON"
+      }
+    },
     {
       "name": "linux-debug",
       "displayName": "Linux Debug (Qt 6, Clang)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/../build/client-preset",
+      "binaryDir": "${sourceDir}/../build/",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_COMPILER": "clang++",
@@ -20,12 +30,24 @@
   ],
   "buildPresets": [
     {
+      "name": "client",
+      "configurePreset": "client",
+      "jobs": 2
+    },
+    {
       "name": "linux-debug",
       "configurePreset": "linux-debug",
       "jobs": 2
     }
   ],
   "testPresets": [
+    {
+      "name": "client",
+      "configurePreset": "client",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
     {
       "name": "linux-debug",
       "configurePreset": "linux-debug",
