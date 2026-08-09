@@ -1,155 +1,113 @@
-# wimi
+<p align="center">
+  <img src="client/resources/icons/wimi-client.svg" width="112" alt="WIMI">
+</p>
 
-**Language:** English | [中文](README.zh-CN.md)
+<h1 align="center">WIMI</h1>
 
-wimi is a C++20 instant messaging system with Auth/API Gate, Connection Gateway,
-State, Message, and File nodes. The repository includes scripts and
-configuration conventions for bringing the full flow up on a development
-machine.
+<p align="center">
+  An experimental C++20 instant-messaging project.<br>
+  <a href="README.zh-CN.md">简体中文</a> · English
+</p>
 
-The main verified path is:
+> **Experimental and non-commercial.** WIMI is a learning and engineering
+> experiment, not a production service. It has no public-service security or
+> operational guarantee; do not expose it to the Internet or use it for
+> sensitive data.
 
-1. The client requests an email verification code through the gate service.
-2. Gate generates, rate-limits, stores, and verifies the code through Redis; it
-   can deliver real mail through libcurl SMTP.
-3. The client registers and signs in through Gate.
-4. Gate asks State for a Connection Gateway endpoint and returns a short-lived
-   connection token.
-5. The client keeps a TCP connection to Connection Gateway.
-6. Gateway and Message nodes exchange commands and deliveries through their
-   existing bidirectional gRPC streams.
+<p align="center">
+  <img src="docs/icons/view.png" width="800" alt="WIMI desktop client preview">
+</p>
 
-## Repository Layout
+## Functionality
 
-| Path | Purpose |
-| --- | --- |
-| `server/gate` | HTTP entrypoint for verification, registration, sign-in, and routing. |
-| `server/gateway` | Long-lived client connections, authentication, flow control, and physical push. |
-| `server/state` | Gateway placement and versioned Message-node topology. |
-| `server/message` | Message node: relationships, conversations, persistence, and delivery generation. |
-| `server/file` | File upload service. |
-| `server/public` | Shared C++ utilities, protobuf definitions, database and Redis helpers. |
-| `server/conf` | Canonical local configuration directory. |
-| `scripts` | Build, database initialization, Redis startup, service startup, and smoke tests. |
-| `docs` | Public requirements and configuration guidance. |
+WIMI provides a Qt/QML desktop chat client backed by a C++ service stack. Its
+current experience focuses on the everyday chat path:
 
-## Requirements
+- Account registration, email verification, sign-in, and reconnecting through
+  the Auth Gate.
+- Direct conversations, group text messages, delivery/read acknowledgements,
+  and incremental conversation sync.
+- Separate sessions for devices on the same account, with delivery and sync for
+  online devices.
+- File messages with resumable chunked transfer and SHA-256 verification.
+  PNG, JPG, and Markdown files can be previewed; text and other files can be
+  downloaded locally.
+- Per-account SQLite storage for local history, drafts, outgoing messages,
+  sync cursors, and unfinished file transfers.
+- A responsive light/dark Qt interface with desktop notifications on Linux.
 
-See [docs/requirements.md](docs/requirements.md) for the full dependency list
-and package installation commands.
+## Project highlights
 
-At a high level, the local environment needs:
+WIMI breaks a chat service into small, understandable parts: one part handles
+sign-in, one keeps client connections alive, one processes messages, and one
+handles files. This makes it a practical project for learning how a chat
+application moves from a desktop UI to a service cluster.
 
-- C++ build tools: `clang`, `cmake`, `build-essential`, `pkg-config`.
-- gRPC and protobuf development packages, plus Python protobuf support for the
-  protocol-level smoke scripts.
-- Boost, yaml-cpp, spdlog, fmt, jsoncpp, hiredis, and librdkafka development
-  packages.
-- MySQL Server with MySQL X Plugin enabled.
-- MySQL Connector/C++ with X DevAPI support.
-- Redis.
-- libcurl development files for SMTP delivery from Gate.
-- `clang-format` for formatting checks.
+The current server can run several Connection Gateways and several Message
+nodes (`G × N`). State tells the client which Gateway to use and tells each
+Gateway which Message nodes are available. A conversation can therefore keep
+working across Gateway and Message service instances.
 
-## Configuration
+## Architecture
 
-Local service and test-client configs live in [server/conf](server/conf/README.md).
-Scripts default to these files:
+```mermaid
+flowchart LR
+    Client[Qt / QML Client]
+    Gate[Auth / API Gate]
+    State[State]
+    File[File]
+    MySQL[(MySQL)]
+    Redis[(Redis)]
 
-- `server/conf/gate.yaml`
-- `server/conf/state-single.yaml`
-- `server/conf/message-hunan-im.yaml`
-- `server/conf/gateway-hunan.yaml`
-- `server/conf/test-client.yaml`
+    subgraph Gateways[Connection Gateway cluster · G]
+        G1[Gateway 1]
+        G2[Gateway 2]
+    end
 
-Local `gate.yaml` disables real mail and exposes the code in the HTTP response.
-For SMTP delivery, disable `exposeCodeInResponse`, enable the email section, and
-supply secrets through environment variables:
+    subgraph Messages[Message cluster · N]
+        M1[Message 1]
+        M2[Message 2]
+    end
 
-```bash
-export WIMI_VERIFY_EMAIL_USER="your-email@example.com"
-export WIMI_VERIFY_EMAIL_PASS="your-email-app-password"
-export WIMI_VERIFY_SEND_EMAIL=1
-export WIMI_VERIFY_EXPOSE_CODE=0
+    Client -->|register / sign in| Gate
+    Gate <-->|gateway placement| State
+    Client <-->|long-lived TCP| G1
+    State -->|versioned message topology| G1
+    State -->|versioned message topology| G2
+    G1 <-->|gRPC commands / delivery| M1
+    G1 <-->|gRPC commands / delivery| M2
+    G2 <-->|gRPC commands / delivery| M1
+    G2 <-->|gRPC commands / delivery| M2
+    M1 <-->|file RPC| File
+    M2 <-->|file RPC| File
+    Gate --> MySQL
+    Gate --> Redis
+    M1 --> MySQL
+    M2 --> MySQL
+    M1 --> Redis
+    M2 --> Redis
 ```
 
-## Build
+## Try and build it
 
-```bash
-./scripts/build.sh
-```
+Detailed setup of this page:
 
-The build output is written to `build/wimi`, and generated protobuf/gRPC C++
-sources are produced inside the CMake build tree.
-
-## Initialize Local Data
-
-```bash
-./scripts/init_mysql.sh
-./scripts/start_redis.sh
-```
-
-The default local Redis endpoint is `127.0.0.1:6380` with password `root`.
-MySQL defaults are documented in [docs/requirements.md](docs/requirements.md).
-
-## Run Services
-
-Start the default local Gateway/Message stack:
-
-```bash
-./scripts/run_local_services.sh
-```
-
-Start a `G=2, N=2` local topology:
-
-```bash
-WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
-WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
-./scripts/run_local_services.sh
-```
-
-## Smoke Tests
-
-After the default services are running, run the focused protocol smoke tests:
-
-```bash
-./scripts/smoke_text_delivery.sh
-./scripts/smoke_relationships.sh
-```
-
-For the `G=2, N=2` topology, run:
-
-```bash
-./scripts/smoke_gateway_message.sh
-```
-
-These smoke scripts use the Python TCP protocol helper in `scripts/lib` and
-cover Gate login, Gateway authentication, text delivery, relationship paths,
-message synchronization, ACK handling, and Gateway-Message routing.
-
-## Formatting
-
-The repository includes a root `.clang-format`. Check current C/C++ changes with:
-
-```bash
-./scripts/check_format.sh
-```
-
-Check all tracked C/C++ files:
-
-```bash
-./scripts/check_format.sh --all
-```
-
-The script prefers `clang-format --dry-run --Werror` and falls back to a diff
-check when running against older clang-format versions.
-
-## More Documentation
-
-- [docs/requirements.md](docs/requirements.md): dependency, build, local port,
-  and smoke-test details.
-- [CHANGELOG.md](CHANGELOG.md): verified baseline and subsequent architectural
-  changes.
-- [server/conf/README.md](server/conf/README.md): configuration naming and
+- [Client guide](docs/client-guide.md) — build, run, local data, live service mode,
+  tests, and Linux desktop integration.
+- [Server requirements and local workflow](docs/requirements.md) — packages,
+  database/Redis initialization, services, ports, and smoke tests.
+- [Configuration guide](docs/configuration.md) — configuration files and
   override rules.
+- [Server verification status (Chinese)](docs/feature-server-verification.md)
+  — current service capability and known boundaries.
+
+## Development
+
+The repository is organized around a Qt client in `client/`, C++ services in
+`server/`, shared protocols in `server/public/proto/`, and repeatable local
+scripts in `scripts/`. The client uses C++20, Qt 6, QML, QtProtobuf, and
+SQLite; services use C++20, gRPC, MySQL, and Redis.
+
+Before changing the system, read the guides above and keep the experimental
+scope in mind: TLS, secure credential storage, production deployment, and
+several platform paths remain outside the verified baseline.

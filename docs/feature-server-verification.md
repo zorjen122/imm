@@ -1,6 +1,6 @@
 # wimi Server 功能清单与验证状态
 
-最后更新：2026-07-20。
+最后更新：2026-08-08。
 
 本文只描述 `server/` 当前主线运行态，不追踪本机个人开发目录或历史参考代码。
 
@@ -22,7 +22,7 @@
 | State | 返回可连接 Gateway，返回版本化 Message 节点拓扑。 | [state.proto](../server/public/proto/state.proto)、[service.cc](../server/state/src/service/service.cc) |
 | Connection Gateway | 客户端 TCP/TLV 长连接、token 校验、session lease、限流、发送队列、ACK/重传、Gateway -> Message 双向流客户端。 | [GatewaySession.cc](../server/gateway/src/GatewaySession.cc)、[MessageLink.cc](../server/gateway/src/MessageLink.cc) |
 | Message 节点 | Message Core：业务命令处理、消息持久化、conversation_seq、幂等、关系/群/文件业务。 | [GatewayStreamService.cc](../server/message/src/service/GatewayStreamService.cc)、[MessageService.cc](../server/message/src/service/MessageService.cc) |
-| File | 文件上传 gRPC 落盘。 | [Service.cc](../server/file/src/service/Service.cc)、[FileRpc.cc](../server/message/src/service/FileRpc.cc) |
+| File | 分片上传、断点续传、下载与 SHA-256 校验的对象存储服务。 | [Service.cc](../server/file/src/service/Service.cc)、[FileRpc.cc](../server/message/src/service/FileRpc.cc) |
 | MySQL | 用户、关系、群、conversation、messages 等持久状态。 | [Mysql.h](../server/public/include/Mysql.h)、[init_message_mysql_test.sql](../scripts/sql/init_message_mysql_test.sql) |
 | Redis | 验证码、短期连接 token、session lease、消息/用户 ID 生成等短状态。 | [Redis.h](../server/public/include/Redis.h) |
 
@@ -42,7 +42,7 @@ Message 节点之间不再建立业务转发连接；Gateway 之间也不直接�
 | --- | --- | --- | --- |
 | S1 | C++20 server 总工程构建 | 已验证 | `server/CMakeLists.txt` 已统一 `CMAKE_CXX_STANDARD 20`，构建命令为 `cmake -S server -B build/wimi`、`cmake --build build/wwimi-j2`。 |
 | S2 | public protobuf/gRPC 生成 | 已验证 | `tcp_message.proto`、`state.proto`、`gateway_message.proto` 由 `server/public` 生成；客户端只依赖 TCP 公开协议，Gateway-Message 协议只在服务端内部使用。 |
-| S3 | MySQL 初始化 | 已验证 | `./scripts/init_mysql.sh` 初始化 `chatServ` 与测试数据；消息模型包含 `conversations`、`conversationUserStates`、`messages`、`devices` 和 `conversationDeviceStates`。好友使用 canonical uid pair 和 `friendshipId`，群表使用明确的 `groupId`。 |
+| S3 | MySQL 初始化 | 已验证 | `./scripts/init_mysql.sh` 初始化 `chatServ` 与测试数据；消息模型包含 `conversations`、`conversationUserStates`、`messages`、`devices`、`conversationDeviceStates`、`fileObjects` 和 `fileUploads`。文件消息的 `messages.content` 保存 `fileId`。好友使用 canonical uid pair 和 `friendshipId`，群表使用明确的 `groupId`。 |
 | S4 | 本地服务编排 | 部分验证 | `./scripts/run_local_services.sh` 启动 state/file/message/gateway/gate，并支持 `--stop-existing`。干净构建下仍有历史测试客户端产物依赖。 |
 | S5 | State 选择 Connection Gateway | 已验证 | Gate 登录调用 `PickConnectionGateway`，返回 `ip/port/gatewayId`，不再向客户端返回 Message 节点地址。 |
 | S6 | State 返回 Message 拓扑 | 部分验证 | Gateway 每 5 秒调用 `ListMessageNodes` 拉取带 `topology_version` 的 Message 节点快照；节点增删与排空故障分支仍需专项测试。 |
@@ -61,11 +61,11 @@ Message 节点之间不再建立业务转发连接；Gateway 之间也不直接�
 | S19 | DELIVERED/READ ACK | 已验证 | Gateway 内部返回排队结果；客户端 SQLite 提交后发送 DELIVERED，Message 更新该设备的 `persistedSeq`。READ 只允许私聊接收者改变消息全局状态，发送者其他设备的 ACK 仅推进自身会话/设备游标。 |
 | S20 | 好友申请/回复/列表 | 已验证 | 好友申请、申请列表、回复和好友列表继续由 Message Core 执行业务逻辑，已有 relationship smoke 覆盖主路径。 |
 | S21 | 建群/入群申请/审批 | 已验证 | 创建群、入群申请和审批已接入 Message Core，已有 relationship smoke 覆盖主路径。 |
-| S22 | 文件上传 | 已验证 | 客户端经 Gateway 发起上传命令，Message 调用 File gRPC，File 服务落盘到 `server/file/<uid>/`。 |
+| S22 | 文件上传与续传 | 部分验证 | 客户端按 1 MiB PDU 上传；Message 持久化确认 offset，File 服务按 `ownerUid/fileId` 写入 `.part`/完成对象，并校验重复块与 SHA-256。`integration_file_client_test` 覆盖服务内上传、续传、下载和摘要校验；尚未完成跨进程真实服务 smoke。 |
 | S23 | 真实 SMTP 发信 | 待验证 | Gate 已通过 libcurl 实现 SMTP/TLS 投递，当前缺真实邮箱授权码和外部投递断言。 |
 | S24 | gRPC mTLS/节点身份校验 | 部分验证 | Gateway-Message 和 Message server 使用统一安全配置构建 credentials；本地允许 insecure，生产 mTLS 证书链仍需部署验证。 |
 | S25 | 查找用户 | 未实现 | 旧 `SerachUser` 逻辑没有注册到当前 `Service::Init`，当前协议请求会返回 NotFound。 |
-| S26 | 点对点文件发送 | 未实现 | `ID_FILE_SEND_REQ` 已注册，但 `MessageService::SendFile` 仍为空实现。 |
+| S26 | 点对点文件发送与接收 | 部分验证 | 上传完成后以 `ID_FILE_SEND_REQ` 创建 `messages.type=FILE`，其 `content` 保存 `fileId`。下载按会话成员权限查询对象，历史同步和在线推送携带完整 `FileInfo`。尚未完成跨进程真实服务 smoke。 |
 | S27 | 群退出/群成员拉取 | 未实现 | 群退出和群成员/群消息拉取尚未形成当前主线闭环。 |
 | S28 | KafkaProducer | 非主线 | 代码仍存在，但当前消息路径不依赖 Kafka；第一阶段明确不引入 MQ/Outbox。 |
 
