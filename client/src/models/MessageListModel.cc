@@ -144,6 +144,18 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         return record.outgoing;
     case DeliveryStateRole:
         return DeliveryStateName(record.deliveryState);
+    case TypeRole:
+        return record.type;
+    case FileIdRole:
+        return record.fileId;
+    case FileNameRole:
+        return record.fileName;
+    case FileTypeRole:
+        return record.fileType;
+    case FileSizeRole:
+        return QVariant::fromValue<qlonglong>(record.fileSize);
+    case FileExpiredRole:
+        return record.fileExpired;
     default:
         return {};
     }
@@ -164,6 +176,12 @@ QHash<int, QByteArray> MessageListModel::roleNames() const
         {ShowUnreadSeparatorRole, "showUnreadSeparator"},
         {OutgoingRole, "outgoing"},
         {DeliveryStateRole, "deliveryState"},
+        {TypeRole, "messageType"},
+        {FileIdRole, "fileId"},
+        {FileNameRole, "fileName"},
+        {FileTypeRole, "fileType"},
+        {FileSizeRole, "fileSize"},
+        {FileExpiredRole, "fileExpired"},
     };
 }
 

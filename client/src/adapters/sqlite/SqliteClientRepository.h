@@ -10,7 +10,7 @@ namespace wimi::client
 class SqliteClientRepository final : public IClientRepository
 {
   public:
-    static constexpr int kCurrentSchemaVersion = 3;
+    static constexpr int kCurrentSchemaVersion = 10;
 
     explicit SqliteClientRepository(QString databasePath, bool seedDemoData = true);
     ~SqliteClientRepository() override;
@@ -39,6 +39,12 @@ class SqliteClientRepository final : public IClientRepository
                             std::int64_t nextCursor) override;
     std::int64_t SyncCursor(const QString& conversationId) const override;
     int OutboxCount() const;
+    QVector<FileUploadRecord> LoadFileUploads() const override;
+    bool SaveFileUpload(const FileUploadRecord& upload) override;
+    bool RemoveFileUpload(const QString& fileId) override;
+    QVector<FileDownloadRecord> LoadFileDownloads() const override;
+    bool SaveFileDownload(const FileDownloadRecord& download) override;
+    bool RemoveFileDownload(const QString& fileId) override;
 
   private:
     bool Open();

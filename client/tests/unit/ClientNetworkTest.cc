@@ -280,18 +280,28 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
     gateway.SendFriendRequest(43, QStringLiteral("hello"));
     gateway.ReplyFriendRequest(43, true, QStringLiteral("welcome"));
     gateway.SendText(43, QByteArrayLiteral("text"), QStringLiteral("client-text"), 8001);
-    gateway.UploadFile(100, QStringLiteral("note.txt"), QStringLiteral("TEXT"), QByteArrayLiteral("file"));
+    wimi::protocol::FileInfo file;
+    file.setFileId(QStringLiteral("5e3f43da-0d67-4e4a-99a0-6ccff21892a5"));
+    file.setFileName(QStringLiteral("note.md"));
+    file.setFileType(QStringLiteral("text/markdown"));
+    file.setFileSize(4);
+    file.setSha256(QByteArray(32, '\x5a'));
+    gateway.UploadFileChunk(file, 0, {}, false);
+    gateway.UploadFileChunk(file, 0, QByteArrayLiteral("file"), true);
+    gateway.SendFile(43, file, QStringLiteral("client-file"), 8001);
+    gateway.DownloadFileChunk(file, 0);
     gateway.CreateGroup(QStringLiteral("Qt group"));
     gateway.RequestJoinGroup(5001, QStringLiteral("join"));
     gateway.ReplyJoinGroup(5001, 43, true);
     gateway.SendGroupText(5001, QByteArrayLiteral("group text"), QStringLiteral("client-group"), 8100);
 
-    QTRY_COMPARE(responses.count(), 12);
+    QTRY_COMPARE(responses.count(), 15);
     QCOMPARE(failures.count(), 0);
     const QVector<quint32> expectedServices = {
         protocol::PullFriendListRequest, protocol::PullFriendApplyListRequest, protocol::PullSessionMessagesRequest,
         protocol::AddFriendRequest,      protocol::ReplyFriendRequest,         protocol::SendTextRequest,
-        protocol::UploadFileRequest,     protocol::CreateGroupRequest,         protocol::JoinGroupRequest,
+        protocol::UploadFileRequest,     protocol::FileUploadCompleteRequest,  protocol::SendFileRequest,
+        protocol::FileDownloadRequest,   protocol::CreateGroupRequest,         protocol::JoinGroupRequest,
         protocol::ReplyJoinGroupRequest, protocol::SendGroupTextRequest,
     };
     for (const quint32 service : expectedServices) {
@@ -305,7 +315,10 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
     QCOMPARE(packets[protocol::SendTextRequest].to(), 43);
     QCOMPARE(packets[protocol::SendTextRequest].clientMessageId(), QStringLiteral("client-text"));
     QCOMPARE(packets[protocol::SendGroupTextRequest].groupId(), 5001);
-    QCOMPARE(packets[protocol::UploadFileRequest].fileType(), QStringLiteral("TEXT"));
+    QCOMPARE(packets[protocol::UploadFileRequest].file().fileId(), file.fileId());
+    QCOMPARE(packets[protocol::FileUploadCompleteRequest].fileComplete(), true);
+    QCOMPARE(packets[protocol::SendFileRequest].clientMessageId(), QStringLiteral("client-file"));
+    QCOMPARE(packets[protocol::FileDownloadRequest].fileOffset(), 0);
     for (const quint32 service : expectedServices) {
         QVERIFY(!packets[service].requestId().isEmpty());
         QCOMPARE(packets[service].requestTimeoutMs(), 10'000U);

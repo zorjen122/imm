@@ -202,6 +202,41 @@ QString ConnectionGatewayClient::UploadFile(std::int64_t clientSequence, const Q
     return QueueRequest(protocol::UploadFileRequest, std::move(packet), 15'000);
 }
 
+QString ConnectionGatewayClient::UploadFileChunk(const wimi::protocol::FileInfo& file, std::int64_t offset,
+                                                 const QByteArray& content, bool complete)
+{
+    wimi::protocol::Packet packet;
+    packet.setFile(file);
+    packet.setFileOffset(std::max<std::int64_t>(0, offset));
+    packet.setData(content);
+    packet.setFileComplete(complete);
+    const auto service = complete ? protocol::FileUploadCompleteRequest
+                                  : (content.isEmpty() ? protocol::UploadFileRequest
+                                                       : protocol::FileUploadChunkRequest);
+    return QueueRequest(service, std::move(packet), 15'000);
+}
+
+QString ConnectionGatewayClient::SendFile(std::int64_t recipientUid, const wimi::protocol::FileInfo& file,
+                                          const QString& clientMessageId, std::int64_t conversationId)
+{
+    wimi::protocol::Packet packet;
+    packet.setTo(recipientUid);
+    packet.setFile(file);
+    packet.setClientMessageId(clientMessageId);
+    if (conversationId > 0)
+        packet.setConversationId(conversationId);
+    return QueueRequest(protocol::SendFileRequest, std::move(packet));
+}
+
+QString ConnectionGatewayClient::DownloadFileChunk(const wimi::protocol::FileInfo& file, std::int64_t offset)
+{
+    wimi::protocol::Packet packet;
+    packet.setFile(file);
+    packet.setFileOffset(std::max<std::int64_t>(0, offset));
+    packet.setLimit(1024 * 1024);
+    return QueueRequest(protocol::FileDownloadRequest, std::move(packet), 15'000);
+}
+
 QString ConnectionGatewayClient::CreateGroup(const QString& groupName)
 {
     wimi::protocol::Packet packet;

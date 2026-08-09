@@ -40,9 +40,35 @@ struct MessageRecord {
     std::optional<std::int64_t> conversationSeq;
     QString senderId;
     QString body;
+    int type{1};
+    QString fileId;
+    QString fileName;
+    QString fileType;
+    std::int64_t fileSize{};
+    bool fileExpired{};
     QString timestamp;
     bool outgoing{};
     MessageDeliveryState deliveryState{MessageDeliveryState::Accepted};
+};
+
+struct FileUploadRecord {
+    QString fileId;
+    QString sourcePath;
+    QString fileName;
+    QString fileType;
+    std::int64_t fileSize{};
+    std::int64_t nextOffset{};
+    QString conversationId;
+    bool uploadComplete{};
+};
+
+struct FileDownloadRecord {
+    QString fileId;
+    QString fileType;
+    QByteArray sha256;
+    std::int64_t fileSize{};
+    std::int64_t nextOffset{};
+    QString temporaryPath;
 };
 
 struct ContactRecord {

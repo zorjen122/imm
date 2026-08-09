@@ -15,6 +15,7 @@
 #include <QQmlEngine>
 #include <QSet>
 #include <QTimer>
+#include <QUrl>
 
 #include <cstdint>
 #include <memory>
@@ -59,6 +60,7 @@ class AppController : public QObject
     Q_PROPERTY(QString platformName READ platformName CONSTANT)
     Q_PROPERTY(bool desktopNotificationsAvailable READ desktopNotificationsAvailable CONSTANT)
     Q_PROPERTY(QString notificationTestStatus READ notificationTestStatus NOTIFY notificationTestStatusChanged)
+    Q_PROPERTY(qulonglong filePreviewRevision READ filePreviewRevision NOTIFY filePreviewRevisionChanged)
 
   public:
     explicit AppController(QObject* parent = nullptr);
@@ -96,6 +98,7 @@ class AppController : public QObject
     QString platformName() const;
     bool desktopNotificationsAvailable() const;
     QString notificationTestStatus() const;
+    qulonglong filePreviewRevision() const;
 
     void setScenarioName(const QString& scenarioName);
     void setDraftText(const QString& draftText);
@@ -103,6 +106,11 @@ class AppController : public QObject
 
     Q_INVOKABLE void selectConversation(int index);
     Q_INVOKABLE void sendMessage(const QString& text);
+    Q_INVOKABLE void sendFile(const QUrl& fileUrl);
+    Q_INVOKABLE void downloadFile(const QString& fileId, const QString& fileType, qint64 fileSize);
+    Q_INVOKABLE QUrl localFileUrl(const QString& fileId) const;
+    Q_INVOKABLE QUrl previewFileUrl(const QString& fileId) const;
+    Q_INVOKABLE QString localMarkdownText(const QString& fileId) const;
     Q_INVOKABLE void retryMessage(qlonglong clientMessageId);
     Q_INVOKABLE void togglePinned(int index);
     Q_INVOKABLE void toggleMuted(int index);
@@ -141,6 +149,7 @@ class AppController : public QObject
     void serviceActionStatusChanged();
     void gateConfigurationChanged();
     void notificationTestStatusChanged();
+    void filePreviewRevisionChanged();
 
   private:
     void LoadScenario(const QString& scenarioName);
@@ -155,6 +164,11 @@ class AppController : public QObject
     void ScheduleGapSync(const QString& localConversationId);
     void DrainPendingPush(const QString& localConversationId);
     void ResumePendingOutgoing();
+    void SendNextFileChunk(const QString& transferId);
+    void SendCompletedFileMessage(const QString& transferId);
+    void StartAutoDownload(const wimi::protocol::FileInfo& file);
+    void StartDownload(const wimi::protocol::FileInfo& file);
+    void RequestNextDownloadChunk(const QString& fileId);
     void AcknowledgeConversationRead(int index);
     void SetRequestStatus(int index, const QString& status, bool persist);
     QString EnsureDirectConversation(std::int64_t peerUid, const QString& title, const QString& avatarColor);
@@ -192,6 +206,32 @@ class AppController : public QObject
     bool authentication_busy_{};
     std::int64_t authenticated_uid_{};
     QHash<QString, std::int64_t> outgoing_request_messages_;
+    struct FileUpload {
+        QString sourcePath;
+        QString fileId;
+        QString fileName;
+        QString fileType;
+        QByteArray sha256;
+        qint64 fileSize{};
+        qint64 nextOffset{};
+        QString conversationId;
+        bool uploadComplete{};
+    };
+    QHash<QString, FileUpload> file_uploads_;
+    QHash<QString, QString> local_file_sources_;
+    QHash<QString, QString> file_upload_requests_;
+    QHash<QString, QString> file_message_requests_;
+    struct FileDownload {
+        QString fileId;
+        QString fileType;
+        qint64 fileSize{};
+        qint64 nextOffset{};
+        QByteArray sha256;
+        QString temporaryPath;
+        QString finalPath;
+    };
+    QHash<QString, FileDownload> file_downloads_;
+    QHash<QString, QString> file_download_requests_;
     QHash<QString, QString> sync_request_conversations_;
     QHash<QString, QMap<std::int64_t, QPair<quint32, QByteArray>>> pending_pushes_;
     QHash<QString, QTimer*> gap_timers_;
@@ -203,6 +243,7 @@ class AppController : public QObject
     QString gate_url_;
     QString gate_configuration_status_{QStringLiteral("idle")};
     QString notification_test_status_{QStringLiteral("idle")};
+    qulonglong file_preview_revision_{};
 };
 
 } // namespace wimi::client

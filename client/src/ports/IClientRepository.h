@@ -30,6 +30,12 @@ class IClientRepository
     virtual bool ReplaceRequests(const QVector<RequestRecord>&) { return true; }
     virtual bool ApplyIncomingBatch(const QString&, const QVector<MessageRecord>&, std::int64_t) { return true; }
     virtual std::int64_t SyncCursor(const QString&) const { return 0; }
+    virtual QVector<FileUploadRecord> LoadFileUploads() const { return {}; }
+    virtual bool SaveFileUpload(const FileUploadRecord&) { return true; }
+    virtual bool RemoveFileUpload(const QString&) { return true; }
+    virtual QVector<FileDownloadRecord> LoadFileDownloads() const { return {}; }
+    virtual bool SaveFileDownload(const FileDownloadRecord&) { return true; }
+    virtual bool RemoveFileDownload(const QString&) { return true; }
 };
 
 } // namespace wimi::client

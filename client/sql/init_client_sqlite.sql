@@ -48,8 +48,15 @@ CREATE TABLE IF NOT EXISTS messages (
   conversation_seq INTEGER,
   -- 发送者 ID；当前保存 uid 文本或本地展示用的 me。
   sender_id TEXT NOT NULL,
-  -- 文本消息正文。
+  -- 文本消息正文；文件消息保存 file_id。
   body TEXT NOT NULL,
+  type INTEGER NOT NULL DEFAULT 1,
+  -- 文件消息从服务端 FileInfo 同步的展示与状态字段。
+  file_id TEXT NOT NULL DEFAULT '',
+  file_name TEXT NOT NULL DEFAULT '',
+  file_type TEXT NOT NULL DEFAULT '',
+  file_size INTEGER NOT NULL DEFAULT 0,
+  file_expired INTEGER NOT NULL DEFAULT 0,
   -- 消息时间；可能是服务端原始时间，也可能是本地展示时间。
   timestamp TEXT NOT NULL,
   -- 是否为当前本地用户发出的消息。
@@ -112,11 +119,34 @@ CREATE TABLE IF NOT EXISTS requests (
   local_order INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS file_uploads (
+  file_id TEXT PRIMARY KEY,
+  source_path TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_type TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  next_offset INTEGER NOT NULL,
+  conversation_id TEXT NOT NULL,
+  upload_complete INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS file_downloads (
+  file_id TEXT PRIMARY KEY,
+  file_type TEXT NOT NULL,
+  sha256 BLOB NOT NULL,
+  file_size INTEGER NOT NULL,
+  next_offset INTEGER NOT NULL,
+  temporary_path TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_local_order
   ON messages(conversation_id, local_order);
 
 CREATE INDEX IF NOT EXISTS idx_outbox_retry
   ON outbox(next_retry_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_file_uploads_updated ON file_uploads(updated_at);
 
 CREATE INDEX IF NOT EXISTS idx_conversations_sort
   ON conversations(pinned DESC, sort_order ASC);
@@ -125,6 +155,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_remote_id
   ON conversations(remote_conversation_id)
   WHERE remote_conversation_id IS NOT NULL;
 
-PRAGMA user_version = 3;
+PRAGMA user_version = 10;
 
 COMMIT;

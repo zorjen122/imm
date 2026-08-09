@@ -1,12 +1,14 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import WimiClient
 
 Rectangle {
     id: root
 
     signal sendRequested(string text)
+    signal fileSelected(url fileUrl)
     signal draftEdited(string text)
     property alias draftText: input.text
 
@@ -33,9 +35,10 @@ Rectangle {
         ToolButton {
             text: "+"
             font.pixelSize: Typography.title
-            enabled: false
+            enabled: true
+            onClicked: fileDialog.open()
             Accessible.name: qsTr("添加附件")
-            Accessible.description: qsTr("附件协议尚未接入")
+            Accessible.description: qsTr("选择文件附件")
         }
 
         TextArea {
@@ -89,6 +92,12 @@ Rectangle {
                        : Theme.surfaceMuted
             }
         }
+    }
+
+    FileDialog {
+        id: fileDialog
+        title: qsTr("选择附件")
+        onAccepted: root.fileSelected(selectedFile)
     }
 
     Rectangle {

@@ -14,6 +14,7 @@
 namespace wimi::protocol
 {
 class Packet;
+class FileInfo;
 }
 
 namespace wimi::client
@@ -53,6 +54,11 @@ class ConnectionGatewayClient final : public QObject
                      std::int64_t conversationId = 0);
     QString UploadFile(std::int64_t clientSequence, const QString& fileName, const QString& fileType,
                        const QByteArray& content);
+    QString UploadFileChunk(const wimi::protocol::FileInfo& file, std::int64_t offset, const QByteArray& content,
+                            bool complete);
+    QString SendFile(std::int64_t recipientUid, const wimi::protocol::FileInfo& file,
+                     const QString& clientMessageId, std::int64_t conversationId = 0);
+    QString DownloadFileChunk(const wimi::protocol::FileInfo& file, std::int64_t offset);
     QString CreateGroup(const QString& groupName);
     QString RequestJoinGroup(std::int64_t groupId, const QString& message);
     QString ReplyJoinGroup(std::int64_t groupId, std::int64_t requestorUid, bool accept);

@@ -6,7 +6,10 @@
 #include "adapters/sqlite/SqliteClientRepository.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
+#include <QFile>
+#include <QFileInfo>
 #include <QDir>
 #include <QRegularExpression>
 #include <QSettings>
@@ -53,6 +56,24 @@ QString DisplayTimestamp(const QString& serverTimestamp)
         return QDateTime::currentDateTime().toString(QStringLiteral("HH:mm"));
     }
     return serverTimestamp.size() >= 5 ? serverTimestamp.right(8).left(5) : serverTimestamp;
+}
+
+QString FileTypeFor(const QFileInfo& file)
+{
+    const QString suffix = file.suffix().toLower();
+    if (suffix == QStringLiteral("png")) return QStringLiteral("image/png");
+    if (suffix == QStringLiteral("jpg") || suffix == QStringLiteral("jpeg")) return QStringLiteral("image/jpeg");
+    if (suffix == QStringLiteral("md") || suffix == QStringLiteral("markdown")) return QStringLiteral("text/markdown");
+    if (suffix == QStringLiteral("txt")) return QStringLiteral("text/plain");
+    return QStringLiteral("application/octet-stream");
+}
+
+QByteArray FileSha256(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    return hash.addData(&file) ? hash.result() : QByteArray{};
 }
 
 } // namespace
@@ -192,6 +213,8 @@ bool AppController::desktopNotificationsAvailable() const
 
 QString AppController::notificationTestStatus() const { return notification_test_status_; }
 
+qulonglong AppController::filePreviewRevision() const { return file_preview_revision_; }
+
 void AppController::setScenarioName(const QString& scenarioName)
 {
     if (snapshot_.scenarioName == scenarioName || !repository_->ScenarioNames().contains(scenarioName)) {
@@ -302,6 +325,219 @@ void AppController::sendMessage(const QString& text)
     } else if (shouldSchedule) {
         ScheduleDeliveryLifecycle(clientMessageId);
     }
+}
+
+void AppController::sendFile(const QUrl& fileUrl)
+{
+    const QString conversationId = CurrentConversationId();
+    const auto peerUid = DirectPeerUid(conversationId);
+    if (!network_enabled_) {
+        SetServiceActionStatus(tr("演示模式不支持文件传输；请配置 Gate 地址并登录真实服务"));
+        return;
+    }
+    if (!peerUid.has_value()) {
+        SetServiceActionStatus(tr("当前仅支持在单聊中发送文件"));
+        return;
+    }
+    if (!fileUrl.isLocalFile()) {
+        SetServiceActionStatus(tr("只能发送本地文件"));
+        return;
+    }
+    const QFileInfo info(fileUrl.toLocalFile());
+    if (!info.isFile()) {
+        SetServiceActionStatus(tr("所选文件不存在或无法读取"));
+        return;
+    }
+    if (info.size() <= 0) {
+        SetServiceActionStatus(tr("暂不支持发送空文件"));
+        return;
+    }
+    if (info.size() > 100LL * 1024 * 1024) {
+        SetServiceActionStatus(tr("文件超过 100 MiB 限制"));
+        return;
+    }
+    if (!gateway_client_.IsReady()) {
+        SetServiceActionStatus(tr("Gateway 连接尚未就绪，请登录后重试"));
+        return;
+    }
+    FileUpload upload{.sourcePath = info.absoluteFilePath(),
+                      .fileId = QUuid::createUuid().toString(QUuid::WithoutBraces),
+                      .fileName = info.fileName(),
+                      .fileType = FileTypeFor(info),
+                      .fileSize = info.size(),
+                      .conversationId = conversationId};
+    upload.sha256 = FileSha256(upload.sourcePath);
+    if (upload.sha256.size() != 32) {
+        SetServiceActionStatus(tr("无法计算文件摘要"));
+        return;
+    }
+    wimi::protocol::FileInfo metadata;
+    metadata.setFileId(upload.fileId);
+    metadata.setFileName(upload.fileName);
+    metadata.setFileType(upload.fileType);
+    metadata.setFileSize(upload.fileSize);
+    metadata.setSha256(upload.sha256);
+    file_uploads_.insert(upload.fileId, upload);
+    repository_->SaveFileUpload(FileUploadRecord{.fileId = upload.fileId,
+                                                 .sourcePath = upload.sourcePath,
+                                                 .fileName = upload.fileName,
+                                                 .fileType = upload.fileType,
+                                                 .fileSize = upload.fileSize,
+                                                 .nextOffset = upload.nextOffset,
+                                                 .conversationId = upload.conversationId,
+                                                 .uploadComplete = upload.uploadComplete});
+    const QString requestId = gateway_client_.UploadFileChunk(metadata, 0, {}, false);
+    file_upload_requests_.insert(requestId, upload.fileId);
+    SetServiceActionStatus(tr("正在上传 %1").arg(upload.fileName));
+}
+
+QUrl AppController::localFileUrl(const QString& fileId) const
+{
+    if (fileId.isEmpty()) return {};
+    const QString root = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    return QUrl::fromLocalFile(
+        QDir(root).filePath(QStringLiteral("accounts/%1/files/%2").arg(authenticated_uid_).arg(fileId)));
+}
+
+QUrl AppController::previewFileUrl(const QString& fileId) const
+{
+    QUrl url = localFileUrl(fileId);
+    if (!QFileInfo::exists(url.toLocalFile())) {
+        const auto source = local_file_sources_.constFind(fileId);
+        if (source != local_file_sources_.cend()) {
+            url = QUrl::fromLocalFile(*source);
+        }
+    }
+    url.setFragment(QString::number(file_preview_revision_));
+    return url;
+}
+
+QString AppController::localMarkdownText(const QString& fileId) const
+{
+    QString path = localFileUrl(fileId).toLocalFile();
+    if (!QFileInfo::exists(path)) {
+        path = local_file_sources_.value(fileId);
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    return QString::fromUtf8(file.read(1024 * 1024));
+}
+
+void AppController::SendNextFileChunk(const QString& transferId)
+{
+    auto upload = file_uploads_.find(transferId);
+    if (upload == file_uploads_.end()) return;
+    QFile source(upload->sourcePath);
+    if (!source.open(QIODevice::ReadOnly) || !source.seek(upload->nextOffset)) {
+        file_uploads_.erase(upload);
+        repository_->RemoveFileUpload(transferId);
+        SetServiceActionStatus(tr("源文件已不存在，上传已停止"));
+        return;
+    }
+    const QByteArray chunk = source.read(1024 * 1024);
+    if (chunk.isEmpty() && upload->nextOffset < upload->fileSize) {
+        file_uploads_.erase(upload);
+        repository_->RemoveFileUpload(transferId);
+        SetServiceActionStatus(tr("读取源文件失败"));
+        return;
+    }
+    wimi::protocol::FileInfo metadata;
+    metadata.setFileId(upload->fileId);
+    metadata.setFileName(upload->fileName);
+    metadata.setFileType(upload->fileType);
+    metadata.setFileSize(upload->fileSize);
+    metadata.setSha256(upload->sha256);
+    const bool complete = upload->nextOffset + chunk.size() == upload->fileSize;
+    const QString requestId = gateway_client_.UploadFileChunk(metadata, upload->nextOffset, chunk, complete);
+    file_upload_requests_.insert(requestId, transferId);
+}
+
+void AppController::SendCompletedFileMessage(const QString& transferId)
+{
+    const auto iterator = file_uploads_.find(transferId);
+    if (iterator == file_uploads_.end()) return;
+    const auto peerUid = DirectPeerUid(iterator->conversationId);
+    if (!peerUid.has_value()) {
+        file_uploads_.erase(iterator);
+        repository_->RemoveFileUpload(transferId);
+        return;
+    }
+    wimi::protocol::FileInfo metadata;
+    metadata.setFileId(iterator->fileId);
+    metadata.setFileName(iterator->fileName);
+    metadata.setFileType(iterator->fileType);
+    metadata.setFileSize(iterator->fileSize);
+    metadata.setSha256(iterator->sha256);
+    const auto* conversation = conversations_.RecordAt(conversations_.IndexOf(iterator->conversationId));
+    const QString requestId = gateway_client_.SendFile(*peerUid, metadata, QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                                       conversation == nullptr ? 0 : conversation->remoteConversationId.value_or(0));
+    file_message_requests_.insert(requestId, transferId);
+    SetServiceActionStatus(tr("文件已上传，正在发送消息"));
+}
+
+void AppController::StartAutoDownload(const wimi::protocol::FileInfo& file)
+{
+    if (file.expired() || file.fileId().isEmpty() || file.fileSize() < 0 ||
+        (file.fileType() != QStringLiteral("image/png") && file.fileType() != QStringLiteral("image/jpeg") &&
+         file.fileType() != QStringLiteral("text/markdown"))) {
+        return;
+    }
+    StartDownload(file);
+}
+
+void AppController::downloadFile(const QString& fileId, const QString& fileType, qint64 fileSize)
+{
+    wimi::protocol::FileInfo file;
+    file.setFileId(fileId);
+    file.setFileType(fileType);
+    file.setFileSize(fileSize);
+    StartDownload(file);
+}
+
+void AppController::StartDownload(const wimi::protocol::FileInfo& file)
+{
+    if (file.expired() || file.fileId().isEmpty() || file.fileSize() < 0 || file_downloads_.contains(file.fileId()) ||
+        !gateway_client_.IsReady()) {
+        return;
+    }
+    const QString dataRoot = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    const QDir files(QDir(dataRoot).filePath(QStringLiteral("accounts/%1/files").arg(authenticated_uid_)));
+    if (!QDir().mkpath(files.path())) return;
+    const QString finalPath = files.filePath(file.fileId());
+    if (QFileInfo(finalPath).size() == file.fileSize()) {
+        SetServiceActionStatus(tr("文件已保存在本地"));
+        return;
+    }
+    const QString temporaryPath = finalPath + QStringLiteral(".part");
+    if (!QFileInfo::exists(temporaryPath)) {
+        QFile temporary(temporaryPath);
+        if (!temporary.open(QIODevice::WriteOnly)) return;
+        temporary.close();
+    }
+    qint64 offset = QFileInfo(temporaryPath).exists() ? QFileInfo(temporaryPath).size() : 0;
+    if (offset > file.fileSize()) {
+        QFile::remove(temporaryPath);
+        offset = 0;
+    }
+    file_downloads_.insert(file.fileId(), FileDownload{.fileId = file.fileId(), .fileType = file.fileType(),
+        .fileSize = file.fileSize(), .nextOffset = offset, .sha256 = file.sha256(), .temporaryPath = temporaryPath,
+        .finalPath = finalPath});
+    repository_->SaveFileDownload(FileDownloadRecord{.fileId = file.fileId(), .fileType = file.fileType(),
+        .sha256 = file.sha256(), .fileSize = file.fileSize(), .nextOffset = offset, .temporaryPath = temporaryPath});
+    RequestNextDownloadChunk(file.fileId());
+}
+
+void AppController::RequestNextDownloadChunk(const QString& fileId)
+{
+    const auto download = file_downloads_.find(fileId);
+    if (download == file_downloads_.end()) return;
+    wimi::protocol::FileInfo metadata;
+    metadata.setFileId(download->fileId);
+    metadata.setFileType(download->fileType);
+    metadata.setFileSize(download->fileSize);
+    metadata.setSha256(download->sha256);
+    const QString requestId = gateway_client_.DownloadFileChunk(metadata, download->nextOffset);
+    file_download_requests_.insert(requestId, fileId);
 }
 
 void AppController::retryMessage(qlonglong clientMessageId)
@@ -770,6 +1006,186 @@ void AppController::HandleGatewayResponse(const QString& requestId, quint32 serv
     }
     const int errorCode = response.hasError() ? static_cast<int>(response.error()) : 0;
 
+    const QString downloadId = file_download_requests_.take(requestId);
+    if (!downloadId.isEmpty()) {
+        auto download = file_downloads_.find(downloadId);
+        if (download == file_downloads_.end()) return;
+        if (errorCode != protocol::Success || !response.hasFileNextOffset()) {
+            file_downloads_.erase(download);
+            repository_->RemoveFileDownload(downloadId);
+            SetServiceActionStatus(tr("附件下载失败"));
+            return;
+        }
+        if (!response.hasFile() || response.file().fileId() != download->fileId ||
+            response.file().fileSize() != download->fileSize || response.file().sha256().size() != 32) {
+            file_downloads_.erase(download);
+            repository_->RemoveFileDownload(downloadId);
+            SetServiceActionStatus(tr("附件元数据校验失败"));
+            return;
+        }
+        const qint64 expectedNextOffset = download->nextOffset + response.data().size();
+        if (response.fileNextOffset() != expectedNextOffset || response.fileNextOffset() > download->fileSize ||
+            (response.hasFileComplete() && response.fileComplete() && response.fileNextOffset() != download->fileSize)) {
+            file_downloads_.erase(download);
+            repository_->RemoveFileDownload(downloadId);
+            SetServiceActionStatus(tr("附件分块确认无效"));
+            return;
+        }
+        QFile output(download->temporaryPath);
+        if (!output.open(QIODevice::WriteOnly | QIODevice::Append) || output.write(response.data()) != response.data().size()) {
+            file_downloads_.erase(download);
+            SetServiceActionStatus(tr("无法写入附件文件"));
+            return;
+        }
+        output.close();
+        download->sha256 = response.file().sha256();
+        download->nextOffset = response.fileNextOffset();
+        repository_->SaveFileDownload(FileDownloadRecord{.fileId = download->fileId, .fileType = download->fileType,
+            .sha256 = download->sha256, .fileSize = download->fileSize, .nextOffset = download->nextOffset,
+            .temporaryPath = download->temporaryPath});
+        if (response.hasFileComplete() && response.fileComplete()) {
+            QFile completed(download->temporaryPath);
+            QCryptographicHash hash(QCryptographicHash::Sha256);
+            const bool verified = completed.open(QIODevice::ReadOnly) &&
+                                  (download->sha256.isEmpty() ||
+                                   (hash.addData(&completed) && hash.result() == download->sha256));
+            if (!verified) {
+                QFile::remove(download->temporaryPath);
+                SetServiceActionStatus(tr("附件摘要校验失败"));
+            } else if (QFile::remove(download->finalPath), !QFile::rename(download->temporaryPath, download->finalPath)) {
+                SetServiceActionStatus(tr("无法完成附件保存"));
+            } else {
+                ++file_preview_revision_;
+                emit filePreviewRevisionChanged();
+            }
+            file_downloads_.erase(download);
+            repository_->RemoveFileDownload(downloadId);
+        } else {
+            RequestNextDownloadChunk(downloadId);
+        }
+        return;
+    }
+
+    const QString transferId = file_upload_requests_.take(requestId);
+    if (!transferId.isEmpty()) {
+        if (errorCode != protocol::Success || !response.hasFileNextOffset()) {
+            file_uploads_.remove(transferId);
+            repository_->RemoveFileUpload(transferId);
+            SetServiceActionStatus(tr("文件上传失败：%1").arg(response.hasMessage() ? response.message()
+                                                                         : tr("服务端未确认分块")));
+            return;
+        }
+        auto upload = file_uploads_.find(transferId);
+        if (upload == file_uploads_.end()) return;
+        if (response.fileNextOffset() < 0 || response.fileNextOffset() > upload->fileSize ||
+            (response.hasFileComplete() && response.fileComplete() && response.fileNextOffset() != upload->fileSize)) {
+            file_uploads_.remove(transferId);
+            repository_->RemoveFileUpload(transferId);
+            SetServiceActionStatus(tr("文件分块确认无效"));
+            return;
+        }
+        upload->nextOffset = response.fileNextOffset();
+        repository_->SaveFileUpload(FileUploadRecord{.fileId = upload->fileId,
+                                                     .sourcePath = upload->sourcePath,
+                                                     .fileName = upload->fileName,
+                                                     .fileType = upload->fileType,
+                                                     .fileSize = upload->fileSize,
+                                                     .nextOffset = upload->nextOffset,
+                                                     .conversationId = upload->conversationId,
+                                                     .uploadComplete = upload->uploadComplete});
+        if (response.hasFileComplete() && response.fileComplete()) {
+            upload->uploadComplete = true;
+            repository_->SaveFileUpload(FileUploadRecord{.fileId = upload->fileId,
+                                                         .sourcePath = upload->sourcePath,
+                                                         .fileName = upload->fileName,
+                                                         .fileType = upload->fileType,
+                                                         .fileSize = upload->fileSize,
+                                                         .nextOffset = upload->nextOffset,
+                                                         .conversationId = upload->conversationId,
+                                                         .uploadComplete = true});
+            SendCompletedFileMessage(transferId);
+        } else
+            SendNextFileChunk(transferId);
+        return;
+    }
+
+    const QString messageTransferId = file_message_requests_.take(requestId);
+    if (!messageTransferId.isEmpty()) {
+        const auto upload = file_uploads_.find(messageTransferId);
+        if (upload == file_uploads_.end()) {
+            return;
+        }
+        if (errorCode != protocol::Success || !response.hasMessageId() || !response.hasConversationId() ||
+            !response.hasConversationSeq()) {
+            file_uploads_.remove(messageTransferId);
+            repository_->RemoveFileUpload(messageTransferId);
+            SetServiceActionStatus(response.hasMessage() ? response.message() : tr("文件消息发送失败"));
+            return;
+        }
+
+        const auto* conversation = conversations_.RecordAt(conversations_.IndexOf(upload->conversationId));
+        if (conversation == nullptr) {
+            file_uploads_.remove(messageTransferId);
+            repository_->RemoveFileUpload(messageTransferId);
+            return;
+        }
+        const auto clientMessageId = next_client_message_id_--;
+        const MessageRecord message{
+            .clientMessageId = clientMessageId,
+            .messageId = response.messageId(),
+            .conversationSeq = response.conversationSeq(),
+            .senderId = QString::number(authenticated_uid_),
+            .body = upload->fileId,
+            .type = 5,
+            .fileId = upload->fileId,
+            .fileName = upload->fileName,
+            .fileType = upload->fileType,
+            .fileSize = upload->fileSize,
+            .timestamp = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm")),
+            .outgoing = true,
+            .deliveryState = MessageDeliveryState::Accepted,
+        };
+        if (!repository_->EnqueueOutgoing(upload->conversationId, message) ||
+            !repository_->AcceptOutgoing(clientMessageId, response.messageId(), upload->conversationId,
+                                         response.conversationSeq())) {
+            SetServiceActionStatus(tr("文件消息写入本地数据库失败"));
+            return;
+        }
+
+        local_file_sources_.insert(upload->fileId, upload->sourcePath);
+        snapshot_.messagesByConversation[upload->conversationId].push_back(message);
+        if (CurrentConversationId() == upload->conversationId) {
+            messages_.Append(message);
+        }
+        const QString timestamp = DisplayTimestamp(message.timestamp);
+        conversations_.UpdatePreview(upload->conversationId, upload->fileName, timestamp);
+        for (auto& storedConversation : snapshot_.conversations) {
+            if (storedConversation.conversationId == upload->conversationId) {
+                storedConversation.preview = upload->fileName;
+                storedConversation.timestamp = timestamp;
+                break;
+            }
+        }
+        AttachRemoteConversation(upload->conversationId, response.conversationId());
+        const std::int64_t cursor = repository_->SyncCursor(upload->conversationId);
+        if (response.conversationSeq() == cursor + 1 &&
+            repository_->ApplyIncomingBatch(upload->conversationId, {}, response.conversationSeq())) {
+            gateway_client_.AcknowledgeDelivered(response.messageId(), response.conversationId(),
+                                                 response.conversationSeq());
+            DrainPendingPush(upload->conversationId);
+        } else if (response.conversationSeq() > cursor + 1) {
+            const QString syncRequest = gateway_client_.PullConversationMessages(response.conversationId(), cursor);
+            sync_request_conversations_.insert(syncRequest, upload->conversationId);
+            gap_syncing_.insert(upload->conversationId);
+        }
+        ++file_preview_revision_;
+        emit filePreviewRevisionChanged();
+        file_uploads_.remove(messageTransferId);
+        repository_->RemoveFileUpload(messageTransferId);
+        SetServiceActionStatus(tr("文件消息已发送"));
+        return;
+    }
+
     if (serviceId == protocol::CreateGroupResponse) {
         const QString groupName = create_group_requests_.take(requestId);
         if (errorCode != protocol::Success || !response.hasGroupId()) {
@@ -942,12 +1358,21 @@ void AppController::HandleGatewayResponse(const QString& requestId, quint32 serv
                 .conversationSeq = item.conversationSeq(),
                 .senderId = QString::number(item.from()),
                 .body = item.content(),
+                .type = item.type(),
+                .fileId = item.hasFile() ? item.file().fileId() : QString{},
+                .fileName = item.hasFile() ? item.file().fileName() : QString{},
+                .fileType = item.hasFile() ? item.file().fileType() : QString{},
+                .fileSize = item.hasFile() ? static_cast<std::int64_t>(item.file().fileSize()) : 0,
+                .fileExpired = item.hasFile() && item.file().expired(),
                 .timestamp = item.sendDateTime(),
                 .outgoing = item.from() == authenticated_uid_,
                 .deliveryState = item.status() >= 3   ? MessageDeliveryState::Read
                                  : item.status() >= 2 ? MessageDeliveryState::Delivered
                                                       : MessageDeliveryState::Accepted,
             });
+            if (item.hasFile()) {
+                StartAutoDownload(item.file());
+            }
         }
         const std::int64_t nextCursor = response.hasNextSeq() ? static_cast<std::int64_t>(response.nextSeq())
                                                               : repository_->SyncCursor(localConversationId);
@@ -1092,7 +1517,8 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
         return;
     }
 
-    if (serviceId == protocol::SendTextRequest || serviceId == protocol::SendGroupTextRequest) {
+    if (serviceId == protocol::SendTextRequest || serviceId == protocol::SendGroupTextRequest ||
+        serviceId == protocol::SendFileRequest) {
         const bool group = serviceId == protocol::SendGroupTextRequest;
         const std::int64_t directPeer = packet.from() == authenticated_uid_ ? packet.to() : packet.from();
         const QString localConversationId =
@@ -1143,12 +1569,22 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
             .conversationSeq =
                 packet.hasConversationSeq() ? std::optional<std::int64_t>(packet.conversationSeq()) : std::nullopt,
             .senderId = QString::number(packet.from()),
-            .body = QString::fromUtf8(packet.data()),
+            .body = packet.hasContent() ? packet.content() : QString::fromUtf8(packet.data()),
+            .type = packet.hasType() ? static_cast<int>(packet.type())
+                                     : (serviceId == protocol::SendFileRequest ? 5 : 1),
+            .fileId = packet.hasFile() ? packet.file().fileId() : QString{},
+            .fileName = packet.hasFile() ? packet.file().fileName() : QString{},
+            .fileType = packet.hasFile() ? packet.file().fileType() : QString{},
+            .fileSize = packet.hasFile() ? static_cast<std::int64_t>(packet.file().fileSize()) : 0,
+            .fileExpired = packet.hasFile() && packet.file().expired(),
             .timestamp = PacketSendDateTimeOrEmpty(packet).isEmpty() ? DisplayTimestamp(QString{})
                                                                      : PacketSendDateTimeOrEmpty(packet),
             .outgoing = packet.from() == authenticated_uid_,
             .deliveryState = MessageDeliveryState::Delivered,
         };
+        if (packet.hasFile()) {
+            StartAutoDownload(packet.file());
+        }
         const std::int64_t persistedCursor =
             incoming.conversationSeq.value_or(repository_->SyncCursor(localConversationId));
         if (!repository_->ApplyIncomingBatch(localConversationId, {incoming}, persistedCursor)) {
@@ -1160,12 +1596,15 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
             messages_.Append(incoming);
         }
         const QString previewTimestamp = DisplayTimestamp(incoming.timestamp);
-        conversations_.UpdatePreview(localConversationId, incoming.body, previewTimestamp);
+        const QString preview = incoming.type == 5 && !incoming.fileName.isEmpty()
+                                    ? incoming.fileName
+                                    : incoming.body;
+        conversations_.UpdatePreview(localConversationId, preview, previewTimestamp);
         for (auto& conversation : snapshot_.conversations) {
             if (conversation.conversationId != localConversationId) {
                 continue;
             }
-            conversation.preview = incoming.body;
+            conversation.preview = preview;
             conversation.timestamp = previewTimestamp;
             break;
         }
@@ -1227,6 +1666,29 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
 void AppController::HandleGatewayFailure(const QString& requestId, quint32 serviceId, int errorCode,
                                          const QString& message, bool outcomeUnknown)
 {
+    const QString downloadId = file_download_requests_.take(requestId);
+    if (!downloadId.isEmpty()) {
+        file_downloads_.remove(downloadId);
+        if (!outcomeUnknown) repository_->RemoveFileDownload(downloadId);
+        SetServiceActionStatus(tr("附件下载中断：%1").arg(message));
+        return;
+    }
+    const QString transferId = file_upload_requests_.take(requestId);
+    if (!transferId.isEmpty()) {
+        file_uploads_.remove(transferId);
+        if (!outcomeUnknown) {
+            repository_->RemoveFileUpload(transferId);
+        }
+        SetServiceActionStatus(tr("文件上传失败：%1").arg(message));
+        return;
+    }
+    const QString messageTransferId = file_message_requests_.take(requestId);
+    if (!messageTransferId.isEmpty()) {
+        file_uploads_.remove(messageTransferId);
+        if (!outcomeUnknown) repository_->RemoveFileUpload(messageTransferId);
+        SetServiceActionStatus(tr("文件消息发送中断：%1").arg(message));
+        return;
+    }
     const auto outgoing = outgoing_request_messages_.find(requestId);
     if (outgoing != outgoing_request_messages_.end()) {
         const auto clientMessageId = outgoing.value();
@@ -1293,6 +1755,71 @@ void AppController::ResumePendingOutgoing()
                                                                           wireClientMessageId, remoteConversationId);
             outgoing_request_messages_.insert(requestId, message.clientMessageId);
         }
+    }
+    for (const auto& persisted : repository_->LoadFileUploads()) {
+        if (file_uploads_.contains(persisted.fileId)) {
+            continue;
+        }
+        if (!QFileInfo::exists(persisted.sourcePath)) {
+            repository_->RemoveFileUpload(persisted.fileId);
+            continue;
+        }
+        if (!DirectPeerUid(persisted.conversationId).has_value()) continue;
+        FileUpload upload{.sourcePath = persisted.sourcePath,
+                          .fileId = persisted.fileId,
+                          .fileName = persisted.fileName,
+                          .fileType = persisted.fileType,
+                          .fileSize = persisted.fileSize,
+                          .nextOffset = persisted.nextOffset,
+                          .conversationId = persisted.conversationId,
+                          .uploadComplete = persisted.uploadComplete};
+        upload.sha256 = FileSha256(upload.sourcePath);
+        if (upload.sha256.size() != 32) {
+            repository_->RemoveFileUpload(upload.fileId);
+            continue;
+        }
+        file_uploads_.insert(upload.fileId, upload);
+        if (upload.uploadComplete) {
+            SendCompletedFileMessage(upload.fileId);
+        } else {
+            wimi::protocol::FileInfo metadata;
+            metadata.setFileId(upload.fileId);
+            metadata.setFileName(upload.fileName);
+            metadata.setFileType(upload.fileType);
+            metadata.setFileSize(upload.fileSize);
+            metadata.setSha256(upload.sha256);
+            const QString requestId = gateway_client_.UploadFileChunk(metadata, 0, {}, false);
+            file_upload_requests_.insert(requestId, upload.fileId);
+        }
+    }
+    for (const auto& persisted : repository_->LoadFileDownloads()) {
+        if (file_downloads_.contains(persisted.fileId)) continue;
+        const QString finalPath = persisted.temporaryPath.left(persisted.temporaryPath.size() - 5);
+        if (QFileInfo(finalPath).size() == persisted.fileSize) {
+            repository_->RemoveFileDownload(persisted.fileId);
+            continue;
+        }
+        const QFileInfo temporaryInfo(persisted.temporaryPath);
+        if (!QDir().mkpath(temporaryInfo.absolutePath())) continue;
+        if (!temporaryInfo.exists()) {
+            QFile temporary(persisted.temporaryPath);
+            if (!temporary.open(QIODevice::WriteOnly)) continue;
+            temporary.close();
+        }
+        qint64 offset = QFileInfo(persisted.temporaryPath).size();
+        if (offset > persisted.fileSize) {
+            if (!QFile::remove(persisted.temporaryPath)) continue;
+            QFile temporary(persisted.temporaryPath);
+            if (!temporary.open(QIODevice::WriteOnly)) continue;
+            temporary.close();
+            offset = 0;
+        }
+        file_downloads_.insert(persisted.fileId, FileDownload{.fileId = persisted.fileId,
+            .fileType = persisted.fileType, .fileSize = persisted.fileSize,
+            .nextOffset = offset, .sha256 = persisted.sha256,
+            .temporaryPath = persisted.temporaryPath,
+            .finalPath = finalPath});
+        RequestNextDownloadChunk(persisted.fileId);
     }
 }
 

@@ -7,12 +7,21 @@ Item {
     id: root
 
     required property string messageText
+    required property int messageType
+    required property string fileId
+    required property string fileName
+    required property string fileType
+    required property double fileSize
+    required property bool fileExpired
+    property url fileUrl
+    property string markdownText: ""
     required property string timeText
     required property bool outgoing
     required property string deliveryState
     required property var clientMessageId
     property bool compactMode: false
     signal retryRequested(var clientMessageId)
+    signal downloadRequested(string fileId, string fileType, double fileSize)
 
     readonly property string stateText: {
         switch (deliveryState) {
@@ -27,6 +36,8 @@ Item {
         default: return ""
         }
     }
+    readonly property bool hasFileInfo: messageType === 5 && fileId.length > 0
+                                        && fileName.length > 0 && fileType.length > 0 && fileSize >= 0
     readonly property color stateColor: {
         switch (deliveryState) {
         case "read": return Theme.accent
@@ -175,6 +186,7 @@ Item {
                 id: messageTextItem
 
                 Layout.fillWidth: true
+                visible: root.messageType !== 5
                 text: root.messageText
                 color: Theme.textPrimary
                 font.pixelSize: Typography.body
@@ -183,6 +195,55 @@ Item {
                 readOnly: true
                 selectByMouse: true
                 Accessible.name: root.messageText
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: root.messageType === 5
+                spacing: Tokens.space1
+
+                Label {
+                    Layout.fillWidth: true
+                    text: root.hasFileInfo ? root.fileName : qsTr("附件信息损坏")
+                    color: Theme.textPrimary
+                    font.pixelSize: Typography.body
+                    elide: Text.ElideRight
+                }
+                Image {
+                    Layout.fillWidth: true
+                    Layout.maximumHeight: 280
+                    visible: root.hasFileInfo
+                             && (root.fileType === "image/png"
+                                 || root.fileType === "image/jpeg")
+                             && root.fileUrl.toString().length > 0
+                    source: root.fileUrl
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                }
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.hasFileInfo && root.fileType === "text/markdown"
+                             && root.markdownText.length > 0
+                    text: root.markdownText
+                    color: Theme.textPrimary
+                    font.pixelSize: Typography.bodySmall
+                    textFormat: Text.MarkdownText
+                    wrapMode: Text.Wrap
+                }
+                Label {
+                    visible: root.hasFileInfo
+                    text: root.fileExpired
+                          ? qsTr("文件已过期")
+                          : qsTr("%1 · %2 字节").arg(root.fileType).arg(root.fileSize)
+                    color: Theme.textSecondary
+                    font.pixelSize: Typography.caption
+                }
+                Button {
+                    visible: root.hasFileInfo && !root.fileExpired
+                    text: qsTr("下载文件")
+                    flat: true
+                    onClicked: root.downloadRequested(root.fileId, root.fileType, root.fileSize)
+                }
             }
 
             RowLayout {

@@ -7,6 +7,7 @@
 
 #include <QDataStream>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QIODevice>
 #include <QSignalSpy>
 #include <QSqlDatabase>
@@ -120,14 +121,18 @@ class ClientModelsTest final : public QObject
     void largeHistoryScenarioExercisesModelScale();
     void conversationRolesExposeSnapshotData();
     void conversationUnreadCountUpdatesByConversation();
+    void fileMessageRolesExposeAttachmentIdentity();
     void deliveryStateRejectsRegression();
     void draftsAreScopedToConversation();
     void sendLifecycleSurvivesConversationSwitch();
     void retryableMessageKeepsItsClientIdentity();
     void contactAndRequestModelsUpdateInPlace();
     void fakeServiceActionsProvideCompleteUiFeedback();
+    void fakeModeExplainsWhyFileTransferIsUnavailable();
     void sqlitePersistsOutboxDraftAndSyncCursor();
     void sqliteMigratesVersionOneToCurrent();
+    void sqlitePersistsFileUploadProgress();
+    void sqlitePersistsFileDownloadProgress();
     void sqliteRejectsNewerSchema();
     void sqliteAppliesLargeIncomingBatchIdempotently();
     void sqliteLoadsMessagesByConversationSequence();
@@ -221,6 +226,32 @@ void ClientModelsTest::conversationUnreadCountUpdatesByConversation()
     QCOMPARE(model.data(model.index(0), ConversationListModel::UnreadCountRole).toInt(), 2);
     QVERIFY(!model.SetUnreadCount(QStringLiteral("direct:42"), 2));
     QVERIFY(!model.SetUnreadCount(QStringLiteral("direct:404"), 1));
+}
+
+void ClientModelsTest::fileMessageRolesExposeAttachmentIdentity()
+{
+    MessageListModel model;
+    model.SetRecords({MessageRecord{
+        .clientMessageId = 88,
+        .messageId = 88,
+        .senderId = QStringLiteral("alice"),
+        .body = QStringLiteral("5e3f43da-0d67-4e4a-99a0-6ccff21892a5"),
+        .type = 5,
+        .fileId = QStringLiteral("5e3f43da-0d67-4e4a-99a0-6ccff21892a5"),
+        .fileName = QStringLiteral("notes.md"),
+        .fileType = QStringLiteral("text/markdown"),
+        .fileSize = 17,
+        .timestamp = QStringLiteral("2026-08-08 12:00:00"),
+        .outgoing = false,
+    }});
+
+    const auto index = model.index(0);
+    QCOMPARE(model.data(index, MessageListModel::TypeRole).toInt(), 5);
+    QCOMPARE(model.data(index, MessageListModel::FileIdRole).toString(),
+             QStringLiteral("5e3f43da-0d67-4e4a-99a0-6ccff21892a5"));
+    QCOMPARE(model.data(index, MessageListModel::FileNameRole).toString(), QStringLiteral("notes.md"));
+    QCOMPARE(model.data(index, MessageListModel::FileTypeRole).toString(), QStringLiteral("text/markdown"));
+    QCOMPARE(model.data(index, MessageListModel::FileSizeRole).toLongLong(), 17);
 }
 
 void ClientModelsTest::deliveryStateRejectsRegression()
@@ -371,6 +402,21 @@ void ClientModelsTest::fakeServiceActionsProvideCompleteUiFeedback()
     QVERIFY(controller.serviceActionStatus().contains(QStringLiteral("9001")));
 }
 
+void ClientModelsTest::fakeModeExplainsWhyFileTransferIsUnavailable()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString filePath = directory.filePath(QStringLiteral("notes.md"));
+    QFile file(filePath);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QVERIFY(file.write("# notes\n") > 0);
+    file.close();
+
+    AppController controller;
+    controller.sendFile(QUrl::fromLocalFile(filePath));
+    QVERIFY(controller.serviceActionStatus().contains(QStringLiteral("演示模式")));
+}
+
 void ClientModelsTest::sqlitePersistsOutboxDraftAndSyncCursor()
 {
     QTemporaryDir directory;
@@ -494,6 +540,54 @@ void ClientModelsTest::sqliteMigratesVersionOneToCurrent()
     QVERIFY(SqliteIndexExists(databasePath, QStringLiteral("idx_conversations_sort")));
 }
 
+void ClientModelsTest::sqlitePersistsFileUploadProgress()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("file-upload.sqlite"));
+    {
+        SqliteClientRepository repository(databasePath, false);
+        QVERIFY2(repository.IsReady(), qPrintable(repository.LastError()));
+        const FileUploadRecord upload{.fileId = QStringLiteral("5e3f43da-0d67-4e4a-99a0-6ccff21892a5"),
+                                      .sourcePath = QStringLiteral("/tmp/report.md"),
+                                      .fileName = QStringLiteral("report.md"),
+                                      .fileType = QStringLiteral("text/markdown"),
+                                      .fileSize = 1'500'000,
+                                      .nextOffset = 1'048'576,
+                                      .conversationId = QStringLiteral("direct:42"),
+                                      .uploadComplete = true};
+        QVERIFY(repository.SaveFileUpload(upload));
+        const auto uploads = repository.LoadFileUploads();
+        QCOMPARE(uploads.size(), 1);
+        QCOMPARE(uploads.front().fileId, upload.fileId);
+        QCOMPARE(uploads.front().nextOffset, upload.nextOffset);
+        QVERIFY(uploads.front().uploadComplete);
+        QVERIFY(repository.RemoveFileUpload(upload.fileId));
+        QVERIFY(repository.LoadFileUploads().isEmpty());
+    }
+}
+
+void ClientModelsTest::sqlitePersistsFileDownloadProgress()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    SqliteClientRepository repository(directory.filePath(QStringLiteral("file-download.sqlite")), false);
+    QVERIFY2(repository.IsReady(), qPrintable(repository.LastError()));
+    const FileDownloadRecord download{.fileId = QStringLiteral("5e3f43da-0d67-4e4a-99a0-6ccff21892a5"),
+                                      .fileType = QStringLiteral("image/png"),
+                                      .sha256 = QByteArray(32, '\x1a'),
+                                      .fileSize = 2'000'000,
+                                      .nextOffset = 1'048'576,
+                                      .temporaryPath = QStringLiteral("/tmp/file.part")};
+    QVERIFY(repository.SaveFileDownload(download));
+    const auto downloads = repository.LoadFileDownloads();
+    QCOMPARE(downloads.size(), 1);
+    QCOMPARE(downloads.front().nextOffset, download.nextOffset);
+    QCOMPARE(downloads.front().sha256, download.sha256);
+    QVERIFY(repository.RemoveFileDownload(download.fileId));
+    QVERIFY(repository.LoadFileDownloads().isEmpty());
+}
+
 void ClientModelsTest::sqliteRejectsNewerSchema()
 {
     QTemporaryDir directory;
@@ -573,7 +667,7 @@ void ClientModelsTest::sqliteLoadsMessagesByConversationSequence()
 
     QVector<MessageRecord> reversed;
     for (const std::int64_t sequence : {3, 1, 2}) {
-        reversed.push_back(MessageRecord{
+        MessageRecord message{
             .clientMessageId = 7000 + sequence,
             .messageId = 7000 + sequence,
             .conversationSeq = sequence,
@@ -582,7 +676,17 @@ void ClientModelsTest::sqliteLoadsMessagesByConversationSequence()
             .timestamp = QStringLiteral("14:00"),
             .outgoing = false,
             .deliveryState = MessageDeliveryState::Delivered,
-        });
+        };
+        if (sequence == 3) {
+            message.body = QStringLiteral("3d95263b-7d19-4aa3-9c94-6e6e5d15e58d");
+            message.type = 5;
+            message.fileId = message.body;
+            message.fileName = QStringLiteral("notes.md");
+            message.fileType = QStringLiteral("text/markdown");
+            message.fileSize = 17;
+            message.fileExpired = true;
+        }
+        reversed.push_back(std::move(message));
     }
     QVERIFY(repository.ApplyIncomingBatch(QStringLiteral("direct:42"), reversed, 3));
 
@@ -592,6 +696,11 @@ void ClientModelsTest::sqliteLoadsMessagesByConversationSequence()
     QCOMPARE(messages[0].conversationSeq, std::optional<std::int64_t>(1));
     QCOMPARE(messages[1].conversationSeq, std::optional<std::int64_t>(2));
     QCOMPARE(messages[2].conversationSeq, std::optional<std::int64_t>(3));
+    QCOMPARE(messages[2].body, messages[2].fileId);
+    QCOMPARE(messages[2].fileName, QStringLiteral("notes.md"));
+    QCOMPARE(messages[2].fileType, QStringLiteral("text/markdown"));
+    QCOMPARE(messages[2].fileSize, 17);
+    QVERIFY(messages[2].fileExpired);
 }
 
 void ClientModelsTest::sqlitePersistsNetworkProjection()

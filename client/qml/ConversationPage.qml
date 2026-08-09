@@ -54,6 +54,12 @@ Rectangle {
             required property bool showUnreadSeparator
             required property bool outgoing
             required property string deliveryState
+            required property int messageType
+            required property string fileId
+            required property string fileName
+            required property string fileType
+            required property double fileSize
+            required property bool fileExpired
 
             DelegateModel.groups: {
                 const query = messageSearchField.text.trim().toLocaleLowerCase()
@@ -131,6 +137,17 @@ Rectangle {
 
                     width: parent.width
                     messageText: messageDelegate.body
+                    messageType: messageDelegate.messageType
+                    fileId: messageDelegate.fileId
+                    fileName: messageDelegate.fileName
+                    fileType: messageDelegate.fileType
+                    fileSize: messageDelegate.fileSize
+                    fileExpired: messageDelegate.fileExpired
+                    fileUrl: {
+                        root.controller.filePreviewRevision
+                        return root.controller.previewFileUrl(messageDelegate.fileId)
+                    }
+                    markdownText: root.controller.localMarkdownText(messageDelegate.fileId)
                     timeText: messageDelegate.timestamp
                     outgoing: messageDelegate.outgoing
                     deliveryState: messageDelegate.deliveryState
@@ -138,6 +155,8 @@ Rectangle {
                     compactMode: root.compactMode
                     onRetryRequested: clientMessageId =>
                         root.controller.retryMessage(clientMessageId)
+                    onDownloadRequested: (fileId, fileType, fileSize) =>
+                        root.controller.downloadFile(fileId, fileType, fileSize)
                 }
             }
         }
@@ -348,12 +367,25 @@ Rectangle {
             }
         }
 
+        Label {
+            Layout.fillWidth: true
+            Layout.leftMargin: Tokens.space3
+            Layout.rightMargin: Tokens.space3
+            Layout.topMargin: Tokens.space1
+            visible: root.controller.serviceActionStatus.length > 0
+            text: root.controller.serviceActionStatus
+            color: Theme.textSecondary
+            font.pixelSize: Typography.caption
+            wrapMode: Text.Wrap
+        }
+
         MessageComposer {
             id: composer
 
             Layout.fillWidth: true
             visible: root.controller.selectedConversationIndex >= 0
             onSendRequested: text => root.controller.sendMessage(text)
+            onFileSelected: fileUrl => root.controller.sendFile(fileUrl)
             onDraftEdited: text => root.controller.draftText = text
 
             Component.onCompleted: draftText = root.controller.draftText

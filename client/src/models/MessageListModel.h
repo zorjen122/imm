@@ -25,6 +25,12 @@ class MessageListModel final : public QAbstractListModel
         ShowUnreadSeparatorRole,
         OutgoingRole,
         DeliveryStateRole,
+        TypeRole,
+        FileIdRole,
+        FileNameRole,
+        FileTypeRole,
+        FileSizeRole,
+        FileExpiredRole,
     };
     Q_ENUM(Role)
 

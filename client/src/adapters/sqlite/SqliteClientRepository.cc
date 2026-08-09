@@ -111,7 +111,8 @@ ClientSnapshot SqliteClientRepository::LoadScenario(const QString&) const
 
     QSqlQuery messagesQuery(database_);
     if (messagesQuery.exec(QStringLiteral("SELECT conversation_id, client_message_id, message_id, "
-                                          "conversation_seq, sender_id, body, timestamp, outgoing, "
+                                          "conversation_seq, sender_id, body, type, file_id, file_name, file_type, "
+                                          "file_size, file_expired, timestamp, outgoing, "
                                           "delivery_state FROM messages "
                                           "ORDER BY conversation_id, conversation_seq IS NULL, "
                                           "conversation_seq ASC, local_order ASC"))) {
@@ -120,9 +121,15 @@ ClientSnapshot SqliteClientRepository::LoadScenario(const QString&) const
                 .clientMessageId = messagesQuery.value(1).toLongLong(),
                 .senderId = messagesQuery.value(4).toString(),
                 .body = messagesQuery.value(5).toString(),
-                .timestamp = messagesQuery.value(6).toString(),
-                .outgoing = messagesQuery.value(7).toBool(),
-                .deliveryState = DeliveryStateFromValue(messagesQuery.value(8).toInt()),
+                .type = messagesQuery.value(6).toInt(),
+                .fileId = messagesQuery.value(7).toString(),
+                .fileName = messagesQuery.value(8).toString(),
+                .fileType = messagesQuery.value(9).toString(),
+                .fileSize = messagesQuery.value(10).toLongLong(),
+                .fileExpired = messagesQuery.value(11).toBool(),
+                .timestamp = messagesQuery.value(12).toString(),
+                .outgoing = messagesQuery.value(13).toBool(),
+                .deliveryState = DeliveryStateFromValue(messagesQuery.value(14).toInt()),
             };
             if (!messagesQuery.value(2).isNull()) {
                 message.messageId = messagesQuery.value(2).toLongLong();
@@ -464,6 +471,87 @@ int SqliteClientRepository::OutboxCount() const
     return query.value(0).toInt();
 }
 
+QVector<FileUploadRecord> SqliteClientRepository::LoadFileUploads() const
+{
+    QVector<FileUploadRecord> uploads;
+    QSqlQuery query(database_);
+    if (!query.exec(QStringLiteral("SELECT file_id, source_path, file_name, file_type, file_size, next_offset, "
+                                   "conversation_id, upload_complete FROM file_uploads ORDER BY updated_at")))
+        return uploads;
+    while (query.next()) {
+        uploads.push_back(FileUploadRecord{.fileId = query.value(0).toString(),
+                                           .sourcePath = query.value(1).toString(),
+                                           .fileName = query.value(2).toString(),
+                                           .fileType = query.value(3).toString(),
+                                           .fileSize = query.value(4).toLongLong(),
+                                           .nextOffset = query.value(5).toLongLong(),
+                                           .conversationId = query.value(6).toString(),
+                                           .uploadComplete = query.value(7).toBool()});
+    }
+    return uploads;
+}
+
+bool SqliteClientRepository::SaveFileUpload(const FileUploadRecord& upload)
+{
+    QSqlQuery query(database_);
+    query.prepare(QStringLiteral("INSERT INTO file_uploads(file_id, source_path, file_name, file_type, file_size, "
+                                 "next_offset, conversation_id, upload_complete, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, "
+                                 "strftime('%s','now')) ON CONFLICT(file_id) DO UPDATE SET source_path=excluded.source_path, "
+                                 "file_name=excluded.file_name,file_type=excluded.file_type,file_size=excluded.file_size,"
+                                 "next_offset=excluded.next_offset,conversation_id=excluded.conversation_id,"
+                                 "upload_complete=excluded.upload_complete,updated_at=excluded.updated_at"));
+    query.addBindValue(upload.fileId);
+    query.addBindValue(upload.sourcePath);
+    query.addBindValue(upload.fileName);
+    query.addBindValue(upload.fileType);
+    query.addBindValue(QVariant::fromValue<qlonglong>(upload.fileSize));
+    query.addBindValue(QVariant::fromValue<qlonglong>(upload.nextOffset));
+    query.addBindValue(upload.conversationId);
+    query.addBindValue(upload.uploadComplete);
+    return query.exec();
+}
+
+bool SqliteClientRepository::RemoveFileUpload(const QString& fileId)
+{
+    QSqlQuery query(database_);
+    query.prepare(QStringLiteral("DELETE FROM file_uploads WHERE file_id = ?"));
+    query.addBindValue(fileId);
+    return query.exec();
+}
+
+QVector<FileDownloadRecord> SqliteClientRepository::LoadFileDownloads() const
+{
+    QVector<FileDownloadRecord> downloads;
+    QSqlQuery query(database_);
+    if (!query.exec(QStringLiteral("SELECT file_id, file_type, sha256, file_size, next_offset, temporary_path FROM file_downloads")))
+        return downloads;
+    while (query.next()) downloads.push_back(FileDownloadRecord{.fileId = query.value(0).toString(),
+        .fileType = query.value(1).toString(), .sha256 = query.value(2).toByteArray(),
+        .fileSize = query.value(3).toLongLong(), .nextOffset = query.value(4).toLongLong(),
+        .temporaryPath = query.value(5).toString()});
+    return downloads;
+}
+
+bool SqliteClientRepository::SaveFileDownload(const FileDownloadRecord& download)
+{
+    QSqlQuery query(database_);
+    query.prepare(QStringLiteral("INSERT INTO file_downloads(file_id,file_type,sha256,file_size,next_offset,temporary_path,updated_at) "
+                                 "VALUES(?,?,?,?,?,?,strftime('%s','now')) ON CONFLICT(file_id) DO UPDATE SET "
+                                 "file_type=excluded.file_type,sha256=excluded.sha256,file_size=excluded.file_size,"
+                                 "next_offset=excluded.next_offset,temporary_path=excluded.temporary_path,updated_at=excluded.updated_at"));
+    query.addBindValue(download.fileId); query.addBindValue(download.fileType);
+    query.addBindValue(download.sha256); query.addBindValue(QVariant::fromValue<qlonglong>(download.fileSize));
+    query.addBindValue(QVariant::fromValue<qlonglong>(download.nextOffset)); query.addBindValue(download.temporaryPath);
+    return query.exec();
+}
+
+bool SqliteClientRepository::RemoveFileDownload(const QString& fileId)
+{
+    QSqlQuery query(database_);
+    query.prepare(QStringLiteral("DELETE FROM file_downloads WHERE file_id=?")); query.addBindValue(fileId);
+    return query.exec();
+}
+
 bool SqliteClientRepository::Open()
 {
     if (database_path_ != QStringLiteral(":memory:")) {
@@ -540,7 +628,10 @@ bool SqliteClientRepository::Migrate()
                        "conversations(conversation_id) "
                        "ON DELETE CASCADE, conversation_seq INTEGER, sender_id "
                        "TEXT NOT NULL, "
-                       "body TEXT NOT NULL, timestamp TEXT NOT NULL, outgoing "
+                       "body TEXT NOT NULL, type INTEGER NOT NULL DEFAULT 1, file_id TEXT NOT NULL DEFAULT '', "
+                       "file_name TEXT NOT NULL DEFAULT '', file_type TEXT NOT NULL DEFAULT '', "
+                       "file_size INTEGER NOT NULL DEFAULT 0, file_expired INTEGER NOT NULL DEFAULT 0, "
+                       "timestamp TEXT NOT NULL, outgoing "
                        "INTEGER NOT NULL, "
                        "delivery_state INTEGER NOT NULL, "
                        "UNIQUE(conversation_id, conversation_seq))"),
@@ -615,6 +706,81 @@ bool SqliteClientRepository::Migrate()
         schemaVersion = 2;
     }
     if (schemaVersion < 3 && !applyMigration(3, versionThreeStatements)) {
+        database_.rollback();
+        return false;
+    }
+    QStringList versionFourStatements;
+    if (!ColumnExists(database_, QStringLiteral("messages"), QStringLiteral("type"))) {
+        versionFourStatements.push_back(QStringLiteral("ALTER TABLE messages ADD COLUMN type INTEGER NOT NULL DEFAULT 1"));
+    }
+    if (schemaVersion < 4 && !applyMigration(4, versionFourStatements)) {
+        database_.rollback();
+        return false;
+    }
+    const QStringList versionFiveStatements = {
+        QStringLiteral("CREATE TABLE IF NOT EXISTS file_uploads("
+                       "file_id TEXT PRIMARY KEY, source_path TEXT NOT NULL, file_name TEXT NOT NULL, "
+                       "file_type TEXT NOT NULL, file_size INTEGER NOT NULL, next_offset INTEGER NOT NULL, "
+                       "conversation_id TEXT NOT NULL, updated_at INTEGER NOT NULL)"),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_file_uploads_updated ON file_uploads(updated_at)"),
+    };
+    if (schemaVersion < 5 && !applyMigration(5, versionFiveStatements)) {
+        database_.rollback();
+        return false;
+    }
+    QStringList versionSixStatements;
+    if (!ColumnExists(database_, QStringLiteral("messages"), QStringLiteral("file_id"))) {
+        versionSixStatements.push_back(QStringLiteral("ALTER TABLE messages ADD COLUMN file_id TEXT NOT NULL DEFAULT ''"));
+    }
+    if (schemaVersion < 6 && !applyMigration(6, versionSixStatements)) {
+        database_.rollback();
+        return false;
+    }
+    const QStringList versionSevenStatements = {
+        QStringLiteral("CREATE TABLE IF NOT EXISTS file_downloads(file_id TEXT PRIMARY KEY, file_type TEXT NOT NULL, "
+                       "file_size INTEGER NOT NULL, next_offset INTEGER NOT NULL, temporary_path TEXT NOT NULL, "
+                       "updated_at INTEGER NOT NULL)"),
+    };
+    if (schemaVersion < 7 && !applyMigration(7, versionSevenStatements)) {
+        database_.rollback();
+        return false;
+    }
+    QStringList versionEightStatements;
+    if (!ColumnExists(database_, QStringLiteral("file_downloads"), QStringLiteral("sha256"))) {
+        versionEightStatements.push_back(
+            QStringLiteral("ALTER TABLE file_downloads ADD COLUMN sha256 BLOB NOT NULL DEFAULT X''"));
+    }
+    if (schemaVersion < 8 && !applyMigration(8, versionEightStatements)) {
+        database_.rollback();
+        return false;
+    }
+    QStringList versionNineStatements;
+    if (!ColumnExists(database_, QStringLiteral("file_uploads"), QStringLiteral("upload_complete"))) {
+        versionNineStatements.push_back(
+            QStringLiteral("ALTER TABLE file_uploads ADD COLUMN upload_complete INTEGER NOT NULL DEFAULT 0"));
+    }
+    if (schemaVersion < 9 && !applyMigration(9, versionNineStatements)) {
+        database_.rollback();
+        return false;
+    }
+    QStringList versionTenStatements;
+    if (!ColumnExists(database_, QStringLiteral("messages"), QStringLiteral("file_name"))) {
+        versionTenStatements.push_back(
+            QStringLiteral("ALTER TABLE messages ADD COLUMN file_name TEXT NOT NULL DEFAULT ''"));
+    }
+    if (!ColumnExists(database_, QStringLiteral("messages"), QStringLiteral("file_type"))) {
+        versionTenStatements.push_back(
+            QStringLiteral("ALTER TABLE messages ADD COLUMN file_type TEXT NOT NULL DEFAULT ''"));
+    }
+    if (!ColumnExists(database_, QStringLiteral("messages"), QStringLiteral("file_size"))) {
+        versionTenStatements.push_back(
+            QStringLiteral("ALTER TABLE messages ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0"));
+    }
+    if (!ColumnExists(database_, QStringLiteral("messages"), QStringLiteral("file_expired"))) {
+        versionTenStatements.push_back(
+            QStringLiteral("ALTER TABLE messages ADD COLUMN file_expired INTEGER NOT NULL DEFAULT 0"));
+    }
+    if (schemaVersion < 10 && !applyMigration(10, versionTenStatements)) {
         database_.rollback();
         return false;
     }
@@ -728,9 +894,9 @@ bool SqliteClientRepository::InsertMessage(const QString& conversationId, const 
     QSqlQuery query(database_);
     query.prepare(QStringLiteral("INSERT %1 INTO messages(client_message_id, message_id, "
                                  "conversation_id, "
-                                 "conversation_seq, sender_id, body, timestamp, outgoing, "
-                                 "delivery_state) "
-                                 "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                                 "conversation_seq, sender_id, body, type, file_id, file_name, file_type, "
+                                 "file_size, file_expired, timestamp, outgoing, delivery_state) "
+                                 "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                       .arg(ignoreDuplicate ? QStringLiteral("OR IGNORE") : QString{}));
     query.addBindValue(QVariant::fromValue<qlonglong>(message.clientMessageId));
     query.addBindValue(message.messageId.has_value() ? QVariant::fromValue<qlonglong>(*message.messageId) : QVariant{});
@@ -739,6 +905,12 @@ bool SqliteClientRepository::InsertMessage(const QString& conversationId, const 
                                                            : QVariant{});
     query.addBindValue(message.senderId);
     query.addBindValue(message.body);
+    query.addBindValue(message.type);
+    query.addBindValue(message.fileId.isNull() ? QStringLiteral("") : message.fileId);
+    query.addBindValue(message.fileName.isNull() ? QStringLiteral("") : message.fileName);
+    query.addBindValue(message.fileType.isNull() ? QStringLiteral("") : message.fileType);
+    query.addBindValue(QVariant::fromValue<qlonglong>(message.fileSize));
+    query.addBindValue(message.fileExpired);
     query.addBindValue(message.timestamp);
     query.addBindValue(message.outgoing);
     query.addBindValue(DeliveryStateValue(message.deliveryState));
