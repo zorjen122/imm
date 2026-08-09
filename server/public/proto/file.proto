@@ -2,68 +2,47 @@ syntax = "proto3";
 
 package file;
 
-// 通用文件块消息，用于上传和发送的公共字段
-message FileChunk {
-  int64 seq = 1;         // 分块传输序号
-  int64 offset = 2;      // 当前块在文件中的字节偏移
-  int64 total_size = 3;  // 完整文件的总字节数
-  FileType type = 4;     // 文件内容类型
-
-  bytes data = 5;        // 当前分块的二进制内容
-  string filename = 6;  // 原始文件名
-  string save_path = 7; // 服务端保存路径
-  string timestamp = 8; // 客户端生成的传输时间
+message FileInfo {
+  string file_id = 1;
+  string file_name = 2;
+  string file_type = 3;
+  int64 file_size = 4;
+  bytes sha256 = 5;
 }
 
-// 上传请求
 message UploadRequest {
-  FileChunk chunk = 1; // 待上传的文件块
-  int64 user_id = 2;   // 发起上传的用户 ID
+  FileInfo file = 1;
+  int64 user_id = 2;
+  int64 offset = 3;
+  bytes data = 4;
+  bool complete = 5;
 }
 
-// 上传响应
 message UploadResponse {
-  int64 seq = 1;           // 对应请求的分块序号
-  int64 user_id = 2;       // 发起上传的用户 ID
-  TransferStatus status = 3; // 当前分块的处理状态
+  int64 user_id = 1;
+  TransferStatus status = 2;
+  int64 next_offset = 3;
+  string message = 4;
 }
 
-// 发送请求
-message SendRequest {
-  FileChunk chunk = 1;   // 待发送的文件块
-  int64 sender_id = 2;   // 发送者用户 ID
-  int64 receiver_id = 3; // 接收者用户 ID
-}
+message DownloadRequest { FileInfo file = 1; int64 user_id = 2; int64 offset = 3; int64 limit = 4; }
 
-// 发送响应
-message SendResponse {
-  int64 seq = 1;             // 对应请求的分块序号
-  int64 sender_id = 2;       // 发送者用户 ID
-  int64 receiver_id = 3;     // 接收者用户 ID
-  TransferStatus status = 4; // 当前分块的处理状态
-}
-
-// 枚举定义
-enum FileType {
-  UNKNOWN = 0;  // 未指定文件类型
-  TEXT = 1;     // 纯文本文件
-  IMAGE = 2;    // 图片文件
-  VIDEO = 3;    // 视频文件
-  MARKDOWN = 4; // Markdown 文档
-  AUDIO = 5;    // 音频文件
-  OTHER = 6;    // 其他二进制文件
+message DownloadResponse {
+  bytes data = 1;
+  int64 next_offset = 2;
+  bool complete = 3;
+  TransferStatus status = 4;
+  string message = 5;
 }
 
 enum TransferStatus {
-  SUCCESS = 0; // 传输成功
-  FAILED = 1;  // 传输失败
-  PARTIAL = 2; // 仅完成部分内容
-  PENDING = 3; // 等待后续处理
+  SUCCESS = 0;
+  FAILED = 1;
+  PARTIAL = 2;
+  PENDING = 3;
 }
 
 service FileService {
-  // 上传一个文件块。
   rpc Upload(UploadRequest) returns (UploadResponse) {}
-  // 向指定用户发送一个文件块。
-  rpc Send(SendRequest) returns (SendResponse) {}
+  rpc Download(DownloadRequest) returns (DownloadResponse) {}
 }

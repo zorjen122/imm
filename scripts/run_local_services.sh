@@ -23,6 +23,7 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi}"
 : "${WIMI_REDIS_PASSWORD:=root}"
 : "${WIMI_STATE_CONFIG:=$ROOT_DIR/server/conf/state-multi.yaml}"
 : "${WIMI_GATE_CONFIG:=$ROOT_DIR/server/conf/gate.yaml}"
+: "${WIMI_FILE_CONFIG:=$ROOT_DIR/server/conf/file.yaml}"
 : "${WIMI_MESSAGE_CONFIGS:=$ROOT_DIR/server/conf/message-hunan-im.yaml $ROOT_DIR/server/conf/message-beijing-im.yaml}"
 : "${WIMI_GATEWAY_CONFIGS:=$ROOT_DIR/server/conf/gateway-hunan.yaml $ROOT_DIR/server/conf/gateway-beijing.yaml}"
 : "${WIMI_MESSAGE_LOG_LEVEL:=--info}"
@@ -194,7 +195,7 @@ start_service() {
 }
 
 start_service state "$ROOT_DIR/server/state" env WIMI_CONFIG="$WIMI_STATE_CONFIG" "$BUILD_DIR/state/state"
-start_service file "$ROOT_DIR/server/file" "$BUILD_DIR/file/file"
+start_service file "$ROOT_DIR/server/file" env WIMI_CONFIG="$WIMI_FILE_CONFIG" "$BUILD_DIR/file/file"
 message_index=1
 for message_config in $WIMI_MESSAGE_CONFIGS; do
   start_service "message-$message_index" "$ROOT_DIR/server/message" "$BUILD_DIR/message/message" "$message_config" --normal "$WIMI_MESSAGE_LOG_LEVEL"

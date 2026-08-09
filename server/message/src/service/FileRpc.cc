@@ -49,5 +49,18 @@ grpc::Status FileRpc::forwardUpload(const UploadRequest& req, UploadResponse& re
     return status;
 }
 
+grpc::Status FileRpc::forwardDownload(const DownloadRequest& req, DownloadResponse& resp)
+{
+    ClientContext context;
+    if (auto* requestContext = RequestContextScope::Current();
+        requestContext != nullptr && requestContext->deadline != RequestContext::Deadline::max())
+        context.set_deadline(requestContext->SystemDeadline());
+    auto rpc = pool->getConnection();
+    if (rpc == nullptr)
+        return grpc::Status(grpc::StatusCode::INTERNAL, "No available connection");
+    Defer defer([&]() { pool->returnConnection(std::move(rpc)); });
+    return rpc->Download(&context, req, &resp);
+}
+
 auto FileRpc::getPoolSize() const { return pool->getPoolSize(); }
 }; // namespace wimi::rpc

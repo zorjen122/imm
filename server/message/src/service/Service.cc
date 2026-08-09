@@ -90,6 +90,12 @@ void Service::Init()
                    [this](auto msgID, auto& request) { return messageService.SendText(msgID, request); });
     RegisterHandle(ID_FILE_UPLOAD_REQ, TaskType::Heavy,
                    [this](auto msgID, auto& request) { return fileService.Upload(msgID, request); });
+    RegisterHandle(ID_FILE_UPLOAD_CHUNK_REQ, TaskType::Heavy,
+                   [this](auto msgID, auto& request) { return fileService.Upload(msgID, request); });
+    RegisterHandle(ID_FILE_UPLOAD_COMPLETE_REQ, TaskType::Heavy,
+                   [this](auto msgID, auto& request) { return fileService.Upload(msgID, request); });
+    RegisterHandle(ID_FILE_DOWNLOAD_REQ, TaskType::Heavy,
+                   [this](auto msgID, auto& request) { return fileService.Download(msgID, request); });
 
     // 好友
     RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, TaskType::Heavy,

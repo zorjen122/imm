@@ -10,6 +10,7 @@ find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 file(GLOB SOURCE src/**/*.cc)
 add_library(imFile ${SOURCE})
@@ -26,6 +27,7 @@ target_link_libraries(
          imPublic
          gRPC::grpc++
          gRPC::grpc++_reflection
+         OpenSSL::Crypto
          fmt::fmt
          spdlog
          yaml-cpp

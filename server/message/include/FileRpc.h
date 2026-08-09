@@ -9,11 +9,9 @@
 namespace wimi::rpc
 {
 
-using file::FileChunk;
 using file::FileService;
-using file::FileType;
-using file::SendRequest;
-using file::SendResponse;
+using file::DownloadRequest;
+using file::DownloadResponse;
 using file::TransferStatus;
 using file::UploadRequest;
 using file::UploadResponse;
@@ -24,6 +22,7 @@ class FileRpc : public Singleton<FileRpc>
     FileRpc();
     ~FileRpc();
     grpc::Status forwardUpload(const UploadRequest& req, UploadResponse& resp);
+    grpc::Status forwardDownload(const DownloadRequest& req, DownloadResponse& resp);
     auto getPoolSize() const;
 
   private:

@@ -165,11 +165,62 @@ MessageService::AckResult MessageService::Ack(TcpPacket& request, const std::str
 
 TcpPacket MessageService::SendFile(uint32_t msgID, TcpPacket& request)
 {
-    /* 一面推送消息，一面存储消息，其中离线情况，
-    message表中的content对文件消息而言无作用，因其存储在文件系统
-    存储规则目前暂为：fileService/uid/[seq].txt
-    */
-    return {};
+    (void)msgID;
+    return AcceptFile(request).response;
+}
+
+MessageService::AcceptedFile MessageService::AcceptFile(TcpPacket request)
+{
+    AcceptedFile result;
+    const int64_t sender = request.uid();
+    const int64_t recipient = request.to();
+    if (sender <= 0 || recipient <= 0 || !request.has_file() || !request.has_client_message_id() ||
+        request.client_message_id().empty()) {
+        result.response.set_error(ErrorCodes::JsonParser);
+        result.response.set_message("to, file and client_message_id are required");
+        return result;
+    }
+    const auto file = db::MysqlDao::GetInstance()->findReadyFile(request.file().file_id(), sender);
+    if (!file) {
+        result.response.set_error(ErrorCodes::NotFound);
+        result.response.set_message("ready file not found");
+        return result;
+    }
+    const auto accepted = db::MysqlDao::GetInstance()->acceptDirectText(
+        sender,
+        recipient,
+        request.client_message_id(),
+        file->fileId,
+        getCurrentDateTime(),
+        db::Message::Type::FILE);
+    result.response.set_error(accepted.error);
+    result.response.set_retryable(isRetryableError(accepted.error));
+    result.response.set_client_message_id(request.client_message_id());
+    if (accepted.error != ErrorCodes::Success) {
+        result.response.set_message(accepted.diagnostic);
+        return result;
+    }
+    result.response.set_message_id(accepted.messageId);
+    result.response.set_conversation_id(accepted.conversationId);
+    result.response.set_conversation_seq(accepted.conversationSeq);
+    result.response.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
+    request.set_from(sender);
+    request.set_seq(accepted.messageId);
+    request.set_message_id(accepted.messageId);
+    request.set_conversation_id(accepted.conversationId);
+    request.set_conversation_seq(accepted.conversationSeq);
+    request.set_type(db::Message::Type::FILE);
+    request.set_content(file->fileId);
+    auto* metadata = request.mutable_file();
+    metadata->set_file_id(file->fileId);
+    metadata->set_file_name(file->fileName);
+    metadata->set_file_type(file->fileType);
+    metadata->set_file_size(file->fileSize);
+    metadata->set_sha256(file->sha256);
+    result.forwardPacket = std::move(request);
+    result.recipientUid = recipient;
+    result.shouldForward = !accepted.duplicate;
+    return result;
 }
 
 TcpPacket MessageService::SendGroupText(uint32_t msgID, TcpPacket& request)
@@ -226,6 +277,15 @@ TcpPacket MessageService::PullConversationMessages(uint32_t msgID, TcpPacket& re
         item->set_status(message.status);
         item->set_send_date_time(message.sendDateTime);
         item->set_read_date_time(message.readDateTime);
+        if (message.file) {
+            auto* file = item->mutable_file();
+            file->set_file_id(message.file->fileId);
+            file->set_file_name(message.file->fileName);
+            file->set_file_type(message.file->fileType);
+            file->set_file_size(message.file->fileSize);
+            file->set_sha256(message.file->sha256);
+            file->set_expired(message.file->expired);
+        }
     }
     return rsp;
 }

@@ -282,6 +282,28 @@ class GatewayStreamReactor final
             return;
         }
 
+        if (command.service_id() == ID_FILE_SEND_REQ) {
+            auto acceptedFile = Service::GetInstance()->Messages().AcceptFile(std::move(packet));
+            const auto error = TcpPacketError(acceptedFile.response);
+            reply(error, acceptedFile.response.retryable(), {}, acceptedFile.response);
+            if (acceptedFile.shouldForward) {
+                gateway::ClientForwardEnvelope forward;
+                forward.set_forward_id(std::to_string(acceptedFile.response.message_id()) + ":" +
+                                       std::to_string(acceptedFile.recipientUid));
+                forward.set_recipient_uid(acceptedFile.recipientUid);
+                forward.set_protocol_id(ID_FILE_SEND_REQ);
+                forward.set_message_id(acceptedFile.response.message_id());
+                forward.set_conversation_id(acceptedFile.response.conversation_id());
+                forward.set_conversation_seq(acceptedFile.response.conversation_seq());
+                forward.set_packet(SerializeTcpPacket(acceptedFile.forwardPacket));
+                streamService->ForwardToUser(acceptedFile.recipientUid, forward);
+                forward.set_forward_id(std::to_string(acceptedFile.response.message_id()) + ":" +
+                                       std::to_string(command.actor_uid()));
+                streamService->ForwardToUser(command.actor_uid(), std::move(forward), command.actor_device_id());
+            }
+            return;
+        }
+
         if (command.service_id() == ID_GROUP_TEXT_SEND_REQ) {
             auto acceptedText = Service::GetInstance()->Messages().AcceptGroupText(std::move(packet));
             const auto error = TcpPacketError(acceptedText.response);

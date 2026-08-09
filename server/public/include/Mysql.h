@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -59,6 +60,25 @@ struct ConversationMessageRecord {
     int status{0};
     std::string sendDateTime;
     std::string readDateTime;
+    struct FileAttachment {
+        std::string fileId;
+        std::string fileName;
+        std::string fileType;
+        int64_t fileSize{0};
+        std::string sha256;
+        bool expired{false};
+    };
+    std::optional<FileAttachment> file;
+};
+
+struct FileObjectRecord {
+    std::string fileId;
+    long ownerUid{0};
+    std::string fileName;
+    std::string fileType;
+    int64_t fileSize{0};
+    std::string sha256;
+    bool expired{false};
 };
 
 struct ConversationSyncResult {
@@ -646,7 +666,8 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
     }
 
     MessageAcceptResult acceptDirectText(long senderId, long receiverId, const std::string& clientMessageId,
-                                         const std::string& content, const std::string& sendDateTime)
+                                         const std::string& content, const std::string& sendDateTime,
+                                         int messageType = Message::Type::TEXT)
     {
         return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> MessageAcceptResult {
             MessageAcceptResult accepted;
@@ -691,7 +712,14 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
                 auto duplicateResult =
                     session
                         ->sql(
-                            R"(SELECT messageId, conversationId, conversationSeq, receiverId, type, content FROM messages WHERE senderId = ? AND clientMessageId = ?)")
+                            R"(SELECT m.messageId,
+                                      m.conversationId,
+                                      m.conversationSeq,
+                                      m.receiverId,
+                                      m.type,
+                                      m.content
+                               FROM messages m
+                               WHERE m.senderId = ? AND m.clientMessageId = ?)")
                         .bind(senderId)
                         .bind(clientMessageId)
                         .execute();
@@ -699,7 +727,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
                 if (duplicateRow) {
                     const bool sameCommand = duplicateRow[1].get<int64_t>() == accepted.conversationId &&
                                              duplicateRow[3].get<int64_t>() == receiverId &&
-                                             duplicateRow[4].get<int>() == Message::Type::TEXT &&
+                                             duplicateRow[4].get<int>() == messageType &&
                                              duplicateRow[5].get<std::string>() == content;
                     if (!sameCommand) {
                         session->rollback();
@@ -721,7 +749,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
                     .execute();
 
                 const std::string canonicalCommand = std::to_string(accepted.conversationId) + ":" +
-                                                     std::to_string(static_cast<int>(Message::Type::TEXT)) + ":" +
+                                                     std::to_string(messageType) + ":" +
                                                      content;
                 const std::string commandHash = std::to_string(std::hash<std::string>{}(canonicalCommand));
                 auto insertResult =
@@ -734,7 +762,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
                         .bind(accepted.conversationSeq)
                         .bind(clientMessageId)
                         .bind(commandHash)
-                        .bind(static_cast<int>(Message::Type::TEXT))
+                        .bind(messageType)
                         .bind(content)
                         .bind(static_cast<int>(Message::Status::WAIT))
                         .bind(sendDateTime)
@@ -752,6 +780,132 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
                 accepted.diagnostic = error.what();
                 return accepted;
             }
+        });
+    }
+
+    int upsertReadyFile(const FileObjectRecord& file, const std::string& createdTime, const std::string& expiresTime)
+    {
+        return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> int {
+            auto existing = session
+                                ->sql(R"(SELECT ownerUid FROM fileObjects WHERE fileId = ? FOR UPDATE)")
+                                .bind(file.fileId)
+                                .execute()
+                                .fetchOne();
+            if (existing && existing[0].get<long>() != file.ownerUid) {
+                return 1;
+            }
+
+            session
+                ->sql(
+                    R"(INSERT INTO fileObjects
+                           (fileId, ownerUid, fileName, fileType, fileSize, sha256, state, createdTime, expiresTime)
+                       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                       ON DUPLICATE KEY UPDATE
+                           fileName = VALUES(fileName),
+                           fileType = VALUES(fileType),
+                           fileSize = VALUES(fileSize),
+                           sha256 = VALUES(sha256),
+                           state = 1,
+                           expiresTime = VALUES(expiresTime))")
+                .bind(file.fileId)
+                .bind(file.ownerUid)
+                .bind(file.fileName)
+                .bind(file.fileType)
+                .bind(file.fileSize)
+                .bind(mysqlx::bytes(reinterpret_cast<const mysqlx::byte*>(file.sha256.data()), file.sha256.size()))
+                .bind(createdTime)
+                .bind(expiresTime)
+                .execute();
+            return 0;
+        });
+    }
+
+    int saveFileUploadProgress(long ownerUid, const std::string& fileId, int64_t nextOffset, bool complete,
+                               const std::string& updateTime)
+    {
+        return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> int {
+            session
+                ->sql(
+                    R"(INSERT INTO fileUploads (ownerUid, fileId, nextOffset, complete, updateTime)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON DUPLICATE KEY UPDATE
+                           nextOffset = VALUES(nextOffset),
+                           complete = VALUES(complete),
+                           updateTime = VALUES(updateTime))")
+                .bind(ownerUid)
+                .bind(fileId)
+                .bind(nextOffset)
+                .bind(complete ? 1 : 0)
+                .bind(updateTime)
+                .execute();
+            return 0;
+        });
+    }
+
+    std::optional<FileObjectRecord> findDownloadableFile(const std::string& fileId, long uid)
+    {
+        return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> std::optional<FileObjectRecord> {
+            auto result =
+                session
+                    ->sql(
+                        R"(SELECT f.fileId, f.ownerUid, f.fileName, f.fileType, f.fileSize, f.sha256, f.state
+                           FROM fileObjects f
+                           INNER JOIN messages m
+                               ON m.content = f.fileId AND m.type = 5
+                           INNER JOIN conversationUserStates s
+                               ON s.conversationId = m.conversationId AND s.uid = ?
+                           WHERE f.fileId = ? AND f.state = 1 AND f.expiresTime > ?
+                           LIMIT 1)")
+                    .bind(uid)
+                    .bind(fileId)
+                    .bind(getCurrentDateTime())
+                    .execute();
+            auto row = result.fetchOne();
+            if (!row) {
+                return std::nullopt;
+            }
+
+            FileObjectRecord file;
+            file.fileId = row[0].get<std::string>();
+            file.ownerUid = row[1].get<long>();
+            file.fileName = row[2].get<std::string>();
+            file.fileType = row[3].get<std::string>();
+            file.fileSize = row[4].get<int64_t>();
+
+            const auto sha256 = row[5].get<mysqlx::bytes>();
+            file.sha256.assign(reinterpret_cast<const char*>(sha256.begin()), sha256.size());
+            return file;
+        });
+    }
+
+    std::optional<FileObjectRecord> findReadyFile(const std::string& fileId, long ownerUid)
+    {
+        return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> std::optional<FileObjectRecord> {
+            auto result =
+                session
+                    ->sql(
+                        R"(SELECT fileId, ownerUid, fileName, fileType, fileSize, sha256, state
+                           FROM fileObjects
+                           WHERE fileId = ? AND ownerUid = ? AND state = 1 AND expiresTime > ?)")
+                    .bind(fileId)
+                    .bind(ownerUid)
+                    .bind(getCurrentDateTime())
+                    .execute();
+            auto row = result.fetchOne();
+            if (!row) {
+                return std::nullopt;
+            }
+
+            FileObjectRecord file;
+            file.fileId = row[0].get<std::string>();
+            file.ownerUid = row[1].get<long>();
+            file.fileName = row[2].get<std::string>();
+            file.fileType = row[3].get<std::string>();
+            file.fileSize = row[4].get<int64_t>();
+
+            const auto sha256 = row[5].get<mysqlx::bytes>();
+            file.sha256.assign(reinterpret_cast<const char*>(sha256.begin()), sha256.size());
+            return file;
         });
     }
 
@@ -907,7 +1061,36 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
             auto result =
                 session
                     ->sql(
-                        R"(SELECT messageId, senderId, receiverId, conversationId, conversationSeq, COALESCE(clientMessageId, ''), type, content, status, sendDateTime, readDateTime FROM messages WHERE conversationId = ? AND conversationSeq > ? AND conversationSeq <= ? ORDER BY conversationSeq ASC LIMIT ?)")
+                        R"(SELECT m.messageId,
+                                  m.senderId,
+                                  m.receiverId,
+                                  m.conversationId,
+                                  m.conversationSeq,
+                                  COALESCE(m.clientMessageId, ''),
+                                  m.type,
+                                  m.content,
+                                  m.status,
+                                  m.sendDateTime,
+                                  m.readDateTime,
+                                  COALESCE(f.fileId, ''),
+                                  COALESCE(f.fileName, ''),
+                                  COALESCE(f.fileType, ''),
+                                  CAST(COALESCE(f.fileSize, 0) AS SIGNED),
+                                  f.sha256,
+                                  CASE
+                                      WHEN f.fileId IS NOT NULL
+                                           AND (f.state <> 1 OR f.expiresTime <= ?) THEN 1
+                                      ELSE 0
+                                  END
+                           FROM messages m
+                           LEFT JOIN fileObjects f
+                               ON m.type = 5 AND f.fileId = m.content
+                           WHERE m.conversationId = ?
+                             AND m.conversationSeq > ?
+                             AND m.conversationSeq <= ?
+                           ORDER BY m.conversationSeq ASC
+                           LIMIT ?)")
+                    .bind(getCurrentDateTime())
                     .bind(conversationId)
                     .bind(effectiveAfter)
                     .bind(leftSeq)
@@ -930,6 +1113,19 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
                 message.status = row[8].get<int>();
                 message.sendDateTime = row[9].get<std::string>();
                 message.readDateTime = row[10].get<std::string>();
+
+                if (!row[11].get<std::string>().empty()) {
+                    ConversationMessageRecord::FileAttachment attachment;
+                    attachment.fileId = row[11].get<std::string>();
+                    attachment.fileName = row[12].get<std::string>();
+                    attachment.fileType = row[13].get<std::string>();
+                    attachment.fileSize = row[14].get<int64_t>();
+
+                    const auto sha256 = row[15].get<mysqlx::bytes>();
+                    attachment.sha256.assign(reinterpret_cast<const char*>(sha256.begin()), sha256.size());
+                    attachment.expired = row[16].get<int64_t>() != 0;
+                    message.file = std::move(attachment);
+                }
                 sync.nextSeq = message.conversationSeq;
                 sync.messages.push_back(std::move(message));
             }

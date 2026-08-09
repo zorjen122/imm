@@ -46,6 +46,16 @@ message ChatMessage {
   int64 conversation_id = 9;     // 所属会话 ID
   int64 conversation_seq = 10;   // 会话内严格递增序号
   string client_message_id = 11; // 客户端生成的持久幂等键
+  optional FileInfo file = 12;   // 文件消息的权威附件元数据
+}
+
+message FileInfo {
+  string file_id = 1;
+  string file_name = 2;
+  string file_type = 3;
+  int64 file_size = 4;
+  bytes sha256 = 5;
+  bool expired = 6;
 }
 
 enum ConversationType {
@@ -89,7 +99,7 @@ message Packet {
   optional int64 manager_uid = 27;          // 群管理员用户 ID
   optional int64 requestor_uid = 28;        // 群申请人用户 ID
   optional int64 replyor_uid = 29;          // 群申请处理人用户 ID
-  optional string content = 30;             // 文本内容或申请内容
+  optional string content = 30;             // 文本/申请内容；文件消息为 file_id
   optional string create_time = 31;         // 记录创建时间
   optional string apply_date_time = 32;     // 申请处理时间
   optional string send_date_time = 33;      // 消息发送时间
@@ -118,4 +128,8 @@ message Packet {
   optional int64 latest_seq = 56;             // 会话当前最新序号
   optional ConversationType conversation_type = 57; // 会话类型
   optional string device_id = 58;           // 客户端安装实例 UUID
+  optional FileInfo file = 59;              // 文件元数据
+  optional int64 file_offset = 60;          // 分块偏移
+  optional int64 file_next_offset = 61;     // 服务端确认的下一偏移
+  optional bool file_complete = 62;         // 传输完成标记
 }

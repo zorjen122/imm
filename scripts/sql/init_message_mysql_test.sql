@@ -16,9 +16,12 @@ DROP TABLE IF EXISTS `groupApplys`;
 DROP TABLE IF EXISTS `groupMembers`;
 DROP TABLE IF EXISTS `groupInfo`;
 DROP TABLE IF EXISTS `groups`;
+DROP TABLE IF EXISTS `messageAttachments`;
 DROP TABLE IF EXISTS `conversationDeviceStates`;
 DROP TABLE IF EXISTS `devices`;
 DROP TABLE IF EXISTS `messages`;
+DROP TABLE IF EXISTS `fileUploads`;
+DROP TABLE IF EXISTS `fileObjects`;
 DROP TABLE IF EXISTS `conversationUserStates`;
 DROP TABLE IF EXISTS `conversations`;
 DROP TABLE IF EXISTS `friends`;
@@ -106,6 +109,7 @@ CREATE TABLE `messages` (
   UNIQUE KEY `uk_messages_conversation_seq` (`conversationId`, `conversationSeq`),
   UNIQUE KEY `uk_messages_sender_client` (`senderId`, `clientMessageId`),
   KEY `idx_messages_conversation_pull` (`conversationId`, `conversationSeq`),
+  KEY `idx_messages_file_content` (`content`(36)),
   KEY `idx_messages_participants_pull` (`senderId`, `receiverId`, `messageId`),
   KEY `idx_messages_receiver_pull` (`receiverId`, `messageId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -115,6 +119,30 @@ CREATE TABLE `groupInfo` (
   `name` VARCHAR(128) NOT NULL DEFAULT '',
   `createTime` VARCHAR(32) NOT NULL DEFAULT '',
   PRIMARY KEY (`groupId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `fileObjects` (
+  `fileId` VARCHAR(36) NOT NULL,
+  `ownerUid` BIGINT UNSIGNED NOT NULL,
+  `fileName` VARCHAR(255) NOT NULL,
+  `fileType` VARCHAR(128) NOT NULL,
+  `fileSize` BIGINT UNSIGNED NOT NULL,
+  `sha256` BINARY(32) NOT NULL,
+  `state` SMALLINT NOT NULL DEFAULT 1 COMMENT '1 ready, 2 expired',
+  `createdTime` VARCHAR(32) NOT NULL DEFAULT '',
+  `expiresTime` VARCHAR(32) NOT NULL DEFAULT '',
+  PRIMARY KEY (`fileId`),
+  KEY `idx_fileObjects_owner_state` (`ownerUid`, `state`, `expiresTime`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `fileUploads` (
+  `ownerUid` BIGINT UNSIGNED NOT NULL,
+  `fileId` VARCHAR(36) NOT NULL,
+  `nextOffset` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `complete` TINYINT NOT NULL DEFAULT 0,
+  `updateTime` VARCHAR(32) NOT NULL DEFAULT '',
+  PRIMARY KEY (`ownerUid`, `fileId`),
+  KEY `idx_fileUploads_update` (`complete`, `updateTime`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `groupMembers` (

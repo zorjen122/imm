@@ -24,6 +24,7 @@ class MessageService
         std::vector<int64_t> recipientUids;
         bool shouldForward{false};
     };
+    using AcceptedFile = AcceptedText;
 
     struct AckResult {
         TcpPacket response;
@@ -34,6 +35,7 @@ class MessageService
 
     AcceptedText AcceptText(TcpPacket request);
     AcceptedGroupText AcceptGroupText(TcpPacket request);
+    AcceptedFile AcceptFile(TcpPacket request);
 
     AckResult Ack(TcpPacket& request, const std::string& deviceId);
     TcpPacket SendText(uint32_t msgID, TcpPacket& request);
