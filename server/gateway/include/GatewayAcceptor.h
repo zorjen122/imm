@@ -8,10 +8,10 @@ namespace wimi::connection
 class MessageLinkManager;
 class SessionManager;
 
-class GatewayServer
+class GatewayAcceptor
 {
   public:
-    GatewayServer(boost::asio::io_context& ioContext, unsigned short port, SessionManager& registry,
+    GatewayAcceptor(boost::asio::io_context& ioContext, unsigned short port, SessionManager& registry,
                   MessageLinkManager& messageLinks, boost::asio::thread_pool& businessPool);
 
     boost::asio::awaitable<void> Run();

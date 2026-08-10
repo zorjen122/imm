@@ -1,5 +1,5 @@
 #include "Configer.h"
-#include "GatewayServer.h"
+#include "GatewayAcceptor.h"
 #include "Logger.h"
 #include "MessageLinkManager.h"
 #include "Mysql.h"
@@ -47,7 +47,7 @@ int main(int argc, char** argv)
         [&sessions](const wimi::gateway::ClientForwardEnvelope& forward) { return sessions.Forward(forward); });
     messageLinks.Start();
 
-    wimi::connection::GatewayServer server(ioContext, port, sessions, messageLinks, businessPool);
+    wimi::connection::GatewayAcceptor server(ioContext, port, sessions, messageLinks, businessPool);
     boost::asio::co_spawn(ioContext, server.Run(), boost::asio::detached);
 
     boost::asio::signal_set signals(ioContext, SIGINT, SIGTERM);

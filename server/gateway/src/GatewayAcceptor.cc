@@ -1,4 +1,4 @@
-#include "GatewayServer.h"
+#include "GatewayAcceptor.h"
 
 #include "GatewaySession.h"
 #include "Logger.h"
@@ -13,7 +13,7 @@ namespace wimi::connection
 {
 namespace asio = boost::asio;
 
-GatewayServer::GatewayServer(asio::io_context& ioContext, unsigned short port, SessionManager& sessionManager,
+GatewayAcceptor::GatewayAcceptor(asio::io_context& ioContext, unsigned short port, SessionManager& sessionManager,
                              MessageLinkManager& messageLinks, asio::thread_pool& businessPool)
     : ioContext(ioContext), acceptor(ioContext, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port)),
       manager(sessionManager), messageLinks(messageLinks), businessPool(businessPool)
@@ -21,7 +21,7 @@ GatewayServer::GatewayServer(asio::io_context& ioContext, unsigned short port, S
     acceptor.set_option(asio::socket_base::reuse_address(true));
 }
 
-asio::awaitable<void> GatewayServer::Run()
+asio::awaitable<void> GatewayAcceptor::Run()
 {
     asio::steady_timer readinessTimer(ioContext);
     while (!messageLinks.Ready()) {
