@@ -6,7 +6,6 @@ rpc/
 logs/
 .demos/*
 .agents/
-.codex/
 __pycache__/
 *.pyc
 *.o
@@ -14,3 +13,4 @@ __pycache__/
 compile_commands.json
 docs/.*
 design/
+TASKS.md

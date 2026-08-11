@@ -1,12 +1,5 @@
 # 工作区
 
-## 项目结构
-
-- C++ 服务位于 `server/{gate,state,chat,file}` 下。
-- 共享的 protobuf、数据库、Redis、网络和日志代码位于 `server/public` 下。
-- `server/verify` 是一个 Node.js gRPC 服务。
-- 本地配置应放在 `server/conf` 中；构建产物应放在 `build/wim` 中。
-
 ## 验证
 
 ```bash
