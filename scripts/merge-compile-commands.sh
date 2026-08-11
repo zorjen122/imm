@@ -10,14 +10,14 @@ set -euo pipefail
 #   编译数据库，因此需要合并。合并会保留每条记录的 directory 字段，command 中的
 #   相对路径仍按原构建目录解析，因此安全。
 # 常用方式：
-#   ./scripts/merge_compile_commands.sh
+#   ./scripts/merge-compile-commands.sh
 # 指定输入（默认 server=build/wimi，client=build/client-clang）：
-#   WIMI_SERVER_DB=... WIMI_CLIENT_DB=... ./scripts/merge_compile_commands.sh
+#   WIMI_SERVER_DB=... WIMI_CLIENT_DB=... ./scripts/merge-compile-commands.sh
 #   或直接追加位置参数，可传任意多个数据库：
-#   ./scripts/merge_compile_commands.sh build/wimi/compile_commands.json \
+#   ./scripts/merge-compile-commands.sh build/wimi/compile_commands.json \
 #       build/client-clang/compile_commands.json
 # 指定输出文件（默认仓库根 compile_commands.json）：
-#   ./scripts/merge_compile_commands.sh -o /tmp/cc.json
+#   ./scripts/merge-compile-commands.sh -o /tmp/cc.json
 # 前置条件：
 #   已分别执行 ./scripts/build.sh 与 client 的 CMake 构建，使得
 #   build/wimi/compile_commands.json 与 build/client-clang/compile_commands.json 存在。
@@ -33,7 +33,7 @@ OUTPUT="${OUTPUT:-$ROOT_DIR/build/compile_commands.json}"
 
 usage() {
   cat <<EOF
-Usage: ./scripts/merge_compile_commands.sh [-o OUTPUT] [INPUT ...]
+Usage: ./scripts/merge-compile-commands.sh [-o OUTPUT] [INPUT ...]
 
 Merge multiple compile_commands.json into one database for clangd.
 

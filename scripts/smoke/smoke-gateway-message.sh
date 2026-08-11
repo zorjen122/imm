@@ -2,21 +2,21 @@
 set -euo pipefail
 
 # Verifies the first-phase Connection Gateway topology with G=2 and N=2.
-# The test uses the three default users created by init_mysql.sh and writes
+# The test uses the three default users created by init-mysql.sh and writes
 # temporary group, conversation, file and message rows to chatServ.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<EOF
-Usage: ./scripts/smoke_gateway_message.sh
+Usage: ./scripts/smoke/smoke-gateway-message.sh
 
 Start the multi-node stack first:
-  ./scripts/init_mysql.sh
+  ./scripts/init-mysql.sh
   WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \
   WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \
   WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \
-    ./scripts/run_local_services.sh
+    ./scripts/run-local-services.sh
 
 Checks:
   - default users zorjen(1001), alice(1002) and bob(1003) exist
@@ -110,7 +110,7 @@ WHERE (uid, username) IN (
 );" 2>/dev/null
 )"
 if [[ "$default_user_count" != "3" ]]; then
-  echo "expected default users zorjen(1001), alice(1002), bob(1003); run ./scripts/init_mysql.sh first" >&2
+  echo "expected default users zorjen(1001), alice(1002), bob(1003); run ./scripts/init-mysql.sh first" >&2
   exit 1
 fi
 

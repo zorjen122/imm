@@ -64,16 +64,19 @@ The build generates gRPC/protobuf C++ sources into the CMake build directory.
 ## Initialize Data
 
 ```bash
-./scripts/init_mysql.sh
-./scripts/start_redis.sh
+./scripts/init-mysql.sh
+./scripts/start-redis.sh
 ```
 
-`init_mysql.sh` creates the `zorjen/root` MySQL user and imports `scripts/sql/init_message_mysql_test.sql`.
+`init-mysql.sh` creates the `zorjen/root` MySQL account and imports
+`scripts/sql/init_message_mysql_test.sql`. The seed data contains three chat
+users: `zorjen` (1001), `alice` (1002), and `bob` (1003), all with password
+`123456`.
 
 ## Run Services
 
 ```bash
-./scripts/run_local_services.sh
+./scripts/run-local-services.sh
 ```
 
 For local smoke tests, Gate stores the code in Redis and includes it in the HTTP
@@ -86,7 +89,7 @@ To run two Message nodes for cross-node forwarding:
 WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
 WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
 WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
-./scripts/run_local_services.sh
+./scripts/run-local-services.sh
 ```
 
 ## Smoke Commands
@@ -94,22 +97,22 @@ WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gatew
 Focused protocol smoke tests:
 
 ```bash
-./scripts/smoke_text_delivery.sh
-./scripts/smoke_relationships.sh
+./scripts/smoke/smoke-base.sh
 ```
 
-They verify Gate login, Gateway authentication, TCP message delivery,
-conversation persistence, ACK handling, relationship paths, and message
-synchronization.
+It verifies registration, Gate login, state routing, text persistence, file
+upload, and online message delivery.
 
 With the two-node service command above, run:
 
 ```bash
-./scripts/smoke_gateway_message.sh
+./scripts/smoke/smoke-gateway-message.sh
+./scripts/smoke/smoke-multi-chat.sh
 ```
 
-It verifies the `G x N` Gateway-Message stream topology, cross-Gateway text
-delivery, idempotency, group conversation sequence allocation, and sync repair.
+They verify the `G x N` Gateway-Message stream topology, cross-Gateway text
+delivery, idempotency, group conversation sequence allocation, sync repair,
+and cross-node relationship paths.
 
 Manual smoke commands:
 

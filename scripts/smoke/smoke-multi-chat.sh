@@ -15,14 +15,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<EOF
-Usage: ./scripts/smoke_multi_chat.sh
+Usage: ./scripts/smoke/smoke-multi-chat.sh
 
 Requires two gateway services, two message services, and shared dependencies to be running, for example:
-  ./scripts/init_mysql.sh
+  ./scripts/init-mysql.sh
   WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
   WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \\
   WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \\
-    ./scripts/run_local_services.sh
+    ./scripts/run-local-services.sh
 
 Verifies the currently supported multi-message-node path:
   - user A logs in to gateway node 1, user B logs in to gateway node 2
@@ -81,13 +81,13 @@ PY
 if ! check_chat_port "gateway node A" "$CHAT_A_HOST" "$CHAT_A_PORT" ||
   ! check_chat_port "gateway node B" "$CHAT_B_HOST" "$CHAT_B_PORT"; then
   cat >&2 <<EOF
-smoke_multi_chat.sh requires two gateway nodes before it writes test data.
+smoke-multi-chat.sh requires two gateway nodes before it writes test data.
 
 Start the local stack in multi-chat mode:
   WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
   WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \\
   WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \\
-    ./scripts/run_local_services.sh
+    ./scripts/run-local-services.sh
 
 Current expected TCP endpoints:
   gateway node A: $CHAT_A_HOST:$CHAT_A_PORT

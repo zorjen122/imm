@@ -42,8 +42,8 @@ Message 节点之间不再建立业务转发连接；Gateway 之间也不直接�
 | --- | --- | --- | --- |
 | S1 | C++20 server 总工程构建 | 已验证 | `server/CMakeLists.txt` 已统一 `CMAKE_CXX_STANDARD 20`，构建命令为 `cmake -S server -B build/wimi`、`cmake --build build/wwimi-j2`。 |
 | S2 | public protobuf/gRPC 生成 | 已验证 | `tcp_message.proto`、`state.proto`、`gateway_message.proto` 由 `server/public` 生成；客户端只依赖 TCP 公开协议，Gateway-Message 协议只在服务端内部使用。 |
-| S3 | MySQL 初始化 | 已验证 | `./scripts/init_mysql.sh` 初始化 `chatServ` 与测试数据；消息模型包含 `conversations`、`conversationUserStates`、`messages`、`devices`、`conversationDeviceStates`、`fileObjects` 和 `fileUploads`。文件消息的 `messages.content` 保存 `fileId`。好友使用 canonical uid pair 和 `friendshipId`，群表使用明确的 `groupId`。 |
-| S4 | 本地服务编排 | 部分验证 | `./scripts/run_local_services.sh` 启动 state/file/message/gateway/gate，并支持 `--stop-existing`。干净构建下仍有历史测试客户端产物依赖。 |
+| S3 | MySQL 初始化 | 已验证 | `./scripts/init-mysql.sh` 初始化 `chatServ` 与测试数据；消息模型包含 `conversations`、`conversationUserStates`、`messages`、`devices`、`conversationDeviceStates`、`fileObjects` 和 `fileUploads`。文件消息的 `messages.content` 保存 `fileId`。好友使用 canonical uid pair 和 `friendshipId`，群表使用明确的 `groupId`。 |
+| S4 | 本地服务编排 | 部分验证 | `./scripts/run-local-services.sh` 启动 state/file/message/gateway/gate，并支持 `--stop-existing`。干净构建下仍有历史测试客户端产物依赖。 |
 | S5 | State 选择 Connection Gateway | 已验证 | Gate 登录调用 `PickConnectionGateway`，返回 `ip/port/gatewayId`，不再向客户端返回 Message 节点地址。 |
 | S6 | State 返回 Message 拓扑 | 部分验证 | Gateway 每 5 秒调用 `ListMessageNodes` 拉取带 `topology_version` 的 Message 节点快照；节点增删与排空故障分支仍需专项测试。 |
 | S7 | Gate 内置邮箱验证码 | 已验证 | `/post-verifycode` 由 C++ Gate 进程内处理，Redis Lua 原子控制 TTL、重发冷却、错误次数；本地可返回 `verificationCode`，生产应关闭响应暴露并启用 SMTP。 |
@@ -76,8 +76,7 @@ Message 节点之间不再建立业务转发连接；Gateway 之间也不直接�
 | `cmake -S server -B build/wimi` | 配置 server 总工程、生成 protobuf/gRPC 代码。 | 已验证。 |
 | `cmake --build build/wimi -j2` | 编译 gate/state/file/message/gateway/public tests。 | 已验证。 |
 | `ctest --test-dir build/wimi --output-on-failure` | public、state、file、gate 的当前 CTest。 | 已验证。 |
-| `./scripts/check_format.sh` | C++/脚本基础格式检查。 | 已验证。 |
-| `./scripts/run_local_services.sh --stop-existing` | 停旧服务并启动本地联调拓扑。 | 脚本仍检查旧测试客户端产物；干净构建下不可作为独立验收入口。 |
-| `./scripts/smoke_gateway_message.sh` | G x N 流数量、跨 Gateway 单聊、幂等冲突、群聊 seq、同步修复。 | 需要先用 `G=2、N=2` 配置启动本地服务。 |
-| `./scripts/smoke_text_delivery.sh` | 在线文本投递、身份 canonicalize、DELIVERED/READ ACK 状态推进。 | 默认连接 Gateway TCP 端口；脚本变量名仍为 `CHAT_HOST/CHAT_PORT`。 |
-| `./scripts/smoke.sh` | 验证码、注册、登录路由、离线文本、文件上传、在线直推。 | 仍引用旧测试客户端工作目录；干净构建下不可作为独立验收入口。 |
+| `./scripts/check-format.sh` | C++/脚本基础格式检查。 | 已验证。 |
+| `./scripts/run-local-services.sh --stop-existing` | 停旧服务并启动本地联调拓扑。 | 脚本仍检查旧测试客户端产物；干净构建下不可作为独立验收入口。 |
+| `./scripts/smoke/smoke-gateway-message.sh` | G x N 流数量、跨 Gateway 单聊、幂等冲突、群聊 seq、同步修复。 | 需要先用 `G=2、N=2` 配置启动本地服务。 |
+| `./scripts/smoke/smoke-base.sh` | 验证码、注册、登录路由、离线文本、文件上传、在线直推。 | 仍引用旧测试客户端工作目录；干净构建下不可作为独立验收入口。 |

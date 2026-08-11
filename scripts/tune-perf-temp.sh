@@ -6,10 +6,10 @@ set -euo pipefail
 #   该脚本只使用 sysctl -w，不会写入 /etc/sysctl.conf 或 systemd 配置。
 #   文件描述符限制只能影响本脚本启动的子进程；可使用 run 子命令包装服务启动。
 # 常用方式：
-#   ./scripts/tune_perf_temp.sh show
-#   ./scripts/tune_perf_temp.sh apply
-#   ./scripts/tune_perf_temp.sh restore
-#   ./scripts/tune_perf_temp.sh run ./scripts/run_local_services.sh
+#   ./scripts/tune-perf-temp.sh show
+#   ./scripts/tune-perf-temp.sh apply
+#   ./scripts/tune-perf-temp.sh restore
+#   ./scripts/tune-perf-temp.sh run ./scripts/run-local-services.sh
 
 STATE_FILE="${WIMI_TUNE_STATE_FILE:-/tmp/wwimiperf-sysctl.state}"
 NOFILE_LIMIT="${WIMI_TUNE_NOFILE:-1048576}"

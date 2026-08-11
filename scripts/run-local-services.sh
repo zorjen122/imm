@@ -3,18 +3,18 @@ set -euo pipefail
 
 # 作用：
 #   启动本地联调所需的 state/file/message/gateway/gate 服务。
-#   若 Redis 未运行，会调用 start_redis.sh 启动临时 Redis；脚本退出时会清理本次启动的服务。
+#   若 Redis 未运行，会调用 start-redis.sh 启动临时 Redis；脚本退出时会清理本次启动的服务。
 # 常用方式：
-#   ./scripts/run_local_services.sh
+#   ./scripts/run-local-services.sh
 # 停止当前用户从本仓库启动的旧 WIMI 服务，然后启动新服务：
-#   ./scripts/run_local_services.sh --stop-existing
+#   ./scripts/run-local-services.sh --stop-existing
 # G=2、N=2 方式：
   # WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
   # WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
   # WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
-  #   ./scripts/run_local_services.sh
+  #   ./scripts/run-local-services.sh
 # 前置条件：
-#   先执行 ./scripts/build.sh；需要 MySQL 已可连接，通常也会先执行 ./scripts/init_mysql.sh。
+#   先执行 ./scripts/build.sh；需要 MySQL 已可连接，通常也会先执行 ./scripts/init-mysql.sh。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi}"
@@ -30,7 +30,7 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi}"
 
 usage() {
   cat <<EOF
-Usage: ./scripts/run_local_services.sh [--stop-existing]
+Usage: ./scripts/run-local-services.sh [--stop-existing]
 
 Options:
   --stop-existing  Stop WIMI services started by the current user from this
@@ -167,7 +167,7 @@ redis_ping() {
 if ! redis_ping; then
   started_redis=1
 fi
-"$ROOT_DIR/scripts/start_redis.sh"
+"$ROOT_DIR/scripts/start-redis.sh"
 
 pids=()
 cleanup() {

@@ -60,13 +60,15 @@ sudo apt-get install -y libmysqlcppconn-dev libmysqlcppconn10 libmysqlcppconnx2
 
 ```bash
 ./scripts/build.sh
-./scripts/init_mysql.sh
-./scripts/start_redis.sh
-./scripts/run_local_services.sh
+./scripts/init-mysql.sh
+./scripts/start-redis.sh
+./scripts/run-local-services.sh
 ```
 
-构建会在 CMake 构建目录生成 gRPC/protobuf C++ 源码。`init_mysql.sh` 会创建本地
-`zorjen/root` MySQL 用户，并导入 `scripts/sql/init_message_mysql_test.sql`。
+构建会在 CMake 构建目录生成 gRPC/protobuf C++ 源码。`init-mysql.sh` 会创建本地
+`zorjen/root` MySQL 账号，并导入 `scripts/sql/init_message_mysql_test.sql`。种子数据包含
+三个聊天用户：`zorjen`（1001）、`alice`（1002）和 `bob`（1003），密码均为
+`123456`。
 
 本地 smoke 为方便验证，会通过 `gate.yaml` 中的 `exposeCodeInResponse` 返回验证码。
 生产环境必须关闭该选项并配置 SMTP。
@@ -79,7 +81,7 @@ sudo apt-get install -y libmysqlcppconn-dev libmysqlcppconn10 libmysqlcppconnx2
 WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
 WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
 WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
-./scripts/run_local_services.sh
+./scripts/run-local-services.sh
 ```
 
 ## Smoke 测试
@@ -87,17 +89,17 @@ WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gatew
 默认服务启动后：
 
 ```bash
-./scripts/smoke_text_delivery.sh
-./scripts/smoke_relationships.sh
+./scripts/smoke/smoke-base.sh
 ```
 
-它们覆盖 Gate 登录、Gateway 鉴权、TCP 消息投递、会话持久化、ACK、关系和消息同步。
+该脚本覆盖注册、Gate 登录、state 路由、文本消息落库、文件上传和在线消息投递。
 
 启动上面的 `G × N` 拓扑后，再执行：
 
 ```bash
-./scripts/smoke_gateway_message.sh
+./scripts/smoke/smoke-gateway-message.sh
+./scripts/smoke/smoke-multi-chat.sh
 ```
 
-该脚本验证 Gateway-Message 服务流拓扑、跨 Gateway 文本投递、幂等、群会话序号分配和
-同步修复。
+这些脚本验证 Gateway-Message 服务流拓扑、跨 Gateway 文本投递、幂等、群会话序号分配、
+同步修复和跨节点关系流程。

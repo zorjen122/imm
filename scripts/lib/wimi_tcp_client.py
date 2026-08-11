@@ -42,13 +42,17 @@ ID_ACK = 1033
 
 
 FIELD_MAP = {
+    "fileId": "file_id",
     "requestMessage": "request_message",
     "replyMessage": "reply_message",
     "headImageURL": "head_image_url",
     "fileName": "file_name",
+    "fileType": "file_type",
+    "fileSize": "file_size",
+    "fileOffset": "file_offset",
+    "fileComplete": "file_complete",
     "groupName": "group_name",
     "groupId": "group_id",
-    "managerUid": "manager_uid",
     "requestorUid": "requestor_uid",
     "replyorUid": "replyor_uid",
     "applyDateTime": "apply_date_time",
@@ -71,6 +75,13 @@ FIELD_MAP = {
 
 
 def _set_scalar(packet, key, value):
+    if key == "file":
+        file = packet.file
+        for file_key, file_value in value.items():
+            if file_key == "sha256" and isinstance(file_value, str):
+                file_value = bytes.fromhex(file_value)
+            setattr(file, FIELD_MAP.get(file_key, file_key), file_value)
+        return
     if key == "type" and isinstance(value, str):
         packet.file_type = value
         return
@@ -122,7 +133,6 @@ def decode_packet(data):
         ("limit", "limit"),
         ("group_id", "groupId"),
         ("group_name", "groupName"),
-        ("manager_uid", "managerUid"),
         ("requestor_uid", "requestorUid"),
         ("replyor_uid", "replyorUid"),
         ("content", "content"),
@@ -131,8 +141,6 @@ def decode_packet(data):
         ("send_date_time", "sendDateTime"),
         ("read_date_time", "readDateTime"),
         ("join_time", "joinTime"),
-        ("role", "role"),
-        ("speech", "speech"),
         ("auth_token", "authToken"),
         ("message_id", "messageId"),
         ("message_state", "messageState"),
@@ -148,6 +156,10 @@ def decode_packet(data):
         ("latest_seq", "latestSeq"),
         ("conversation_type", "conversationType"),
         ("device_id", "deviceId"),
+        ("file_offset", "fileOffset"),
+        ("file_next_offset", "fileNextOffset"),
+        ("file_complete", "fileComplete"),
+        ("group_change_kind", "groupChangeKind"),
     ]
 
     for proto_name, json_name in scalar_fields:
@@ -199,11 +211,18 @@ def decode_packet(data):
             "uid": item.uid,
             "name": item.name,
             "joinTime": item.join_time,
-            "role": item.role,
-            "speech": item.speech,
         }
         for item in packet.member_list
     ]
+    if packet.HasField("file"):
+        result["file"] = {
+            "fileId": packet.file.file_id,
+            "fileName": packet.file.file_name,
+            "type": packet.file.file_type,
+            "fileSize": packet.file.file_size,
+            "sha256": packet.file.sha256.hex(),
+            "expired": packet.file.expired,
+        }
 
     return result
 
