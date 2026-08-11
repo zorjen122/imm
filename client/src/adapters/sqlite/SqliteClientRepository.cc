@@ -81,10 +81,11 @@ ClientSnapshot SqliteClientRepository::LoadScenario(const QString&) const
     }
 
     QSqlQuery conversationsQuery(database_);
-    if (!conversationsQuery.exec(QStringLiteral("SELECT conversation_id, title, preview, timestamp, avatar_color, "
-                                                "remote_conversation_id, unread_count, pinned, muted, online, "
-                                                "draft_text "
-                                                "FROM conversations ORDER BY pinned DESC, sort_order ASC"))) {
+    if (!conversationsQuery.exec(
+            QStringLiteral("SELECT conversation_id, title, preview, timestamp, avatar_color, "
+                           "remote_conversation_id, unread_count, pinned, muted, online, "
+                           "draft_text "
+                           "FROM conversations WHERE active = 1 ORDER BY pinned DESC, sort_order ASC"))) {
         SetError(conversationsQuery.lastError().text());
         return snapshot;
     }
@@ -177,6 +178,51 @@ ClientSnapshot SqliteClientRepository::LoadScenario(const QString&) const
 }
 
 QString SqliteClientRepository::RepositoryKind() const { return QStringLiteral("sqlite"); }
+
+std::optional<std::int64_t> SqliteClientRepository::BoundUserId() const
+{
+    if (!IsReady()) {
+        return std::nullopt;
+    }
+
+    QSqlQuery query(database_);
+    if (!query.exec(QStringLiteral("SELECT uid FROM account_identity WHERE singleton = 1"))) {
+        SetError(query.lastError().text());
+        return std::nullopt;
+    }
+    if (!query.next()) {
+        return std::nullopt;
+    }
+    return query.value(0).toLongLong();
+}
+
+bool SqliteClientRepository::BindUser(std::int64_t uid, const QString& username)
+{
+    if (!IsReady() || uid <= 0) {
+        SetError(QStringLiteral("cannot bind an invalid user identity"));
+        return false;
+    }
+
+    QSqlQuery query(database_);
+    query.prepare(QStringLiteral("INSERT INTO account_identity(singleton, uid, username) VALUES(1, ?, ?) "
+                                 "ON CONFLICT(singleton) DO UPDATE SET username = excluded.username "
+                                 "WHERE account_identity.uid = excluded.uid"));
+    query.addBindValue(static_cast<qlonglong>(uid));
+    query.addBindValue(username);
+    if (!query.exec()) {
+        SetError(query.lastError().text());
+        return false;
+    }
+
+    const auto boundUid = BoundUserId();
+    if (!boundUid.has_value() || *boundUid != uid) {
+        SetError(boundUid.has_value()
+                     ? QStringLiteral("local account is bound to uid %1, not uid %2").arg(*boundUid).arg(uid)
+                     : QStringLiteral("cannot verify the local account identity"));
+        return false;
+    }
+    return true;
+}
 
 bool SqliteClientRepository::EnqueueOutgoing(const QString& conversationId, const MessageRecord& message)
 {
@@ -303,14 +349,14 @@ bool SqliteClientRepository::SaveConversation(const ConversationRecord& conversa
     QSqlQuery query(database_);
     query.prepare(QStringLiteral("INSERT INTO conversations(conversation_id, title, preview, timestamp, "
                                  "avatar_color, remote_conversation_id, unread_count, pinned, muted, "
-                                 "online, sort_order) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                                 "(SELECT COALESCE(MIN(sort_order), 0) - 1 FROM conversations)) "
+                                 "online, sort_order, active) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                                 "(SELECT COALESCE(MIN(sort_order), 0) - 1 FROM conversations), 1) "
                                  "ON CONFLICT(conversation_id) DO UPDATE SET title = excluded.title, "
                                  "preview = excluded.preview, timestamp = excluded.timestamp, "
                                  "avatar_color = excluded.avatar_color, remote_conversation_id = "
                                  "COALESCE(excluded.remote_conversation_id, remote_conversation_id), "
                                  "unread_count = excluded.unread_count, pinned = excluded.pinned, "
-                                 "muted = excluded.muted, online = excluded.online"));
+                                 "muted = excluded.muted, online = excluded.online, active = 1"));
     query.addBindValue(conversation.conversationId);
     query.addBindValue(conversation.title.isNull() ? QStringLiteral("") : conversation.title);
     query.addBindValue(conversation.preview.isNull() ? QStringLiteral("") : conversation.preview);
@@ -323,6 +369,20 @@ bool SqliteClientRepository::SaveConversation(const ConversationRecord& conversa
     query.addBindValue(conversation.pinned);
     query.addBindValue(conversation.muted);
     query.addBindValue(conversation.online);
+    if (!query.exec()) {
+        SetError(query.lastError().text());
+        return false;
+    }
+    return true;
+}
+
+bool SqliteClientRepository::RemoveConversation(const QString& conversationId)
+{
+    if (!IsReady())
+        return false;
+    QSqlQuery query(database_);
+    query.prepare(QStringLiteral("UPDATE conversations SET active = 0 WHERE conversation_id = ?"));
+    query.addBindValue(conversationId);
     if (!query.exec()) {
         SetError(query.lastError().text());
         return false;
@@ -494,12 +554,13 @@ QVector<FileUploadRecord> SqliteClientRepository::LoadFileUploads() const
 bool SqliteClientRepository::SaveFileUpload(const FileUploadRecord& upload)
 {
     QSqlQuery query(database_);
-    query.prepare(QStringLiteral("INSERT INTO file_uploads(file_id, source_path, file_name, file_type, file_size, "
-                                 "next_offset, conversation_id, upload_complete, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, "
-                                 "strftime('%s','now')) ON CONFLICT(file_id) DO UPDATE SET source_path=excluded.source_path, "
-                                 "file_name=excluded.file_name,file_type=excluded.file_type,file_size=excluded.file_size,"
-                                 "next_offset=excluded.next_offset,conversation_id=excluded.conversation_id,"
-                                 "upload_complete=excluded.upload_complete,updated_at=excluded.updated_at"));
+    query.prepare(
+        QStringLiteral("INSERT INTO file_uploads(file_id, source_path, file_name, file_type, file_size, "
+                       "next_offset, conversation_id, upload_complete, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, "
+                       "strftime('%s','now')) ON CONFLICT(file_id) DO UPDATE SET source_path=excluded.source_path, "
+                       "file_name=excluded.file_name,file_type=excluded.file_type,file_size=excluded.file_size,"
+                       "next_offset=excluded.next_offset,conversation_id=excluded.conversation_id,"
+                       "upload_complete=excluded.upload_complete,updated_at=excluded.updated_at"));
     query.addBindValue(upload.fileId);
     query.addBindValue(upload.sourcePath);
     query.addBindValue(upload.fileName);
@@ -523,32 +584,41 @@ QVector<FileDownloadRecord> SqliteClientRepository::LoadFileDownloads() const
 {
     QVector<FileDownloadRecord> downloads;
     QSqlQuery query(database_);
-    if (!query.exec(QStringLiteral("SELECT file_id, file_type, sha256, file_size, next_offset, temporary_path FROM file_downloads")))
+    if (!query.exec(QStringLiteral(
+            "SELECT file_id, file_type, sha256, file_size, next_offset, temporary_path FROM file_downloads")))
         return downloads;
-    while (query.next()) downloads.push_back(FileDownloadRecord{.fileId = query.value(0).toString(),
-        .fileType = query.value(1).toString(), .sha256 = query.value(2).toByteArray(),
-        .fileSize = query.value(3).toLongLong(), .nextOffset = query.value(4).toLongLong(),
-        .temporaryPath = query.value(5).toString()});
+    while (query.next())
+        downloads.push_back(FileDownloadRecord{.fileId = query.value(0).toString(),
+                                               .fileType = query.value(1).toString(),
+                                               .sha256 = query.value(2).toByteArray(),
+                                               .fileSize = query.value(3).toLongLong(),
+                                               .nextOffset = query.value(4).toLongLong(),
+                                               .temporaryPath = query.value(5).toString()});
     return downloads;
 }
 
 bool SqliteClientRepository::SaveFileDownload(const FileDownloadRecord& download)
 {
     QSqlQuery query(database_);
-    query.prepare(QStringLiteral("INSERT INTO file_downloads(file_id,file_type,sha256,file_size,next_offset,temporary_path,updated_at) "
-                                 "VALUES(?,?,?,?,?,?,strftime('%s','now')) ON CONFLICT(file_id) DO UPDATE SET "
-                                 "file_type=excluded.file_type,sha256=excluded.sha256,file_size=excluded.file_size,"
-                                 "next_offset=excluded.next_offset,temporary_path=excluded.temporary_path,updated_at=excluded.updated_at"));
-    query.addBindValue(download.fileId); query.addBindValue(download.fileType);
-    query.addBindValue(download.sha256); query.addBindValue(QVariant::fromValue<qlonglong>(download.fileSize));
-    query.addBindValue(QVariant::fromValue<qlonglong>(download.nextOffset)); query.addBindValue(download.temporaryPath);
+    query.prepare(QStringLiteral(
+        "INSERT INTO file_downloads(file_id,file_type,sha256,file_size,next_offset,temporary_path,updated_at) "
+        "VALUES(?,?,?,?,?,?,strftime('%s','now')) ON CONFLICT(file_id) DO UPDATE SET "
+        "file_type=excluded.file_type,sha256=excluded.sha256,file_size=excluded.file_size,"
+        "next_offset=excluded.next_offset,temporary_path=excluded.temporary_path,updated_at=excluded.updated_at"));
+    query.addBindValue(download.fileId);
+    query.addBindValue(download.fileType);
+    query.addBindValue(download.sha256);
+    query.addBindValue(QVariant::fromValue<qlonglong>(download.fileSize));
+    query.addBindValue(QVariant::fromValue<qlonglong>(download.nextOffset));
+    query.addBindValue(download.temporaryPath);
     return query.exec();
 }
 
 bool SqliteClientRepository::RemoveFileDownload(const QString& fileId)
 {
     QSqlQuery query(database_);
-    query.prepare(QStringLiteral("DELETE FROM file_downloads WHERE file_id=?")); query.addBindValue(fileId);
+    query.prepare(QStringLiteral("DELETE FROM file_downloads WHERE file_id=?"));
+    query.addBindValue(fileId);
     return query.exec();
 }
 
@@ -711,7 +781,8 @@ bool SqliteClientRepository::Migrate()
     }
     QStringList versionFourStatements;
     if (!ColumnExists(database_, QStringLiteral("messages"), QStringLiteral("type"))) {
-        versionFourStatements.push_back(QStringLiteral("ALTER TABLE messages ADD COLUMN type INTEGER NOT NULL DEFAULT 1"));
+        versionFourStatements.push_back(
+            QStringLiteral("ALTER TABLE messages ADD COLUMN type INTEGER NOT NULL DEFAULT 1"));
     }
     if (schemaVersion < 4 && !applyMigration(4, versionFourStatements)) {
         database_.rollback();
@@ -730,7 +801,8 @@ bool SqliteClientRepository::Migrate()
     }
     QStringList versionSixStatements;
     if (!ColumnExists(database_, QStringLiteral("messages"), QStringLiteral("file_id"))) {
-        versionSixStatements.push_back(QStringLiteral("ALTER TABLE messages ADD COLUMN file_id TEXT NOT NULL DEFAULT ''"));
+        versionSixStatements.push_back(
+            QStringLiteral("ALTER TABLE messages ADD COLUMN file_id TEXT NOT NULL DEFAULT ''"));
     }
     if (schemaVersion < 6 && !applyMigration(6, versionSixStatements)) {
         database_.rollback();
@@ -781,6 +853,26 @@ bool SqliteClientRepository::Migrate()
             QStringLiteral("ALTER TABLE messages ADD COLUMN file_expired INTEGER NOT NULL DEFAULT 0"));
     }
     if (schemaVersion < 10 && !applyMigration(10, versionTenStatements)) {
+        database_.rollback();
+        return false;
+    }
+    QStringList versionElevenStatements;
+    if (!ColumnExists(database_, QStringLiteral("conversations"), QStringLiteral("active"))) {
+        versionElevenStatements.push_back(
+            QStringLiteral("ALTER TABLE conversations ADD COLUMN active INTEGER NOT NULL DEFAULT 1"));
+    }
+    versionElevenStatements.push_back(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_conversations_active_sort ON "
+                                                     "conversations(active, pinned DESC, sort_order ASC)"));
+    if (schemaVersion < 11 && !applyMigration(11, versionElevenStatements)) {
+        database_.rollback();
+        return false;
+    }
+    const QStringList versionTwelveStatements = {
+        QStringLiteral("CREATE TABLE IF NOT EXISTS account_identity("
+                       "singleton INTEGER PRIMARY KEY CHECK(singleton = 1), "
+                       "uid INTEGER NOT NULL CHECK(uid > 0), username TEXT NOT NULL DEFAULT '')"),
+    };
+    if (schemaVersion < 12 && !applyMigration(12, versionTwelveStatements)) {
         database_.rollback();
         return false;
     }

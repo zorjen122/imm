@@ -4,6 +4,7 @@
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QQuickStyle>
+#include <QSysInfo>
 #include <QTimer>
 
 namespace
@@ -22,10 +23,25 @@ QString ArgumentValue(const QStringList& arguments, const QString& name)
     return {};
 }
 
+void ConfigureWslRendering()
+{
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+    const bool rendererOverridden =
+        qEnvironmentVariableIsSet("QSG_RHI_BACKEND") || qEnvironmentVariableIsSet("QT_QUICK_BACKEND");
+    if (!rendererOverridden && QSysInfo::kernelVersion().contains(QStringLiteral("microsoft"), Qt::CaseInsensitive)) {
+        qputenv("QSG_RHI_BACKEND", QByteArrayLiteral("opengl"));
+        if (!qEnvironmentVariableIsSet("LIBGL_ALWAYS_SOFTWARE")) {
+            qputenv("LIBGL_ALWAYS_SOFTWARE", QByteArrayLiteral("1"));
+        }
+    }
+#endif
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
 {
+    ConfigureWslRendering();
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     QGuiApplication application(argc, argv);

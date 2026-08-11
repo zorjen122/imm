@@ -15,7 +15,7 @@ namespace wimi::protocol
 {
 class Packet;
 class FileInfo;
-}
+} // namespace wimi::protocol
 
 namespace wimi::client
 {
@@ -41,6 +41,7 @@ class ConnectionGatewayClient final : public QObject
     State CurrentState() const;
     bool IsReady() const;
     std::int64_t UserId() const;
+    QString StableClientMessageId(std::int64_t localMessageId) const;
 
     void Open(const GateSession& session);
     void Close();
@@ -56,13 +57,18 @@ class ConnectionGatewayClient final : public QObject
                        const QByteArray& content);
     QString UploadFileChunk(const wimi::protocol::FileInfo& file, std::int64_t offset, const QByteArray& content,
                             bool complete);
-    QString SendFile(std::int64_t recipientUid, const wimi::protocol::FileInfo& file,
-                     const QString& clientMessageId, std::int64_t conversationId = 0);
+    QString SendFile(std::int64_t recipientUid, const wimi::protocol::FileInfo& file, const QString& clientMessageId,
+                     std::int64_t conversationId = 0);
     QString DownloadFileChunk(const wimi::protocol::FileInfo& file, std::int64_t offset);
     QString CreateGroup(const QString& groupName);
     QString RequestJoinGroup(std::int64_t groupId, const QString& message);
     QString ReplyJoinGroup(std::int64_t groupId, std::int64_t requestorUid, bool accept);
+    QString PullGroupMembers(std::int64_t groupId);
+    QString QuitGroup(std::int64_t groupId);
+    QString KickGroupMember(std::int64_t groupId, std::int64_t targetUid);
     QString SendGroupText(std::int64_t groupId, const QByteArray& utf8Text, const QString& clientMessageId,
+                          std::int64_t conversationId = 0);
+    QString SendGroupFile(std::int64_t groupId, const wimi::protocol::FileInfo& file, const QString& clientMessageId,
                           std::int64_t conversationId = 0);
 
     void AcknowledgeDelivered(std::int64_t messageId, std::int64_t conversationId, std::int64_t conversationSequence);

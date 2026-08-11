@@ -38,6 +38,8 @@ class AppController : public QObject
     Q_PROPERTY(int selectedConversationIndex READ selectedConversationIndex NOTIFY selectedConversationChanged)
     Q_PROPERTY(QString selectedConversationTitle READ selectedConversationTitle NOTIFY selectedConversationChanged)
     Q_PROPERTY(bool selectedConversationIsGroup READ selectedConversationIsGroup NOTIFY selectedConversationChanged)
+    Q_PROPERTY(QString selectedGroupMembersSummary READ selectedGroupMembersSummary NOTIFY selectedConversationChanged)
+    Q_PROPERTY(bool selectedGroupIsMaster READ selectedGroupIsMaster NOTIFY selectedConversationChanged)
     Q_PROPERTY(
         int selectedConversationUnreadCount READ selectedConversationUnreadCount NOTIFY selectedConversationChanged)
     Q_PROPERTY(QString draftText READ draftText WRITE setDraftText NOTIFY draftTextChanged)
@@ -77,6 +79,8 @@ class AppController : public QObject
     int selectedConversationIndex() const;
     QString selectedConversationTitle() const;
     bool selectedConversationIsGroup() const;
+    QString selectedGroupMembersSummary() const;
+    bool selectedGroupIsMaster() const;
     int selectedConversationUnreadCount() const;
     QString draftText() const;
     QString currentSection() const;
@@ -132,6 +136,9 @@ class AppController : public QObject
     Q_INVOKABLE void sendFriendRequest(const QString& uid, const QString& message);
     Q_INVOKABLE void createGroup(const QString& name);
     Q_INVOKABLE void joinGroup(const QString& groupId, const QString& message);
+    Q_INVOKABLE void leaveSelectedGroup();
+    Q_INVOKABLE void refreshSelectedGroup();
+    Q_INVOKABLE void kickSelectedGroupMember(const QString& uid);
     Q_INVOKABLE void completeAuthentication();
     Q_INVOKABLE void saveGateUrl(const QString& gateUrl);
     Q_INVOKABLE void sendTestDesktopNotification();
@@ -171,6 +178,8 @@ class AppController : public QObject
     void RequestNextDownloadChunk(const QString& fileId);
     void AcknowledgeConversationRead(int index);
     void SetRequestStatus(int index, const QString& status, bool persist);
+    void RemoveActiveGroupConversation(std::int64_t groupId, const QString& status);
+    void UpdateGroupConversationTitle(std::int64_t groupId, const QString& title);
     QString EnsureDirectConversation(std::int64_t peerUid, const QString& title, const QString& avatarColor);
     QString EnsureGroupConversation(std::int64_t groupId, const QString& title);
     void AttachRemoteConversation(const QString& localConversationId, std::int64_t remoteConversationId);
@@ -238,6 +247,9 @@ class AppController : public QObject
     QSet<QString> gap_syncing_;
     QHash<QString, int> friend_reply_requests_;
     QHash<QString, QString> create_group_requests_;
+    QSet<std::int64_t> unavailable_group_ids_;
+    QHash<std::int64_t, QString> group_member_summaries_;
+    QSet<std::int64_t> master_group_ids_;
     QString authentication_error_;
     QString service_action_status_;
     QString gate_url_;

@@ -10,7 +10,7 @@ namespace wimi::client
 class SqliteClientRepository final : public IClientRepository
 {
   public:
-    static constexpr int kCurrentSchemaVersion = 10;
+    static constexpr int kCurrentSchemaVersion = 12;
 
     explicit SqliteClientRepository(QString databasePath, bool seedDemoData = true);
     ~SqliteClientRepository() override;
@@ -21,12 +21,15 @@ class SqliteClientRepository final : public IClientRepository
     QStringList ScenarioNames() const override;
     ClientSnapshot LoadScenario(const QString& scenarioName) const override;
     QString RepositoryKind() const override;
+    std::optional<std::int64_t> BoundUserId() const override;
+    bool BindUser(std::int64_t uid, const QString& username) override;
     bool EnqueueOutgoing(const QString& conversationId, const MessageRecord& message) override;
     bool UpdateDeliveryState(std::int64_t clientMessageId, MessageDeliveryState state) override;
     bool AcceptOutgoing(std::int64_t clientMessageId, std::int64_t messageId, const QString& conversationId,
                         std::int64_t conversationSeq) override;
     bool StoreDraft(const QString& conversationId, const QString& draft) override;
     bool SaveConversation(const ConversationRecord& conversation) override;
+    bool RemoveConversation(const QString& conversationId) override;
     bool SetRemoteConversationId(const QString& conversationId, std::int64_t remoteConversationId) override;
     bool ReplaceContacts(const QVector<ContactRecord>& contacts) override;
     bool ReplaceRequests(const QVector<RequestRecord>& requests) override;

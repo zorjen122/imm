@@ -28,7 +28,8 @@ Run the local UI with deterministic demonstration data:
 ```
 
 To connect to locally running services, pass the Auth Gate address. A different
-`--account` value keeps each local SQLite database separate:
+`--account` value keeps each local SQLite database separate. The database is
+bound to the server UID on first sign-in and must then stay with that account:
 
 ```bash
 ./build/client-clang/wimi-client \

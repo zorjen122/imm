@@ -485,6 +485,42 @@ Rectangle {
                     color: Theme.divider
                 }
 
+                RowLayout {
+                    visible: root.controller.selectedConversationIsGroup
+                    Layout.fillWidth: true
+
+                    Button {
+                        Layout.fillWidth: true
+                        text: qsTr("刷新成员")
+                        onClicked: root.controller.refreshSelectedGroup()
+                    }
+
+                    Button {
+                        Layout.fillWidth: true
+                        text: qsTr("退出群聊")
+                        onClicked: root.controller.leaveSelectedGroup()
+                    }
+                }
+
+                RowLayout {
+                    visible: root.controller.selectedConversationIsGroup
+                             && root.controller.selectedGroupIsMaster
+                    Layout.fillWidth: true
+
+                    TextField {
+                        id: kickUidField
+                        Layout.fillWidth: true
+                        placeholderText: qsTr("要踢出的用户 ID")
+                        inputMethodHints: Qt.ImhDigitsOnly
+                    }
+
+                    Button {
+                        text: qsTr("踢出")
+                        enabled: kickUidField.text.length > 0
+                        onClicked: root.controller.kickSelectedGroupMember(kickUidField.text)
+                    }
+                }
+
                 Label {
                     visible: root.controller.selectedConversationIsGroup
                     text: qsTr("群成员")
@@ -516,7 +552,7 @@ Rectangle {
                             spacing: Tokens.space1
 
                             Label {
-                                text: qsTr("成员列表待同步")
+                                text: root.controller.selectedGroupMembersSummary
                                 color: Theme.textPrimary
                                 font.pixelSize: Typography.body
                                 font.bold: true
@@ -524,7 +560,9 @@ Rectangle {
 
                             Label {
                                 Layout.fillWidth: true
-                                text: qsTr("群成员接口稳定后在此展示完整列表。")
+                                text: root.controller.selectedGroupIsMaster
+                                      ? qsTr("你是群主，可按用户 ID 踢出成员。")
+                                      : qsTr("仅群主可审批申请和移除成员。")
                                 color: Theme.textSecondary
                                 font.pixelSize: Typography.bodySmall
                                 wrapMode: Text.Wrap

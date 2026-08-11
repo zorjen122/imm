@@ -38,6 +38,10 @@ Item {
     }
     readonly property bool hasFileInfo: messageType === 5 && fileId.length > 0
                                         && fileName.length > 0 && fileType.length > 0 && fileSize >= 0
+    readonly property bool hasImagePreview: hasFileInfo
+                                             && (fileType === "image/png"
+                                                 || fileType === "image/jpeg")
+                                             && fileUrl.toString().length > 0
     readonly property color stateColor: {
         switch (deliveryState) {
         case "read": return Theme.accent
@@ -212,11 +216,8 @@ Item {
                 Image {
                     Layout.fillWidth: true
                     Layout.maximumHeight: 280
-                    visible: root.hasFileInfo
-                             && (root.fileType === "image/png"
-                                 || root.fileType === "image/jpeg")
-                             && root.fileUrl.toString().length > 0
-                    source: root.fileUrl
+                    visible: root.hasImagePreview
+                    source: root.hasImagePreview ? root.fileUrl : ""
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                 }

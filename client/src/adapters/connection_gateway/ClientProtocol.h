@@ -56,6 +56,10 @@ enum ServiceId : quint32 {
     FileUploadCompleteResponse = 1050,
     FileDownloadRequest = 1051,
     FileDownloadResponse = 1052,
+    KickGroupMemberRequest = 1053,
+    KickGroupMemberResponse = 1054,
+    SendGroupFileRequest = 1055,
+    SendGroupFileResponse = 1056,
 };
 
 enum ErrorCode : int {

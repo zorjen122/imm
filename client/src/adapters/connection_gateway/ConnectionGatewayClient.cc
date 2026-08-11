@@ -101,6 +101,11 @@ bool ConnectionGatewayClient::IsReady() const { return state_ == State::Ready; }
 
 std::int64_t ConnectionGatewayClient::UserId() const { return session_.uid; }
 
+QString ConnectionGatewayClient::StableClientMessageId(std::int64_t localMessageId) const
+{
+    return QStringLiteral("%1:%2").arg(device_id_).arg(-localMessageId);
+}
+
 void ConnectionGatewayClient::Open(const GateSession& session)
 {
     desired_open_ = false;
@@ -210,9 +215,9 @@ QString ConnectionGatewayClient::UploadFileChunk(const wimi::protocol::FileInfo&
     packet.setFileOffset(std::max<std::int64_t>(0, offset));
     packet.setData(content);
     packet.setFileComplete(complete);
-    const auto service = complete ? protocol::FileUploadCompleteRequest
-                                  : (content.isEmpty() ? protocol::UploadFileRequest
-                                                       : protocol::FileUploadChunkRequest);
+    const auto service = complete
+                             ? protocol::FileUploadCompleteRequest
+                             : (content.isEmpty() ? protocol::UploadFileRequest : protocol::FileUploadChunkRequest);
     return QueueRequest(service, std::move(packet), 15'000);
 }
 
@@ -261,6 +266,28 @@ QString ConnectionGatewayClient::ReplyJoinGroup(std::int64_t groupId, std::int64
     return QueueRequest(protocol::ReplyJoinGroupRequest, std::move(packet));
 }
 
+QString ConnectionGatewayClient::PullGroupMembers(std::int64_t groupId)
+{
+    wimi::protocol::Packet packet;
+    packet.setGroupId(groupId);
+    return QueueRequest(protocol::PullGroupMembersRequest, std::move(packet));
+}
+
+QString ConnectionGatewayClient::QuitGroup(std::int64_t groupId)
+{
+    wimi::protocol::Packet packet;
+    packet.setGroupId(groupId);
+    return QueueRequest(protocol::QuitGroupRequest, std::move(packet));
+}
+
+QString ConnectionGatewayClient::KickGroupMember(std::int64_t groupId, std::int64_t targetUid)
+{
+    wimi::protocol::Packet packet;
+    packet.setGroupId(groupId);
+    packet.setRequestorUid(targetUid);
+    return QueueRequest(protocol::KickGroupMemberRequest, std::move(packet));
+}
+
 QString ConnectionGatewayClient::SendGroupText(std::int64_t groupId, const QByteArray& utf8Text,
                                                const QString& clientMessageId, std::int64_t conversationId)
 {
@@ -272,6 +299,18 @@ QString ConnectionGatewayClient::SendGroupText(std::int64_t groupId, const QByte
         packet.setConversationId(conversationId);
     }
     return QueueRequest(protocol::SendGroupTextRequest, std::move(packet));
+}
+
+QString ConnectionGatewayClient::SendGroupFile(std::int64_t groupId, const wimi::protocol::FileInfo& file,
+                                               const QString& clientMessageId, std::int64_t conversationId)
+{
+    wimi::protocol::Packet packet;
+    packet.setGroupId(groupId);
+    packet.setFile(file);
+    packet.setClientMessageId(clientMessageId);
+    if (conversationId > 0)
+        packet.setConversationId(conversationId);
+    return QueueRequest(protocol::SendGroupFileRequest, std::move(packet));
 }
 
 void ConnectionGatewayClient::AcknowledgeDelivered(std::int64_t messageId, std::int64_t conversationId,

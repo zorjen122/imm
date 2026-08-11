@@ -131,11 +131,13 @@ class ClientModelsTest final : public QObject
     void fakeModeExplainsWhyFileTransferIsUnavailable();
     void sqlitePersistsOutboxDraftAndSyncCursor();
     void sqliteMigratesVersionOneToCurrent();
+    void sqliteBindsOneServerIdentity();
     void sqlitePersistsFileUploadProgress();
     void sqlitePersistsFileDownloadProgress();
     void sqliteRejectsNewerSchema();
     void sqliteAppliesLargeIncomingBatchIdempotently();
     void sqliteLoadsMessagesByConversationSequence();
+    void sqliteArchivesConversationWithoutDeletingHistory();
     void sqlitePersistsNetworkProjection();
     void platformNotificationPortUpdatesControllerState();
     void tcpFrameCodecHandlesFragmentationAndCoalescing();
@@ -540,6 +542,28 @@ void ClientModelsTest::sqliteMigratesVersionOneToCurrent()
     QVERIFY(SqliteIndexExists(databasePath, QStringLiteral("idx_conversations_sort")));
 }
 
+void ClientModelsTest::sqliteBindsOneServerIdentity()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("identity.sqlite"));
+
+    {
+        SqliteClientRepository repository(databasePath, false);
+        QVERIFY2(repository.IsReady(), qPrintable(repository.LastError()));
+        QVERIFY(!repository.BoundUserId().has_value());
+        QVERIFY(repository.BindUser(1002, QStringLiteral("alice")));
+        QCOMPARE(repository.BoundUserId(), std::optional<std::int64_t>(1002));
+        QVERIFY(repository.BindUser(1002, QStringLiteral("alice-renamed")));
+        QVERIFY(!repository.BindUser(1001, QStringLiteral("zorjen")));
+        QCOMPARE(repository.BoundUserId(), std::optional<std::int64_t>(1002));
+    }
+
+    SqliteClientRepository restoredRepository(databasePath, false);
+    QVERIFY2(restoredRepository.IsReady(), qPrintable(restoredRepository.LastError()));
+    QCOMPARE(restoredRepository.BoundUserId(), std::optional<std::int64_t>(1002));
+}
+
 void ClientModelsTest::sqlitePersistsFileUploadProgress()
 {
     QTemporaryDir directory;
@@ -701,6 +725,49 @@ void ClientModelsTest::sqliteLoadsMessagesByConversationSequence()
     QCOMPARE(messages[2].fileType, QStringLiteral("text/markdown"));
     QCOMPARE(messages[2].fileSize, 17);
     QVERIFY(messages[2].fileExpired);
+}
+
+void ClientModelsTest::sqliteArchivesConversationWithoutDeletingHistory()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("group-history.sqlite"));
+    {
+        SqliteClientRepository repository(databasePath, false);
+        QVERIFY2(repository.IsReady(), qPrintable(repository.LastError()));
+        QVERIFY(repository.SaveConversation(ConversationRecord{
+            .conversationId = QStringLiteral("group:5001"),
+            .title = QStringLiteral("群聊 5001"),
+            .avatarColor = QStringLiteral("#7656A8"),
+            .remoteConversationId = 9501,
+        }));
+        QVERIFY(repository.ApplyIncomingBatch(QStringLiteral("group:5001"),
+                                              {MessageRecord{
+                                                  .clientMessageId = 6001,
+                                                  .messageId = 7001,
+                                                  .conversationSeq = 1,
+                                                  .senderId = QStringLiteral("42"),
+                                                  .body = QStringLiteral("保留的群消息"),
+                                                  .timestamp = QStringLiteral("14:00"),
+                                                  .outgoing = false,
+                                                  .deliveryState = MessageDeliveryState::Delivered,
+                                              }},
+                                              1));
+        QVERIFY(repository.RemoveConversation(QStringLiteral("group:5001")));
+        QCOMPARE(repository.LoadScenario(QStringLiteral("local-sqlite")).conversations.size(), 0);
+    }
+
+    const QString connectionName = TestConnectionName();
+    QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+    database.setDatabaseName(databasePath);
+    QVERIFY(database.open());
+    QSqlQuery query(database);
+    QVERIFY(query.exec(QStringLiteral("SELECT COUNT(*) FROM messages WHERE conversation_id = 'group:5001'")));
+    QVERIFY(query.next());
+    QCOMPARE(query.value(0).toInt(), 1);
+    database.close();
+    database = {};
+    QSqlDatabase::removeDatabase(connectionName);
 }
 
 void ClientModelsTest::sqlitePersistsNetworkProjection()

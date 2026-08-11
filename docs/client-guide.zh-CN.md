@@ -27,7 +27,7 @@ cmake --build build/client-clang -j2
 ```
 
 连接已启动的本地服务时，传入 Auth Gate 地址。不同的 `--account` 会使用不同的本地
-SQLite 数据库：
+SQLite 数据库。数据库在首次登录时绑定服务端 UID，之后必须继续用于同一个账号：
 
 ```bash
 ./build/client-clang/wimi-client \

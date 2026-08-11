@@ -245,7 +245,8 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
                 packets.insert(frame.serviceId, packet);
                 wimi::protocol::Packet response;
                 response.setError(protocol::Success);
-                if (frame.serviceId == protocol::SendTextRequest || frame.serviceId == protocol::SendGroupTextRequest) {
+                if (frame.serviceId == protocol::SendTextRequest || frame.serviceId == protocol::SendGroupTextRequest ||
+                    frame.serviceId == protocol::SendGroupFileRequest) {
                     response.setClientMessageId(packet.clientMessageId());
                     response.setMessageId(7001);
                     response.setConversationId(8001);
@@ -293,16 +294,21 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
     gateway.CreateGroup(QStringLiteral("Qt group"));
     gateway.RequestJoinGroup(5001, QStringLiteral("join"));
     gateway.ReplyJoinGroup(5001, 43, true);
+    gateway.PullGroupMembers(5001);
+    gateway.QuitGroup(5001);
+    gateway.KickGroupMember(5001, 43);
     gateway.SendGroupText(5001, QByteArrayLiteral("group text"), QStringLiteral("client-group"), 8100);
+    gateway.SendGroupFile(5001, file, QStringLiteral("client-group-file"), 8100);
 
-    QTRY_COMPARE(responses.count(), 15);
+    QTRY_COMPARE(responses.count(), 19);
     QCOMPARE(failures.count(), 0);
     const QVector<quint32> expectedServices = {
-        protocol::PullFriendListRequest, protocol::PullFriendApplyListRequest, protocol::PullSessionMessagesRequest,
-        protocol::AddFriendRequest,      protocol::ReplyFriendRequest,         protocol::SendTextRequest,
-        protocol::UploadFileRequest,     protocol::FileUploadCompleteRequest,  protocol::SendFileRequest,
-        protocol::FileDownloadRequest,   protocol::CreateGroupRequest,         protocol::JoinGroupRequest,
-        protocol::ReplyJoinGroupRequest, protocol::SendGroupTextRequest,
+        protocol::PullFriendListRequest,  protocol::PullFriendApplyListRequest, protocol::PullSessionMessagesRequest,
+        protocol::AddFriendRequest,       protocol::ReplyFriendRequest,         protocol::SendTextRequest,
+        protocol::UploadFileRequest,      protocol::FileUploadCompleteRequest,  protocol::SendFileRequest,
+        protocol::FileDownloadRequest,    protocol::CreateGroupRequest,         protocol::JoinGroupRequest,
+        protocol::ReplyJoinGroupRequest,  protocol::PullGroupMembersRequest,    protocol::QuitGroupRequest,
+        protocol::KickGroupMemberRequest, protocol::SendGroupTextRequest,       protocol::SendGroupFileRequest,
     };
     for (const quint32 service : expectedServices) {
         QVERIFY2(requestServices.contains(service),
@@ -315,6 +321,8 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
     QCOMPARE(packets[protocol::SendTextRequest].to(), 43);
     QCOMPARE(packets[protocol::SendTextRequest].clientMessageId(), QStringLiteral("client-text"));
     QCOMPARE(packets[protocol::SendGroupTextRequest].groupId(), 5001);
+    QCOMPARE(packets[protocol::KickGroupMemberRequest].requestorUid(), 43);
+    QCOMPARE(packets[protocol::SendGroupFileRequest].file().fileId(), file.fileId());
     QCOMPARE(packets[protocol::UploadFileRequest].file().fileId(), file.fileId());
     QCOMPARE(packets[protocol::FileUploadCompleteRequest].fileComplete(), true);
     QCOMPARE(packets[protocol::SendFileRequest].clientMessageId(), QStringLiteral("client-file"));

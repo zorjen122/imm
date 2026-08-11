@@ -7,6 +7,13 @@ PRAGMA busy_timeout = 5000;
 
 BEGIN IMMEDIATE;
 
+CREATE TABLE IF NOT EXISTS account_identity (
+  -- 单行表；网络登录成功后首次写入，后续登录必须使用相同 uid。
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  uid INTEGER NOT NULL CHECK (uid > 0),
+  username TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
   -- 本地稳定会话键，例如 direct:<uid> 或 group:<groupId>。
   conversation_id TEXT PRIMARY KEY,
@@ -31,7 +38,9 @@ CREATE TABLE IF NOT EXISTS conversations (
   -- 当前会话输入框草稿，本地持久化。
   draft_text TEXT NOT NULL DEFAULT '',
   -- 本地排序值；在置顶排序之后用于稳定排列。
-  sort_order INTEGER NOT NULL DEFAULT 0
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  -- 离群后隐藏于活跃列表，但保留消息和附件历史。
+  active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -151,10 +160,13 @@ CREATE INDEX IF NOT EXISTS idx_file_uploads_updated ON file_uploads(updated_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_sort
   ON conversations(pinned DESC, sort_order ASC);
 
+CREATE INDEX IF NOT EXISTS idx_conversations_active_sort
+  ON conversations(active, pinned DESC, sort_order ASC);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_remote_id
   ON conversations(remote_conversation_id)
   WHERE remote_conversation_id IS NOT NULL;
 
-PRAGMA user_version = 10;
+PRAGMA user_version = 12;
 
 COMMIT;
