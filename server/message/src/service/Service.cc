@@ -118,12 +118,20 @@ void Service::Init()
                    [this](auto msgID, auto& request) { return groupService.NotifyJoin(msgID, request); });
     RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, TaskType::Heavy,
                    [this](auto msgID, auto& request) { return groupService.ReplyJoin(msgID, request); });
+    RegisterHandle(ID_GROUP_QUIT_REQ, TaskType::Heavy,
+                   [this](auto msgID, auto& request) { return groupService.Quit(msgID, request); });
+    RegisterHandle(ID_GROUP_KICK_MEMBER_REQ, TaskType::Heavy,
+                   [this](auto msgID, auto& request) { return groupService.Kick(msgID, request); });
+    RegisterHandle(ID_GROUP_PULL_MEMBER_REQ, TaskType::Heavy,
+                   [this](auto msgID, auto& request) { return groupService.PullNotify(msgID, request); });
 
     /* 待实现 */
     RegisterHandle(ID_GROUP_TEXT_SEND_REQ, TaskType::Heavy,
                    [this](auto msgID, auto& request) { return messageService.SendGroupText(msgID, request); });
     RegisterHandle(ID_FILE_SEND_REQ, TaskType::Heavy,
                    [this](auto msgID, auto& request) { return messageService.SendFile(msgID, request); });
+    RegisterHandle(ID_GROUP_FILE_SEND_REQ, TaskType::Heavy,
+                   [this](auto msgID, auto& request) { return messageService.SendGroupFile(msgID, request); });
 }
 
 bool Service::PostBackgroundTask(ThreadPool::Task task)

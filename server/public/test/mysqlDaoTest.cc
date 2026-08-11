@@ -152,20 +152,7 @@ int main(int argc, char** argv)
     Configer::loadConfig("../../conf/public-test.yaml");
     using namespace wimi;
     auto p = db::MysqlDao::GetInstance();
-    db::GroupApply::Ptr apply(new db::GroupApply(1, 2, 3, 4, 5, "x", "2020-01-01 00:00:00"));
-    int ret = 0;
-    ret = p->insertGroupApply(apply);
-    assert(ret != -1);
-    auto list = p->selectGroupApply();
-    assert(list != nullptr);
-    apply->status = 2;
-    assert(ret != -1);
-    ret = p->updateGroupApply(apply);
-    assert(ret != -1);
-    apply->groupId = 9;
-    ret = p->insertGroupApply(apply);
-    assert(ret != -1);
-    list = p->pullGroupApply(apply->requestor);
-    assert(list != nullptr);
+    // Group relation transitions are transactional service behavior; the
+    // simplified schema has no role/status application DAO API to exercise.
     // return RUN_ALL_TESTS();
 }

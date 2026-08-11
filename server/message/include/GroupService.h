@@ -20,10 +20,12 @@ class GroupService
     TcpPacket PullNotify(unsigned int msgID, TcpPacket& request);
     TcpPacket ReplyJoin(unsigned int msgID, TcpPacket& request);
     TcpPacket Quit(unsigned int msgID, TcpPacket& request);
+    TcpPacket Kick(unsigned int msgID, TcpPacket& request);
 
   private:
-    int NotifyMemberJoin(int64_t uid, int64_t groupId, const std::string& requestMessage);
-    int NotifyMemberReply(int64_t groupId, int64_t managerUid, int64_t requestorUid, bool accept);
+    void NotifyJoinRequest(int64_t masterUid, int64_t requestorUid, int64_t groupId, const std::string& requestMessage);
+    void NotifyChange(const std::vector<int64_t>& recipients, int64_t groupId, int64_t targetUid, int64_t actorUid,
+                      protocol::GroupChangeKind change, const std::string& groupName, bool accept = false);
 
     ClientForwardService& clientForwardService;
 };

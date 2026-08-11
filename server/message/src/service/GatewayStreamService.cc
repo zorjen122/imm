@@ -337,6 +337,36 @@ class GatewayStreamReactor final
             return;
         }
 
+        if (command.service_id() == ID_GROUP_FILE_SEND_REQ) {
+            auto acceptedFile = Service::GetInstance()->Messages().AcceptGroupFile(std::move(packet));
+            reply(TcpPacketError(acceptedFile.response), acceptedFile.response.retryable(), {}, acceptedFile.response);
+            if (acceptedFile.shouldForward) {
+                for (const int64_t recipientUid : acceptedFile.recipientUids) {
+                    gateway::ClientForwardEnvelope forward;
+                    forward.set_forward_id(std::to_string(acceptedFile.response.message_id()) + ":" +
+                                           std::to_string(recipientUid));
+                    forward.set_recipient_uid(recipientUid);
+                    forward.set_protocol_id(ID_GROUP_FILE_SEND_REQ);
+                    forward.set_message_id(acceptedFile.response.message_id());
+                    forward.set_conversation_id(acceptedFile.response.conversation_id());
+                    forward.set_conversation_seq(acceptedFile.response.conversation_seq());
+                    forward.set_packet(SerializeTcpPacket(acceptedFile.forwardPacket));
+                    streamService->ForwardToUser(recipientUid, std::move(forward));
+                }
+                gateway::ClientForwardEnvelope senderForward;
+                senderForward.set_forward_id(std::to_string(acceptedFile.response.message_id()) + ":" +
+                                             std::to_string(command.actor_uid()));
+                senderForward.set_recipient_uid(command.actor_uid());
+                senderForward.set_protocol_id(ID_GROUP_FILE_SEND_REQ);
+                senderForward.set_message_id(acceptedFile.response.message_id());
+                senderForward.set_conversation_id(acceptedFile.response.conversation_id());
+                senderForward.set_conversation_seq(acceptedFile.response.conversation_seq());
+                senderForward.set_packet(SerializeTcpPacket(acceptedFile.forwardPacket));
+                streamService->ForwardToUser(command.actor_uid(), std::move(senderForward), command.actor_device_id());
+            }
+            return;
+        }
+
         auto packetResponse =
             Service::GetInstance()->ExecuteGatewayCommand(command.service_id(), command.actor_uid(), std::move(packet));
         const auto error = TcpPacketError(packetResponse);

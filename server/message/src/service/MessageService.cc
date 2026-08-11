@@ -86,7 +86,7 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupText(TcpPacket requ
     if (accepted.error != ErrorCodes::Success) {
         if (!accepted.diagnostic.empty())
             LOG_ERROR(dbLogger, "group message accept failed: {}", accepted.diagnostic);
-        result.response.set_message(accepted.diagnostic.empty() ? "persistent group message accept failed"
+        result.response.set_message(accepted.diagnostic.empty() ? getErrorCodeMsg(accepted.error)
                                                                 : accepted.diagnostic);
         return result;
     }
@@ -187,12 +187,7 @@ MessageService::AcceptedFile MessageService::AcceptFile(TcpPacket request)
         return result;
     }
     const auto accepted = db::MysqlDao::GetInstance()->acceptDirectText(
-        sender,
-        recipient,
-        request.client_message_id(),
-        file->fileId,
-        getCurrentDateTime(),
-        db::Message::Type::FILE);
+        sender, recipient, request.client_message_id(), file->fileId, getCurrentDateTime(), db::Message::Type::FILE);
     result.response.set_error(accepted.error);
     result.response.set_retryable(isRetryableError(accepted.error));
     result.response.set_client_message_id(request.client_message_id());
@@ -223,6 +218,57 @@ MessageService::AcceptedFile MessageService::AcceptFile(TcpPacket request)
     return result;
 }
 
+MessageService::AcceptedGroupText MessageService::AcceptGroupFile(TcpPacket request)
+{
+    AcceptedGroupText result;
+    const int64_t sender = request.uid();
+    const int64_t groupId = request.group_id();
+    result.response.set_group_id(groupId);
+    result.response.set_client_message_id(request.client_message_id());
+    if (sender <= 0 || groupId <= 0 || !request.has_file() || !request.has_client_message_id() ||
+        request.client_message_id().empty()) {
+        result.response.set_error(ErrorCodes::JsonParser);
+        result.response.set_message("group_id, file and client_message_id are required");
+        return result;
+    }
+    const auto file = db::MysqlDao::GetInstance()->findReadyFile(request.file().file_id(), sender);
+    if (!file) {
+        result.response.set_error(ErrorCodes::NotFound);
+        result.response.set_message("ready file not found");
+        return result;
+    }
+    const auto accepted =
+        db::MysqlDao::GetInstance()->acceptGroupMessage(sender, groupId, request.client_message_id(), file->fileId,
+                                                        db::Message::Type::FILE, getCurrentDateTime(), true);
+    result.response.set_error(accepted.error);
+    result.response.set_retryable(isRetryableError(accepted.error));
+    if (accepted.error != ErrorCodes::Success) {
+        result.response.set_message(accepted.diagnostic);
+        return result;
+    }
+    result.response.set_message_id(accepted.messageId);
+    result.response.set_conversation_id(accepted.conversationId);
+    result.response.set_conversation_seq(accepted.conversationSeq);
+    result.response.set_message_state(protocol::MESSAGE_STATE_ACCEPTED);
+    request.set_from(sender);
+    request.set_type(db::Message::Type::FILE);
+    request.set_content(file->fileId);
+    request.set_seq(accepted.messageId);
+    request.set_message_id(accepted.messageId);
+    request.set_conversation_id(accepted.conversationId);
+    request.set_conversation_seq(accepted.conversationSeq);
+    auto* metadata = request.mutable_file();
+    metadata->set_file_id(file->fileId);
+    metadata->set_file_name(file->fileName);
+    metadata->set_file_type(file->fileType);
+    metadata->set_file_size(file->fileSize);
+    metadata->set_sha256(file->sha256);
+    result.forwardPacket = std::move(request);
+    result.recipientUids = accepted.recipientUids;
+    result.shouldForward = !accepted.duplicate;
+    return result;
+}
+
 TcpPacket MessageService::SendGroupText(uint32_t msgID, TcpPacket& request)
 {
     /*
@@ -232,6 +278,8 @@ TcpPacket MessageService::SendGroupText(uint32_t msgID, TcpPacket& request)
     */
     return {};
 }
+
+TcpPacket MessageService::SendGroupFile(uint32_t, TcpPacket& request) { return AcceptGroupFile(request).response; }
 
 TcpPacket MessageService::SendText(uint32_t msgID, TcpPacket& request)
 {

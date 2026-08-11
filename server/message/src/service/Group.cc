@@ -1,240 +1,174 @@
 #include "GroupService.h"
 
-#include "Const.h"
-#include "DbGlobal.h"
 #include "ClientForwardService.h"
+#include "Const.h"
 #include "Logger.h"
 #include "Mysql.h"
 #include "Redis.h"
-#include <cstdint>
-#include <spdlog/spdlog.h>
+
 namespace wimi
 {
 
 GroupService::GroupService(ClientForwardService& clientForwardService) : clientForwardService(clientForwardService) {}
 
-TcpPacket GroupService::Create(unsigned int msgID, TcpPacket& request)
+void GroupService::NotifyJoinRequest(int64_t masterUid, int64_t requestorUid, int64_t groupId,
+                                     const std::string& requestMessage)
+{
+    TcpPacket notice;
+    notice.set_uid(requestorUid);
+    notice.set_group_id(groupId);
+    notice.set_content(requestMessage);
+    clientForwardService.ForwardToGateway(masterUid, SerializeTcpPacket(notice), ID_GROUP_NOTIFY_JOIN_REQ);
+}
+
+void GroupService::NotifyChange(const std::vector<int64_t>& recipients, int64_t groupId, int64_t targetUid,
+                                int64_t actorUid, protocol::GroupChangeKind change, const std::string& groupName,
+                                bool accept)
+{
+    for (const auto uid : recipients) {
+        TcpPacket notice;
+        notice.set_group_id(groupId);
+        notice.set_requestor_uid(targetUid);
+        notice.set_replyor_uid(actorUid);
+        notice.set_accept(accept);
+        notice.set_group_change_kind(change);
+        notice.set_group_name(groupName);
+        clientForwardService.ForwardToGateway(uid, SerializeTcpPacket(notice), ID_GROUP_REPLY_JOIN_REQ);
+    }
+}
+
+TcpPacket GroupService::Create(unsigned int, TcpPacket& request)
 {
     TcpPacket rsp;
-
-    int ret{};
-
-    int64_t uid = request.uid();
-    std::string groupName = request.group_name();
-
-    int64_t groupId = db::RedisDao::GetInstance()->generateGroupId();
-    int64_t conversationId = db::RedisDao::GetInstance()->generateConversationId();
+    if (request.uid() <= 0 || !request.has_group_name() || request.group_name().empty()) {
+        rsp.set_error(ErrorCodes::JsonParser);
+        return rsp;
+    }
+    const auto groupId = db::RedisDao::GetInstance()->generateGroupId();
+    const auto conversationId = db::RedisDao::GetInstance()->generateConversationId();
+    const db::GroupManager group(groupId, request.uid(), conversationId, request.group_name(), getCurrentDateTime());
+    const auto result = db::MysqlDao::GetInstance()->createGroup(group);
+    rsp.set_error(result.error);
     rsp.set_group_id(groupId);
     rsp.set_conversation_id(conversationId);
-
-    std::string createTime = getCurrentDateTime();
-    db::GroupManager::Ptr group(new db::GroupManager(groupId, conversationId, groupName, createTime));
-
-    ret = db::MysqlDao::GetInstance()->insertGroup(group);
-    if (ret == -1) {
-        rsp.set_error(ErrorCodes::MysqlFailed);
-        rsp.set_message("数据库操作失败");
-        return rsp;
-    }
-
-    db::GroupMember::Ptr member(new db::GroupMember(groupId, uid, db::GroupMember::Role::Master, createTime));
-    ret = db::MysqlDao::GetInstance()->insertGroupMember(member);
-    if (ret == -1) {
-        rsp.set_error(ErrorCodes::MysqlFailed);
-        rsp.set_message("数据库操作失败");
-        return rsp;
-    }
-
-    rsp.set_error(ErrorCodes::Success);
+    rsp.set_group_name(request.group_name());
+    rsp.set_message(result.diagnostic);
     return rsp;
 }
 
-int GroupService::NotifyMemberJoin(int64_t uid, int64_t groupId, const std::string& requestMessage)
-{
-    db::GroupMember::MemberList managerList =
-        db::MysqlDao::GetInstance()->getGroupRoleMemberList(groupId, db::GroupMember::Role::Manager);
-    for (auto manager : managerList) {
-        int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
-        TcpPacket notifyRequest;
-        notifyRequest.set_uid(uid);
-        notifyRequest.set_group_id(groupId);
-        notifyRequest.set_content(requestMessage);
-        notifyRequest.set_seq(serverSeq);
-        notifyRequest.set_error(ErrorCodes::Success);
-        if (clientForwardService.ForwardToGateway(manager->uid, SerializeTcpPacket(notifyRequest),
-                                                  ID_GROUP_NOTIFY_JOIN_REQ, serverSeq))
-            continue;
-
-        LOG_DEBUG(businessLogger,
-                  "group join notify stored but manager is not on a healthy "
-                  "gateway, groupId: {}, manager_uid: {}",
-                  groupId, manager->uid);
-    }
-    return 0;
-}
-
-TcpPacket GroupService::NotifyJoin(unsigned int msgID, TcpPacket& request)
+TcpPacket GroupService::NotifyJoin(unsigned int, TcpPacket& request)
 {
     TcpPacket rsp;
-
-    int64_t uid = request.uid();
-    int64_t groupId = request.group_id();
-    std::string requestMessage = request.request_message();
-    // 搜索群聊时存在，但加入群聊时未必存在，此处仍有一致性问题，后续待拟
-    int ret = db::MysqlDao::GetInstance()->hasGroup(groupId);
-    if (ret == 0) {
-        rsp.set_error(ErrorCodes::GroupNotExists);
-        rsp.set_message("群组不存在");
-        return rsp;
-    } else if (ret == -1) {
-        rsp.set_error(ErrorCodes::MysqlFailed);
-        rsp.set_message("数据库操作失败");
+    if (request.uid() <= 0 || request.group_id() <= 0) {
+        rsp.set_error(ErrorCodes::JsonParser);
         return rsp;
     }
-
-    // 暂用好友相关表，消息将通知所有群管理
-    std::string createTime = getCurrentDateTime();
-    db::GroupApply::Ptr apply(new db::GroupApply(uid, 0, groupId, db::GroupApply::Type::Add,
-                                                 db::GroupApply::Status::Wait, requestMessage, createTime));
-
-    ret = db::MysqlDao::GetInstance()->insertGroupApply(apply);
-    if (ret == -1) {
-        rsp.set_error(ErrorCodes::MysqlFailed);
-        rsp.set_message("数据库操作失败");
-        return rsp;
-    }
-
-    ret = NotifyMemberJoin(uid, groupId, requestMessage);
-    if (ret == -1) {
-        rsp.set_error(ErrorCodes::GroupNotExists);
-        rsp.set_message("通知群成员失败");
-        return rsp;
-    }
-
-    rsp.set_error(ErrorCodes::Success);
-    rsp.set_message("通知群成员成功");
-
-    return rsp;
-}
-
-TcpPacket GroupService::PullNotify(unsigned int msgID, TcpPacket& request)
-{
-    TcpPacket rsp;
+    const auto result = db::MysqlDao::GetInstance()->requestGroupJoin(request.group_id(), request.uid(),
+                                                                      request.request_message(), getCurrentDateTime());
+    rsp.set_error(result.error);
     rsp.set_group_id(request.group_id());
-
-    int64_t groupId = request.group_id();
-
-    int ret = db::MysqlDao::GetInstance()->hasGroup(groupId);
-    if (ret == false) {
-        rsp.set_error(ErrorCodes::GroupNotExists);
-        rsp.set_message("群组已不存在");
-    }
-
-    db::FriendApply::FriendApplyGroup applyList = db::MysqlDao::GetInstance()->getFriendApplyList(groupId);
-    if (applyList == nullptr) {
-        rsp.set_error(ErrorCodes::MysqlFailed);
-        rsp.set_message("数据库操作失败");
-        return rsp;
-    }
-
-    for (auto apply : *applyList) {
-        auto* notifyInfo = rsp.add_apply_list();
-        notifyInfo->set_to(apply->to);
-    }
-
-    rsp.set_error(ErrorCodes::Success);
+    rsp.set_message(result.diagnostic);
+    if (result.error == ErrorCodes::Success && !result.recipientUids.empty())
+        NotifyJoinRequest(result.masterUid, request.uid(), request.group_id(), request.request_message());
     return rsp;
 }
-int GroupService::NotifyMemberReply(int64_t groupId, int64_t managerUid, int64_t requestorUid, bool accept)
-{
-    db::GroupMember::MemberList memberList = db::MysqlDao::GetInstance()->getGroupMemberList(groupId);
-    for (auto member : memberList) {
-        int64_t serverSeq = db::RedisDao::GetInstance()->generateMsgId();
-        TcpPacket notifyRequest;
-        notifyRequest.set_requestor_uid(requestorUid);
-        notifyRequest.set_replyor_uid(managerUid);
-        notifyRequest.set_group_id(groupId);
-        notifyRequest.set_accept(accept);
-        notifyRequest.set_seq(serverSeq);
-        if (clientForwardService.ForwardToGateway(member->uid, SerializeTcpPacket(notifyRequest),
-                                                  ID_GROUP_REPLY_JOIN_REQ, serverSeq))
-            continue;
 
-        LOG_DEBUG(businessLogger,
-                  "group reply notify stored but member is not on a healthy "
-                  "gateway, groupId: {}, member_uid: {}",
-                  groupId, member->uid);
-    }
-
-    return 0;
-}
-TcpPacket GroupService::ReplyJoin(unsigned int msgID, TcpPacket& request)
+TcpPacket GroupService::PullNotify(unsigned int, TcpPacket& request)
 {
     TcpPacket rsp;
+    if (request.uid() <= 0 || request.group_id() <= 0) {
+        rsp.set_error(ErrorCodes::JsonParser);
+        return rsp;
+    }
+    const auto result = db::MysqlDao::GetInstance()->pullGroup(request.group_id(), request.uid());
+    rsp.set_error(result.error);
     rsp.set_group_id(request.group_id());
-
-    int64_t groupId = request.group_id();
-    // 群管理操作的 actor 来自入口注入的 principal，而非客户端 manager_uid。
-    int64_t managerUid = request.uid();
-    int64_t requestorUid = request.requestor_uid();
-    bool accept = request.accept();
-
-    // 搜索群聊时存在，但加入群聊时未必存在
-    int ret = db::MysqlDao::GetInstance()->hasGroup(groupId);
-    if (ret == 0) {
-        rsp.set_error(ErrorCodes::GroupNotExists);
-        rsp.set_message("群组不存在");
+    rsp.set_conversation_id(result.conversationId);
+    rsp.set_replyor_uid(result.masterUid);
+    rsp.set_group_name(result.groupName);
+    rsp.set_message(result.diagnostic);
+    if (result.error != ErrorCodes::Success)
         return rsp;
+    for (const auto& member : result.members) {
+        auto* item = rsp.add_member_list();
+        item->set_uid(member.uid);
+        item->set_name(member.memberName);
+        item->set_join_time(member.joinTime);
     }
-
-    // 暂用好友相关表，消息将通知所有群管理
-    std::string createTime = getCurrentDateTime();
-    db::GroupApply::Ptr apply(
-        new db::GroupApply(requestorUid, managerUid, groupId, db::GroupApply::Type::Add,
-                           accept ? db::GroupApply::Status::Agree : db::GroupApply::Status::Refuse, "", createTime));
-
-    // 在之前应有检查是否已经同意过，待实现
-    ret = db::MysqlDao::GetInstance()->updateGroupApply(apply);
-    if (ret == -1) {
-        rsp.set_error(ErrorCodes::MysqlFailed);
-        rsp.set_message("数据库操作失败");
-        return rsp;
+    for (const auto& apply : result.applies) {
+        auto* item = rsp.add_apply_list();
+        item->set_from(apply.requestor);
+        item->set_to(result.masterUid);
+        item->set_content(apply.message);
+        item->set_create_time(apply.createTime);
     }
-
-    if (accept) {
-        db::GroupMember::Ptr member(
-            new db::GroupMember(groupId, requestorUid, db::GroupMember::Role::Member, createTime));
-        ret = db::MysqlDao::GetInstance()->insertGroupMember(member);
-        if (ret == -1) {
-            rsp.set_error(ErrorCodes::MysqlFailed);
-            rsp.set_message("数据库操作失败");
-            return rsp;
-        }
-    }
-
-    // 此时请求者已成为群成员，通知所有群成员中包含请求者
-    ret = NotifyMemberReply(groupId, managerUid, requestorUid, accept);
-    if (ret == -1) {
-        rsp.set_error(ErrorCodes::GroupReplyFailed);
-        rsp.set_message("通知群成员失败");
-        return rsp;
-    }
-
-    if (!accept) {
-        rsp.set_error(ErrorCodes::Success);
-        rsp.set_message("拒绝该用户加入群组请求");
-        return rsp;
-    }
-
-    rsp.set_error(ErrorCodes::Success);
-    rsp.set_message("同意加入群组");
     return rsp;
 }
 
-TcpPacket GroupService::Quit(unsigned int msgID, TcpPacket& request)
+TcpPacket GroupService::ReplyJoin(unsigned int, TcpPacket& request)
 {
     TcpPacket rsp;
+    if (request.uid() <= 0 || request.group_id() <= 0 || request.requestor_uid() <= 0 || !request.has_accept()) {
+        rsp.set_error(ErrorCodes::JsonParser);
+        return rsp;
+    }
+    const auto result = db::MysqlDao::GetInstance()->replyGroupJoin(
+        request.group_id(), request.uid(), request.requestor_uid(), request.accept(), getCurrentDateTime());
+    rsp.set_error(result.error);
+    rsp.set_group_id(request.group_id());
+    rsp.set_message(result.diagnostic);
+    if (result.error != ErrorCodes::Success)
+        return rsp;
+    if (request.accept())
+        NotifyChange(result.recipientUids, result.groupId, result.targetUid, result.actorUid,
+                     protocol::GROUP_CHANGE_KIND_JOINED, result.groupName, true);
+    else
+        NotifyChange(result.recipientUids, result.groupId, result.targetUid, result.actorUid,
+                     protocol::GROUP_CHANGE_KIND_UNSPECIFIED, result.groupName, false);
     return rsp;
 }
 
-}; // namespace wimi
+TcpPacket GroupService::Quit(unsigned int, TcpPacket& request)
+{
+    TcpPacket rsp;
+    if (request.uid() <= 0 || request.group_id() <= 0) {
+        rsp.set_error(ErrorCodes::JsonParser);
+        return rsp;
+    }
+    const auto result =
+        db::MysqlDao::GetInstance()->removeGroupMember(request.group_id(), request.uid(), request.uid(), true);
+    rsp.set_error(result.error);
+    rsp.set_group_id(request.group_id());
+    rsp.set_message(result.diagnostic);
+    if (result.error == ErrorCodes::Success)
+        NotifyChange(result.recipientUids, result.groupId, result.targetUid, result.actorUid,
+                     result.targetUid == result.masterUid ? protocol::GROUP_CHANGE_KIND_DISSOLVED
+                                                          : protocol::GROUP_CHANGE_KIND_LEFT,
+                     result.groupName);
+    return rsp;
+}
+
+TcpPacket GroupService::Kick(unsigned int, TcpPacket& request)
+{
+    TcpPacket rsp;
+    if (request.uid() <= 0 || request.group_id() <= 0 || request.requestor_uid() <= 0) {
+        rsp.set_error(ErrorCodes::JsonParser);
+        return rsp;
+    }
+    if (request.uid() == request.requestor_uid()) {
+        rsp.set_error(ErrorCodes::MessageOwnershipInvalid);
+        rsp.set_message("master cannot kick itself");
+        return rsp;
+    }
+    const auto result = db::MysqlDao::GetInstance()->removeGroupMember(request.group_id(), request.uid(),
+                                                                       request.requestor_uid(), false);
+    rsp.set_error(result.error);
+    rsp.set_group_id(request.group_id());
+    rsp.set_message(result.diagnostic);
+    if (result.error == ErrorCodes::Success)
+        NotifyChange(result.recipientUids, result.groupId, result.targetUid, result.actorUid,
+                     protocol::GROUP_CHANGE_KIND_KICKED, result.groupName);
+    return rsp;
+}
+
+} // namespace wimi

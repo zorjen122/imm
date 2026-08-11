@@ -164,11 +164,13 @@ struct Message {
 struct GroupManager {
     using Ptr = std::shared_ptr<GroupManager>;
     GroupManager() = default;
-    GroupManager(long groupId, long conversationId, std::string name, std::string createTime = "")
-        : groupId(groupId), conversationId(conversationId), name(name), createTime(createTime)
+    GroupManager(long groupId, long masterUid, long conversationId, std::string name, std::string createTime = "")
+        : groupId(groupId), masterUid(masterUid), conversationId(conversationId), name(std::move(name)),
+          createTime(std::move(createTime))
     {
     }
     long groupId;
+    long masterUid;
     long conversationId;
     std::string name;
     std::string createTime;
@@ -178,22 +180,14 @@ struct GroupMember {
     using Ptr = std::shared_ptr<GroupMember>;
     using MemberList = std::vector<GroupMember::Ptr>;
 
-    enum Role { Member, Manager, Master };
-    enum Speech { NORMAL, BAN };
     GroupMember() = default;
-    GroupMember(long groupId, long uid, short role, std::string joinTime = "", short speech = 0,
-                std::string memberName = "")
-        : groupId(groupId), uid(uid), role(role), joinTime(std::move(joinTime)), speech(speech),
-          memberName(std::move(memberName))
+    GroupMember(long groupId, long uid, std::string joinTime = "", std::string memberName = "")
+        : groupId(groupId), uid(uid), joinTime(std::move(joinTime)), memberName(std::move(memberName))
     {
     }
     long groupId;
     long uid;
-    short role;
     std::string joinTime;
-
-    // other
-    short speech;
     std::string memberName;
 };
 
@@ -217,25 +211,15 @@ struct File {
 struct GroupApply {
     using Ptr = std::shared_ptr<GroupApply>;
     using GroupApplyList = std::shared_ptr<std::vector<GroupApply::Ptr>>;
-    GroupApply(long requestor, long handler, long groupId, short type, short status, std::string message,
-               std::string updateTime)
-        : requestor(requestor), handler(handler), groupId(groupId), type(type), status(status), message(message),
-          updateTime(updateTime)
+    GroupApply(long requestor, long groupId, std::string message, std::string createTime)
+        : requestor(requestor), groupId(groupId), message(std::move(message)), createTime(std::move(createTime))
     {
     }
 
-    // Type: 1.加群、2.退群、3.升权、4.降权、5、邀群、6.踢出
-    enum Type { Add = 1, Delete = 2, Promote = 3, Demote = 4, Invite = 5, Kick = 6 };
-
-    enum Status { Wait = 0, Agree = 1, Refuse = 2 };
-
     long requestor;
-    long handler;
     long groupId;
-    short type;
-    short status;
     std::string message;
-    std::string updateTime;
+    std::string createTime;
 };
 
 } // namespace wimi::db

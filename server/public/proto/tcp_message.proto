@@ -68,8 +68,14 @@ message GroupMember {
   int64 uid = 1;         // 群成员用户 ID
   string name = 2;       // 群内显示名称
   string join_time = 3;  // 加群时间
-  int32 role = 4;        // 群成员角色
-  int32 speech = 5;      // 禁言/发言状态
+}
+
+enum GroupChangeKind {
+  GROUP_CHANGE_KIND_UNSPECIFIED = 0;
+  GROUP_CHANGE_KIND_JOINED = 1;
+  GROUP_CHANGE_KIND_LEFT = 2;
+  GROUP_CHANGE_KIND_KICKED = 3;
+  GROUP_CHANGE_KIND_DISSOLVED = 4;
 }
 
 // 客户端 TCP/TLV 的通用 Protobuf 载荷；字段按具体 service_id 组合使用。
@@ -96,7 +102,6 @@ message Packet {
   optional int32 limit = 23;                // 单次拉取数量上限
   optional int64 group_id = 24;             // 群组业务 ID
   optional string group_name = 26;          // 群组名称
-  optional int64 manager_uid = 27;          // 群管理员用户 ID
   optional int64 requestor_uid = 28;        // 群申请人用户 ID
   optional int64 replyor_uid = 29;          // 群申请处理人用户 ID
   optional string content = 30;             // 文本/申请内容；文件消息为 file_id
@@ -105,8 +110,6 @@ message Packet {
   optional string send_date_time = 33;      // 消息发送时间
   optional string read_date_time = 34;      // 消息已读时间
   optional string join_time = 35;           // 成员加群时间
-  optional int32 role = 36;                 // 群成员角色
-  optional int32 speech = 37;               // 群成员禁言/发言状态
   optional string auth_token = 39;           // Gate 签发的短期连接凭证
   optional int64 message_id = 40;            // 服务端持久消息 ID
   optional MessageState message_state = 41;  // 消息生命周期状态
@@ -132,4 +135,5 @@ message Packet {
   optional int64 file_offset = 60;          // 分块偏移
   optional int64 file_next_offset = 61;     // 服务端确认的下一偏移
   optional bool file_complete = 62;         // 传输完成标记
+  optional GroupChangeKind group_change_kind = 63;
 }

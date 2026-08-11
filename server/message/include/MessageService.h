@@ -36,11 +36,13 @@ class MessageService
     AcceptedText AcceptText(TcpPacket request);
     AcceptedGroupText AcceptGroupText(TcpPacket request);
     AcceptedFile AcceptFile(TcpPacket request);
+    AcceptedGroupText AcceptGroupFile(TcpPacket request);
 
     AckResult Ack(TcpPacket& request, const std::string& deviceId);
     TcpPacket SendText(uint32_t msgID, TcpPacket& request);
     TcpPacket SendFile(uint32_t msgID, TcpPacket& request);
     TcpPacket SendGroupText(uint32_t msgID, TcpPacket& request);
+    TcpPacket SendGroupFile(uint32_t msgID, TcpPacket& request);
     TcpPacket PullConversationMessages(uint32_t msgID, TcpPacket& request);
 };
 
