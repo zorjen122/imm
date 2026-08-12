@@ -26,7 +26,7 @@ bool ParseProtobufPacket(const QByteArray& payload, wimi::protocol::Packet* pack
 
 QString PacketSendDateTimeOrEmpty(const wimi::protocol::Packet& packet)
 {
-    return packet.hasSendDateTime() ? packet.sendDateTime() : QString{};
+    return packet.hasTextMessagePush() ? packet.textMessagePush().sendDateTime() : QString{};
 }
 
 } // namespace wimi::client
