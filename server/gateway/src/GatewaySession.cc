@@ -182,7 +182,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
         co_return;
     }
 
-    if (!request.has_request_id() || request.request_id().empty()) {
+    if (!TcpRequestMatchesService(protocolId, request) || TcpPacketRequestId(request).empty()) {
         LOG_WARN(netLogger,
                  "Gateway rejected malformed packet, connection_id: {}, "
                  "protocol_id: {}, service: {}, payload_bytes: {}",
@@ -194,8 +194,9 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     // 登录包由 Gateway 本地处理：校验短期 token、加载资料并发布 generation
     // lease。
     if (protocolId == ID_LOGIN_INIT_REQ) {
-        const int64_t claimedUid = request.uid();
-        const bool initProfile = request.init();
+        const auto& login = request.login_request();
+        const int64_t claimedUid = login.uid();
+        const bool initProfile = login.init_profile();
         LOG_DEBUG(businessLogger,
                   "Gateway handling login, connection_id: {}, claimed_uid: {}, "
                   "init_profile: {}",
@@ -207,12 +208,12 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
             asio::use_awaitable);
         if (result.error == ErrorCodes::Success) {
             lease = result.lease;
-            userId.store(result.response.uid(), std::memory_order_release);
+            userId.store(result.response.login_response().uid(), std::memory_order_release);
             lastLeaseRefresh = std::chrono::steady_clock::now();
             LOG_INFO(businessLogger,
                      "Gateway login accepted, uid: {}, connection_id: {}, "
                      "generation: {}",
-                     result.response.uid(), connectionId, lease.generation);
+                     result.response.login_response().uid(), connectionId, lease.generation);
         } else {
             LOG_WARN(businessLogger,
                      "Gateway login rejected, connection_id: {}, claimed_uid: {}, "
@@ -248,8 +249,8 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     if (protocolId == ID_PING_REQ) {
         LOG_TRACE(netLogger, "Gateway handling ping, uid: {}, connection_id: {}", actor, connectionId);
         TcpPacket pong;
-        pong.set_uid(actor);
-        pong.set_error(ErrorCodes::Success);
+        pong.mutable_ping_response();
+        SetTcpPacketStatus(pong, ErrorCodes::Success);
         SendRaw(SerializeTcpPacket(pong), ID_PING_RSP);
         co_return;
     }
@@ -258,7 +259,8 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     if (protocolId == ID_USER_QUIT_REQ) {
         LOG_INFO(businessLogger, "Gateway handling quit, uid: {}, connection_id: {}", actor, connectionId);
         TcpPacket response;
-        response.set_error(ErrorCodes::Success);
+        response.mutable_quit_response();
+        SetTcpPacketStatus(response, ErrorCodes::Success);
         SendRaw(SerializeTcpPacket(response), ID_USER_QUIT_RSP);
         closeAfterWrite = true;
         co_return;
@@ -267,14 +269,15 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     // DELIVERED/READ ACK 都会取消 Gateway 本地重传；没有会话游标的通知 ACK
     // 到此结束，有会话游标的消息 ACK 再转发给 Message Core 更新状态。
     if (protocolId == ID_ACK) {
-        if (request.has_seq() && request.seq() > 0) {
-            AcknowledgeDelivery(request.seq());
+        const auto& receipt = request.receipt();
+        if (receipt.seq() > 0) {
+            AcknowledgeDelivery(receipt.seq());
             LOG_TRACE(netLogger,
                       "Gateway handled delivery ACK, uid: {}, connection_id: {}, "
                       "seq: {}, receipt_type: {}",
-                      actor, connectionId, request.seq(), static_cast<int>(request.receipt_type()));
+                      actor, connectionId, receipt.seq(), static_cast<int>(receipt.receipt_type()));
         }
-        if (!request.has_conversation_id() || !request.has_conversation_seq())
+        if (receipt.conversation_id() <= 0 || receipt.conversation_seq() <= 0)
             co_return;
     }
 
@@ -296,19 +299,17 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
 
     // 通用业务包统一封装 CommandEnvelope；request_id 负责跨流关联，连接
     // generation 负责在 Message 节点拒绝已经被新登录替代的旧连接命令。
-    request.set_uid(actor);
-
     gateway::CommandEnvelope command;
-    command.set_request_id(request.request_id());
+    command.set_request_id(TcpPacketRequestId(request));
     command.set_actor_uid(actor);
     command.set_connection_id(connectionId);
     command.set_connection_generation(lease.generation);
     command.set_actor_device_id(lease.deviceId);
     command.set_service_id(protocolId);
-    if (request.has_conversation_id())
-        command.set_conversation_id(request.conversation_id());
-    const auto timeout = request.has_request_timeout_ms() && request.request_timeout_ms() > 0
-                             ? std::min(kDefaultRequestTimeout, std::chrono::milliseconds(request.request_timeout_ms()))
+    command.set_conversation_id(TcpPacketConversationId(request));
+    const auto requestTimeoutMs = TcpPacketRequestTimeoutMs(request);
+    const auto timeout = requestTimeoutMs > 0
+                             ? std::min(kDefaultRequestTimeout, std::chrono::milliseconds(requestTimeoutMs))
                              : kDefaultRequestTimeout;
     command.set_deadline_unix_ms(NowUnixMilliseconds() + timeout.count());
     command.set_packet(SerializeTcpPacket(request));
@@ -417,9 +418,10 @@ asio::awaitable<void> GatewaySession::WriteLoop()
 GatewaySession::ResultConnecctionRoute GatewaySession::RequestConnectionRoute(TcpPacket request)
 {
     ResultConnecctionRoute result;
-    const int64_t uid = request.uid();
-    if (uid <= 0 || !request.has_device_id() || request.device_id().empty() || request.device_id().size() > 36 ||
-        !request.has_auth_token() || !db::RedisDao::GetInstance()->validateChatAuthToken(uid, request.auth_token())) {
+    const auto& login = request.login_request();
+    const int64_t uid = login.uid();
+    if (uid <= 0 || login.device_id().empty() || login.device_id().size() > 36 || login.auth_token().empty() ||
+        !db::RedisDao::GetInstance()->validateChatAuthToken(uid, login.auth_token())) {
         result.error = ErrorCodes::TokenInvalid;
         result.response = MakeErrorPacket(ErrorCodes::TokenInvalid, "invalid or expired connection token");
         return result;
@@ -432,9 +434,9 @@ GatewaySession::ResultConnecctionRoute GatewaySession::RequestConnectionRoute(Tc
     }
 
     db::UserInfo::Ptr info;
-    if (request.init()) {
+    if (login.init_profile()) {
         auto initialInfo =
-            std::make_shared<db::UserInfo>(uid, request.name(), request.age(), request.sex(), request.head_image_url());
+            std::make_shared<db::UserInfo>(uid, login.name(), login.age(), login.sex(), login.head_image_url());
         if (db::MysqlDao::GetInstance()->insertUserInfo(initialInfo) == 0) {
             info = std::move(initialInfo);
         } else {
@@ -456,7 +458,7 @@ GatewaySession::ResultConnecctionRoute GatewaySession::RequestConnectionRoute(Tc
         }
     }
 
-    const int deviceRegistration = db::MysqlDao::GetInstance()->registerDevice(uid, request.device_id());
+    const int deviceRegistration = db::MysqlDao::GetInstance()->registerDevice(uid, login.device_id());
     if (deviceRegistration <= 0) {
         result.error = deviceRegistration < 0 ? ErrorCodes::MysqlFailed : ErrorCodes::AuthenticationRequired;
         result.response = MakeErrorPacket(result.error, deviceRegistration < 0 ? "failed to register device"
@@ -464,7 +466,7 @@ GatewaySession::ResultConnecctionRoute GatewaySession::RequestConnectionRoute(Tc
         return result;
     }
 
-    result.lease = registry.Bind(uid, request.device_id(), shared_from_this());
+    result.lease = registry.Bind(uid, login.device_id(), shared_from_this());
     if (result.lease.empty()) {
         result.error = ErrorCodes::DependencyUnavailable;
         result.response = MakeErrorPacket(ErrorCodes::DependencyUnavailable, "failed to publish session lease");
@@ -472,13 +474,9 @@ GatewaySession::ResultConnecctionRoute GatewaySession::RequestConnectionRoute(Tc
     }
 
     result.error = ErrorCodes::Success;
-    result.response.set_uid(uid);
-    result.response.set_device_id(request.device_id());
-    result.response.set_name(info->name);
-    result.response.set_age(info->age);
-    result.response.set_sex(info->sex);
-    result.response.set_head_image_url(info->headImageURL);
-    result.response.set_error(ErrorCodes::Success);
+    auto* response = result.response.mutable_login_response();
+    response->set_uid(uid);
+    SetTcpPacketStatus(result.response, ErrorCodes::Success);
     return result;
 }
 

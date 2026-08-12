@@ -231,26 +231,26 @@ class GatewayStreamReactor final
 
         // 接着解析原始 TCP 业务包并进入业务层
         // Gateway 传来的 command.packet() 是 TCP packet 序列化结果。
-        if (!ParseTcpPacket(command.packet(), packet)) {
+        if (!ParseTcpPacket(command.packet(), packet) || !TcpRequestMatchesService(command.service_id(), packet)) {
             reply(ErrorCodes::JsonParser, false);
             return;
         }
-        packet.set_uid(command.actor_uid());
 
         if (command.service_id() == ID_ACK) {
-            auto ack = Service::GetInstance()->Messages().Ack(packet, command.actor_device_id());
+            auto ack = Service::GetInstance()->Messages().Ack(command.actor_uid(), packet, command.actor_device_id());
             const auto error = TcpPacketError(ack.response);
             reply(error, isRetryableError(error), {}, ack.response);
 
             if (ack.shouldForwardRead) {
+                const auto& receipt = packet.receipt();
+                const auto& readReceipt = ack.readReceipt.read_receipt_push();
                 gateway::ClientForwardEnvelope forward;
-                forward.set_forward_id("read:" + std::to_string(ack.response.message_id()) + ":" +
-                                       std::to_string(ack.senderUid));
+                forward.set_forward_id("read:" + std::to_string(receipt.seq()) + ":" + std::to_string(ack.senderUid));
                 forward.set_recipient_uid(ack.senderUid);
                 forward.set_protocol_id(ID_TEXT_READ_RECEIPT_NOTIFY);
-                forward.set_message_id(ack.response.message_id());
-                forward.set_conversation_id(ack.readReceipt.conversation_id());
-                forward.set_conversation_seq(ack.readReceipt.conversation_seq());
+                forward.set_message_id(receipt.seq());
+                forward.set_conversation_id(readReceipt.conversation_id());
+                forward.set_conversation_seq(readReceipt.conversation_seq());
                 forward.set_packet(SerializeTcpPacket(ack.readReceipt));
                 streamService->ForwardToUser(ack.senderUid, std::move(forward));
             }
@@ -258,24 +258,25 @@ class GatewayStreamReactor final
         }
 
         if (command.service_id() == ID_TEXT_SEND_REQ) {
-            auto acceptedText = Service::GetInstance()->Messages().AcceptText(std::move(packet));
+            auto acceptedText = Service::GetInstance()->Messages().AcceptText(command.actor_uid(), packet);
             const auto error = TcpPacketError(acceptedText.response);
-            const bool retryable = acceptedText.response.retryable();
+            const bool retryable = isRetryableError(error);
             reply(error, retryable, {}, acceptedText.response);
 
             // 如果不是一个重复消息，则转发到接收者
             if (acceptedText.shouldForward) {
+                const auto& accepted = acceptedText.response.send_message_response();
                 gateway::ClientForwardEnvelope forward;
-                forward.set_forward_id(std::to_string(acceptedText.response.message_id()) + ":" +
+                forward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                        std::to_string(acceptedText.recipientUid));
                 forward.set_recipient_uid(acceptedText.recipientUid);
                 forward.set_protocol_id(ID_TEXT_SEND_REQ);
-                forward.set_message_id(acceptedText.response.message_id());
-                forward.set_conversation_id(acceptedText.response.conversation_id());
-                forward.set_conversation_seq(acceptedText.response.conversation_seq());
+                forward.set_message_id(accepted.message_id());
+                forward.set_conversation_id(accepted.conversation_id());
+                forward.set_conversation_seq(accepted.conversation_seq());
                 forward.set_packet(SerializeTcpPacket(acceptedText.forwardPacket));
                 streamService->ForwardToUser(acceptedText.recipientUid, forward);
-                forward.set_forward_id(std::to_string(acceptedText.response.message_id()) + ":" +
+                forward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                        std::to_string(command.actor_uid()));
                 streamService->ForwardToUser(command.actor_uid(), std::move(forward), command.actor_device_id());
             }
@@ -283,21 +284,22 @@ class GatewayStreamReactor final
         }
 
         if (command.service_id() == ID_FILE_SEND_REQ) {
-            auto acceptedFile = Service::GetInstance()->Messages().AcceptFile(std::move(packet));
+            auto acceptedFile = Service::GetInstance()->Messages().AcceptFile(command.actor_uid(), packet);
             const auto error = TcpPacketError(acceptedFile.response);
-            reply(error, acceptedFile.response.retryable(), {}, acceptedFile.response);
+            reply(error, isRetryableError(error), {}, acceptedFile.response);
             if (acceptedFile.shouldForward) {
+                const auto& accepted = acceptedFile.response.send_message_response();
                 gateway::ClientForwardEnvelope forward;
-                forward.set_forward_id(std::to_string(acceptedFile.response.message_id()) + ":" +
+                forward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                        std::to_string(acceptedFile.recipientUid));
                 forward.set_recipient_uid(acceptedFile.recipientUid);
                 forward.set_protocol_id(ID_FILE_SEND_REQ);
-                forward.set_message_id(acceptedFile.response.message_id());
-                forward.set_conversation_id(acceptedFile.response.conversation_id());
-                forward.set_conversation_seq(acceptedFile.response.conversation_seq());
+                forward.set_message_id(accepted.message_id());
+                forward.set_conversation_id(accepted.conversation_id());
+                forward.set_conversation_seq(accepted.conversation_seq());
                 forward.set_packet(SerializeTcpPacket(acceptedFile.forwardPacket));
                 streamService->ForwardToUser(acceptedFile.recipientUid, forward);
-                forward.set_forward_id(std::to_string(acceptedFile.response.message_id()) + ":" +
+                forward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                        std::to_string(command.actor_uid()));
                 streamService->ForwardToUser(command.actor_uid(), std::move(forward), command.actor_device_id());
             }
@@ -305,32 +307,32 @@ class GatewayStreamReactor final
         }
 
         if (command.service_id() == ID_GROUP_TEXT_SEND_REQ) {
-            auto acceptedText = Service::GetInstance()->Messages().AcceptGroupText(std::move(packet));
+            auto acceptedText = Service::GetInstance()->Messages().AcceptGroupText(command.actor_uid(), packet);
             const auto error = TcpPacketError(acceptedText.response);
-            const bool retryable = acceptedText.response.retryable();
+            const bool retryable = isRetryableError(error);
             reply(error, retryable, {}, acceptedText.response);
 
             if (acceptedText.shouldForward) {
+                const auto& accepted = acceptedText.response.send_message_response();
                 for (const int64_t recipientUid : acceptedText.recipientUids) {
                     gateway::ClientForwardEnvelope forward;
-                    forward.set_forward_id(std::to_string(acceptedText.response.message_id()) + ":" +
-                                           std::to_string(recipientUid));
+                    forward.set_forward_id(std::to_string(accepted.message_id()) + ":" + std::to_string(recipientUid));
                     forward.set_recipient_uid(recipientUid);
                     forward.set_protocol_id(ID_GROUP_TEXT_SEND_REQ);
-                    forward.set_message_id(acceptedText.response.message_id());
-                    forward.set_conversation_id(acceptedText.response.conversation_id());
-                    forward.set_conversation_seq(acceptedText.response.conversation_seq());
+                    forward.set_message_id(accepted.message_id());
+                    forward.set_conversation_id(accepted.conversation_id());
+                    forward.set_conversation_seq(accepted.conversation_seq());
                     forward.set_packet(SerializeTcpPacket(acceptedText.forwardPacket));
                     streamService->ForwardToUser(recipientUid, std::move(forward));
                 }
                 gateway::ClientForwardEnvelope senderForward;
-                senderForward.set_forward_id(std::to_string(acceptedText.response.message_id()) + ":" +
+                senderForward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                              std::to_string(command.actor_uid()));
                 senderForward.set_recipient_uid(command.actor_uid());
                 senderForward.set_protocol_id(ID_GROUP_TEXT_SEND_REQ);
-                senderForward.set_message_id(acceptedText.response.message_id());
-                senderForward.set_conversation_id(acceptedText.response.conversation_id());
-                senderForward.set_conversation_seq(acceptedText.response.conversation_seq());
+                senderForward.set_message_id(accepted.message_id());
+                senderForward.set_conversation_id(accepted.conversation_id());
+                senderForward.set_conversation_seq(accepted.conversation_seq());
                 senderForward.set_packet(SerializeTcpPacket(acceptedText.forwardPacket));
                 streamService->ForwardToUser(command.actor_uid(), std::move(senderForward), command.actor_device_id());
             }
@@ -338,29 +340,30 @@ class GatewayStreamReactor final
         }
 
         if (command.service_id() == ID_GROUP_FILE_SEND_REQ) {
-            auto acceptedFile = Service::GetInstance()->Messages().AcceptGroupFile(std::move(packet));
-            reply(TcpPacketError(acceptedFile.response), acceptedFile.response.retryable(), {}, acceptedFile.response);
+            auto acceptedFile = Service::GetInstance()->Messages().AcceptGroupFile(command.actor_uid(), packet);
+            const auto error = TcpPacketError(acceptedFile.response);
+            reply(error, isRetryableError(error), {}, acceptedFile.response);
             if (acceptedFile.shouldForward) {
+                const auto& accepted = acceptedFile.response.send_message_response();
                 for (const int64_t recipientUid : acceptedFile.recipientUids) {
                     gateway::ClientForwardEnvelope forward;
-                    forward.set_forward_id(std::to_string(acceptedFile.response.message_id()) + ":" +
-                                           std::to_string(recipientUid));
+                    forward.set_forward_id(std::to_string(accepted.message_id()) + ":" + std::to_string(recipientUid));
                     forward.set_recipient_uid(recipientUid);
                     forward.set_protocol_id(ID_GROUP_FILE_SEND_REQ);
-                    forward.set_message_id(acceptedFile.response.message_id());
-                    forward.set_conversation_id(acceptedFile.response.conversation_id());
-                    forward.set_conversation_seq(acceptedFile.response.conversation_seq());
+                    forward.set_message_id(accepted.message_id());
+                    forward.set_conversation_id(accepted.conversation_id());
+                    forward.set_conversation_seq(accepted.conversation_seq());
                     forward.set_packet(SerializeTcpPacket(acceptedFile.forwardPacket));
                     streamService->ForwardToUser(recipientUid, std::move(forward));
                 }
                 gateway::ClientForwardEnvelope senderForward;
-                senderForward.set_forward_id(std::to_string(acceptedFile.response.message_id()) + ":" +
+                senderForward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                              std::to_string(command.actor_uid()));
                 senderForward.set_recipient_uid(command.actor_uid());
                 senderForward.set_protocol_id(ID_GROUP_FILE_SEND_REQ);
-                senderForward.set_message_id(acceptedFile.response.message_id());
-                senderForward.set_conversation_id(acceptedFile.response.conversation_id());
-                senderForward.set_conversation_seq(acceptedFile.response.conversation_seq());
+                senderForward.set_message_id(accepted.message_id());
+                senderForward.set_conversation_id(accepted.conversation_id());
+                senderForward.set_conversation_seq(accepted.conversation_seq());
                 senderForward.set_packet(SerializeTcpPacket(acceptedFile.forwardPacket));
                 streamService->ForwardToUser(command.actor_uid(), std::move(senderForward), command.actor_device_id());
             }

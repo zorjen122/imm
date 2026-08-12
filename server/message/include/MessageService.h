@@ -33,17 +33,17 @@ class MessageService
         bool shouldForwardRead{false};
     };
 
-    AcceptedText AcceptText(TcpPacket request);
-    AcceptedGroupText AcceptGroupText(TcpPacket request);
-    AcceptedFile AcceptFile(TcpPacket request);
-    AcceptedGroupText AcceptGroupFile(TcpPacket request);
+    AcceptedText AcceptText(int64_t actorUid, const TcpPacket& request);
+    AcceptedGroupText AcceptGroupText(int64_t actorUid, const TcpPacket& request);
+    AcceptedFile AcceptFile(int64_t actorUid, const TcpPacket& request);
+    AcceptedGroupText AcceptGroupFile(int64_t actorUid, const TcpPacket& request);
 
-    AckResult Ack(TcpPacket& request, const std::string& deviceId);
-    TcpPacket SendText(uint32_t msgID, TcpPacket& request);
-    TcpPacket SendFile(uint32_t msgID, TcpPacket& request);
-    TcpPacket SendGroupText(uint32_t msgID, TcpPacket& request);
-    TcpPacket SendGroupFile(uint32_t msgID, TcpPacket& request);
-    TcpPacket PullConversationMessages(uint32_t msgID, TcpPacket& request);
+    AckResult Ack(int64_t actorUid, const TcpPacket& request, const std::string& deviceId);
+    TcpPacket SendText(uint32_t msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket SendFile(uint32_t msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket SendGroupText(uint32_t msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket SendGroupFile(uint32_t msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket PullConversationMessages(uint32_t msgID, int64_t actorUid, TcpPacket& request);
 };
 
 } // namespace wimi

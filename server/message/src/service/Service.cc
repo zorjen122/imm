@@ -86,52 +86,70 @@ void Service::Init()
     // 状态
 
     // 消息与文件
-    RegisterHandle(ID_TEXT_SEND_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return messageService.SendText(msgID, request); });
-    RegisterHandle(ID_FILE_UPLOAD_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return fileService.Upload(msgID, request); });
-    RegisterHandle(ID_FILE_UPLOAD_CHUNK_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return fileService.Upload(msgID, request); });
-    RegisterHandle(ID_FILE_UPLOAD_COMPLETE_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return fileService.Upload(msgID, request); });
-    RegisterHandle(ID_FILE_DOWNLOAD_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return fileService.Download(msgID, request); });
+    RegisterHandle(ID_TEXT_SEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return messageService.SendText(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_FILE_UPLOAD_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return fileService.Upload(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_FILE_UPLOAD_CHUNK_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return fileService.Upload(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_FILE_UPLOAD_COMPLETE_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return fileService.Upload(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_FILE_DOWNLOAD_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return fileService.Download(msgID, actorUid, request);
+    });
 
     // 好友
-    RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return friendService.NotifyAddFriend(msgID, request); });
-    RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return friendService.ReplyAddFriend(msgID, request); });
-    RegisterHandle(ID_PULL_FRIEND_LIST_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return friendService.PullFriendList(msgID, request); });
-    RegisterHandle(ID_PULL_FRIEND_APPLY_LIST_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return friendService.PullFriendApplyList(msgID, request); });
+    RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return friendService.NotifyAddFriend(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return friendService.ReplyAddFriend(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_PULL_FRIEND_LIST_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return friendService.PullFriendList(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_PULL_FRIEND_APPLY_LIST_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return friendService.PullFriendApplyList(msgID, actorUid, request);
+    });
 
     // 消息拉取
-    RegisterHandle(ID_PULL_SESSION_MESSAGE_LIST_REQ, TaskType::Heavy, [this](auto msgID, auto& request) {
-        return messageService.PullConversationMessages(msgID, request);
+    RegisterHandle(ID_PULL_SESSION_MESSAGE_LIST_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return messageService.PullConversationMessages(msgID, actorUid, request);
     });
     // 群聊
-    RegisterHandle(ID_GROUP_CREATE_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return groupService.Create(msgID, request); });
-    RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return groupService.NotifyJoin(msgID, request); });
-    RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return groupService.ReplyJoin(msgID, request); });
-    RegisterHandle(ID_GROUP_QUIT_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return groupService.Quit(msgID, request); });
-    RegisterHandle(ID_GROUP_KICK_MEMBER_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return groupService.Kick(msgID, request); });
-    RegisterHandle(ID_GROUP_PULL_MEMBER_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return groupService.PullNotify(msgID, request); });
+    RegisterHandle(ID_GROUP_CREATE_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return groupService.Create(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return groupService.NotifyJoin(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return groupService.ReplyJoin(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_GROUP_QUIT_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return groupService.Quit(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_GROUP_KICK_MEMBER_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return groupService.Kick(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_GROUP_PULL_MEMBER_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return groupService.PullNotify(msgID, actorUid, request);
+    });
 
     /* 待实现 */
-    RegisterHandle(ID_GROUP_TEXT_SEND_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return messageService.SendGroupText(msgID, request); });
-    RegisterHandle(ID_FILE_SEND_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return messageService.SendFile(msgID, request); });
-    RegisterHandle(ID_GROUP_FILE_SEND_REQ, TaskType::Heavy,
-                   [this](auto msgID, auto& request) { return messageService.SendGroupFile(msgID, request); });
+    RegisterHandle(ID_GROUP_TEXT_SEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return messageService.SendGroupText(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_FILE_SEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return messageService.SendFile(msgID, actorUid, request);
+    });
+    RegisterHandle(ID_GROUP_FILE_SEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
+        return messageService.SendGroupFile(msgID, actorUid, request);
+    });
 }
 
 bool Service::PostBackgroundTask(ThreadPool::Task task)
@@ -159,8 +177,7 @@ TcpPacket Service::ExecuteGatewayCommand(uint32_t msgID, int64_t actorUid, TcpPa
     auto handle = serviceGroup.find(msgID);
     if (handle == serviceGroup.end())
         return MakeErrorPacket(ErrorCodes::NotFound);
-    request.set_uid(actorUid);
-    return handle->second.handle(msgID, request);
+    return handle->second.handle(msgID, actorUid, request);
 }
 
 } // namespace wimi

@@ -40,6 +40,12 @@ ID_LOGIN_INIT_REQ = 1013
 ID_USER_QUIT_REQ = 1015
 ID_ACK = 1033
 
+RETRYABLE_ERRORS = {1002, 1018, 1020, 1027, 1028, 1029}
+
+
+def is_retryable_error(error):
+    return error in RETRYABLE_ERRORS
+
 
 FIELD_MAP = {
     "fileId": "file_id",
@@ -49,52 +55,133 @@ FIELD_MAP = {
     "fileName": "file_name",
     "fileType": "file_type",
     "fileSize": "file_size",
-    "fileOffset": "file_offset",
-    "fileComplete": "file_complete",
+    "fileOffset": "offset",
+    "fileComplete": "complete",
     "groupName": "group_name",
     "groupId": "group_id",
     "requestorUid": "requestor_uid",
     "replyorUid": "replyor_uid",
-    "applyDateTime": "apply_date_time",
     "sendDateTime": "send_date_time",
     "readDateTime": "read_date_time",
     "joinTime": "join_time",
-    "text": "data",
+    "text": "content",
     "authToken": "auth_token",
     "messageId": "message_id",
-    "messageState": "message_state",
     "receiptType": "receipt_type",
-    "requestTimeoutMs": "request_timeout_ms",
+    "requestTimeoutMs": "timeout_ms",
     "requestId": "request_id",
     "conversationId": "conversation_id",
     "conversationSeq": "conversation_seq",
     "clientMessageId": "client_message_id",
     "afterSeq": "after_seq",
     "deviceId": "device_id",
+    "init": "init_profile",
 }
 
 
-def _set_scalar(packet, key, value):
+REQUEST_PAYLOADS = {
+    1001: "pull_friend_list_request",
+    1003: "pull_friend_apply_list_request",
+    1005: "pull_conversation_messages_request",
+    1009: "pull_group_members_request",
+    1011: "ping_request",
+    1013: "login_request",
+    1015: "quit_request",
+    1017: "update_user_info_request",
+    1019: "search_user_request",
+    1021: "add_friend_request",
+    1023: "reply_friend_request",
+    1025: "remove_friend_request",
+    1027: "send_text_request",
+    1029: "send_file_request",
+    1031: "file_upload_request",
+    1033: "receipt",
+    1035: "create_group_request",
+    1037: "join_group_request",
+    1039: "reply_join_group_request",
+    1041: "quit_group_request",
+    1043: "send_group_text_request",
+    1047: "file_upload_chunk_request",
+    1049: "file_upload_complete_request",
+    1051: "file_download_request",
+    1053: "kick_group_member_request",
+    1055: "send_group_file_request",
+}
+
+
+OUTPUT_FIELD_MAP = {
+    "head_image_url": "headImageURL",
+    "request_message": "requestMessage",
+    "reply_message": "replyMessage",
+    "create_time": "createTime",
+    "send_date_time": "sendDateTime",
+    "read_date_time": "readDateTime",
+    "join_time": "joinTime",
+    "message_id": "messageId",
+    "receipt_type": "receiptType",
+    "conversation_id": "conversationId",
+    "conversation_seq": "conversationSeq",
+    "client_message_id": "clientMessageId",
+    "after_seq": "afterSeq",
+    "next_seq": "nextSeq",
+    "has_more": "hasMore",
+    "latest_seq": "latestSeq",
+    "conversation_type": "conversationType",
+    "device_id": "deviceId",
+    "file_id": "fileId",
+    "file_name": "fileName",
+    "file_type": "type",
+    "file_size": "fileSize",
+    "offset": "fileOffset",
+    "next_offset": "fileNextOffset",
+    "complete": "fileComplete",
+    "group_id": "groupId",
+    "group_name": "groupName",
+    "requestor_uid": "requestorUid",
+    "replyor_uid": "replyorUid",
+    "master_uid": "replyorUid",
+    "member_uid": "requestorUid",
+    "change": "groupChangeKind",
+    "friends": "friendList",
+    "applications": "applyList",
+    "messages": "messageList",
+    "members": "memberList",
+}
+
+
+def _set_scalar(payload, key, value):
     if key == "file":
-        file = packet.file
+        file = payload.file
         for file_key, file_value in value.items():
             if file_key == "sha256" and isinstance(file_value, str):
                 file_value = bytes.fromhex(file_value)
             setattr(file, FIELD_MAP.get(file_key, file_key), file_value)
         return
-    if key == "type" and isinstance(value, str):
-        packet.file_type = value
-        return
     field = FIELD_MAP.get(key, key)
-    if field == "data" and isinstance(value, str):
+    fields = payload.DESCRIPTOR.fields_by_name
+    if field == "data" and "data" not in fields and "content" in fields:
+        field = "content"
+    if field == "requestor_uid" and "member_uid" in fields:
+        field = "member_uid"
+    if field not in fields:
+        return
+    if field in ("data", "content") and isinstance(value, str):
         value = value.encode()
-    setattr(packet, field, value)
+    setattr(payload, field, value)
 
 
-def encode_packet(body):
+def encode_packet(service_id, body):
     packet = Packet()
+    packet.request.request_id = body.get("requestId", "")
+    packet.request.timeout_ms = body.get("requestTimeoutMs", 0)
+    payload_name = REQUEST_PAYLOADS.get(service_id)
+    if payload_name is None:
+        raise ValueError(f"unsupported request service id: {service_id}")
+    payload = getattr(packet, payload_name)
+    payload.SetInParent()
     for key, value in body.items():
-        _set_scalar(packet, key, value)
+        if key not in ("requestId", "requestTimeoutMs"):
+            _set_scalar(payload, key, value)
     return packet.SerializeToString()
 
 
@@ -105,125 +192,41 @@ def _decode_bytes(value):
         return value.decode(errors="replace")
 
 
+def _decode_message(message):
+    result = {}
+    for descriptor, value in message.ListFields():
+        name = OUTPUT_FIELD_MAP.get(descriptor.name, descriptor.name)
+        if descriptor.name == "content" and message.DESCRIPTOR.name == "TextMessagePush":
+            name = "data"
+        elif descriptor.name == "requestor_uid" and message.DESCRIPTOR.name == "GroupJoinApplication":
+            name = "from"
+        elif descriptor.name == "request_message" and message.DESCRIPTOR.name == "GroupJoinApplication":
+            name = "content"
+        if descriptor.label == descriptor.LABEL_REPEATED:
+            if descriptor.type == descriptor.TYPE_MESSAGE:
+                result[name] = [_decode_message(item) for item in value]
+            else:
+                result[name] = list(value)
+        elif descriptor.type == descriptor.TYPE_MESSAGE:
+            result[name] = _decode_message(value)
+        elif descriptor.type == descriptor.TYPE_BYTES:
+            result[name] = value.hex() if descriptor.name == "sha256" else _decode_bytes(value)
+        else:
+            result[name] = value
+    return result
+
+
 def decode_packet(data):
     packet = Packet()
     packet.ParseFromString(data)
     result = {}
-
-    scalar_fields = [
-        ("uid", "uid"),
-        ("seq", "seq"),
-        ("from", "from"),
-        ("to", "to"),
-        ("data", "data"),
-        ("error", "error"),
-        ("message", "message"),
-        ("accept", "accept"),
-        ("request_message", "requestMessage"),
-        ("reply_message", "replyMessage"),
-        ("username", "username"),
-        ("name", "name"),
-        ("age", "age"),
-        ("sex", "sex"),
-        ("head_image_url", "headImageURL"),
-        ("init", "init"),
-        ("file_name", "fileName"),
-        ("file_type", "type"),
-        ("type", "type"),
-        ("limit", "limit"),
-        ("group_id", "groupId"),
-        ("group_name", "groupName"),
-        ("requestor_uid", "requestorUid"),
-        ("replyor_uid", "replyorUid"),
-        ("content", "content"),
-        ("create_time", "createTime"),
-        ("apply_date_time", "applyDateTime"),
-        ("send_date_time", "sendDateTime"),
-        ("read_date_time", "readDateTime"),
-        ("join_time", "joinTime"),
-        ("auth_token", "authToken"),
-        ("message_id", "messageId"),
-        ("message_state", "messageState"),
-        ("receipt_type", "receiptType"),
-        ("retryable", "retryable"),
-        ("request_id", "requestId"),
-        ("conversation_id", "conversationId"),
-        ("conversation_seq", "conversationSeq"),
-        ("client_message_id", "clientMessageId"),
-        ("after_seq", "afterSeq"),
-        ("next_seq", "nextSeq"),
-        ("has_more", "hasMore"),
-        ("latest_seq", "latestSeq"),
-        ("conversation_type", "conversationType"),
-        ("device_id", "deviceId"),
-        ("file_offset", "fileOffset"),
-        ("file_next_offset", "fileNextOffset"),
-        ("file_complete", "fileComplete"),
-        ("group_change_kind", "groupChangeKind"),
-    ]
-
-    for proto_name, json_name in scalar_fields:
-        if packet.HasField(proto_name):
-            value = getattr(packet, proto_name)
-            if proto_name == "data":
-                value = _decode_bytes(value)
-            result[json_name] = value
-
-    result["friendList"] = [
-        {
-            "uid": item.uid,
-            "name": item.name,
-            "age": item.age,
-            "sex": item.sex,
-            "headImageURL": item.head_image_url,
-        }
-        for item in packet.friend_list
-    ]
-    result["applyList"] = [
-        {
-            "from": getattr(item, "from"),
-            "to": item.to,
-            "status": item.status,
-            "content": item.content,
-            "applyDateTime": item.apply_date_time,
-            "createTime": item.create_time,
-        }
-        for item in packet.apply_list
-    ]
-    result["messageList"] = [
-        {
-            "messageId": item.message_id,
-            "from": getattr(item, "from"),
-            "to": item.to,
-            "type": item.type,
-            "content": item.content,
-            "status": item.status,
-            "sendDateTime": item.send_date_time,
-            "readDateTime": item.read_date_time,
-            "conversationId": item.conversation_id,
-            "conversationSeq": item.conversation_seq,
-            "clientMessageId": item.client_message_id,
-        }
-        for item in packet.message_list
-    ]
-    result["memberList"] = [
-        {
-            "uid": item.uid,
-            "name": item.name,
-            "joinTime": item.join_time,
-        }
-        for item in packet.member_list
-    ]
-    if packet.HasField("file"):
-        result["file"] = {
-            "fileId": packet.file.file_id,
-            "fileName": packet.file.file_name,
-            "type": packet.file.file_type,
-            "fileSize": packet.file.file_size,
-            "sha256": packet.file.sha256.hex(),
-            "expired": packet.file.expired,
-        }
-
+    if packet.HasField("status"):
+        result.update(_decode_message(packet.status))
+    payload_name = packet.WhichOneof("payload")
+    if payload_name:
+        result.update(_decode_message(getattr(packet, payload_name)))
+    for list_name in ("friendList", "applyList", "messageList", "memberList"):
+        result.setdefault(list_name, [])
     return result
 
 
@@ -269,7 +272,7 @@ class WimClient:
     def send_packet(self, service_id, body):
         body = dict(body)
         body.setdefault("requestId", self._allocate_request_id())
-        data = encode_packet(body)
+        data = encode_packet(service_id, body)
         self.sock.sendall(struct.pack("!II", service_id, len(data)) + data)
 
     def _allocate_request_id(self):
@@ -310,8 +313,9 @@ class WimClient:
         self.send_packet(ID_ACK, body)
 
     def ack_async(self, service_id, payload):
-        if service_id in self.async_ack_ids and "seq" in payload:
-            self.ack(payload["seq"])
+        reliable_id = payload.get("seq", payload.get("messageId"))
+        if service_id in self.async_ack_ids and reliable_id is not None:
+            self.ack(reliable_id)
             return True
         return False
 
@@ -348,7 +352,7 @@ class WimClient:
         for attempt in range(attempts):
             try:
                 response = self.request(service_id, body, expected_id, timeout)
-                if not response.get("retryable", False):
+                if not is_retryable_error(response.get("error", 0)):
                     return response
                 last_error = RuntimeError(f"retryable response: {response}")
             except TimeoutError as error:
@@ -385,6 +389,13 @@ class WimClient:
         if init is not None:
             body["init"] = init
         rsp = self.request(ID_LOGIN_INIT_REQ, body)
+        require(
+            "error" in rsp,
+            "login response has no ResponseStatus.error; rebuild with "
+            "./scripts/build-server.sh and restart services with "
+            "./scripts/run-local-services.sh --stop-existing "
+            f"(possible stale TCP protocol): {rsp}",
+        )
         require(rsp.get("error") == 0, f"login failed for {self.uid}: {rsp}")
         return rsp
 

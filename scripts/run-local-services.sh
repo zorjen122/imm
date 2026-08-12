@@ -9,15 +9,15 @@ set -euo pipefail
 # 停止当前用户从本仓库启动的旧 WIMI 服务，然后启动新服务：
 #   ./scripts/run-local-services.sh --stop-existing
 # G=2、N=2 方式：
-  # WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-  # WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
-  # WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
-  #   ./scripts/run-local-services.sh
+#   WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
+#   WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
+#   WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
+#     ./scripts/run-local-services.sh
 # 前置条件：
-#   先执行 ./scripts/build.sh；需要 MySQL 已可连接，通常也会先执行 ./scripts/init-mysql.sh。
+#   先执行 ./scripts/build-server.sh；需要 MySQL 已可连接，通常也会先执行 ./scripts/init-mysql.sh。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
 : "${WIMI_REDIS_HOST:=127.0.0.1}"
 : "${WIMI_REDIS_PORT:=6380}"
 : "${WIMI_REDIS_PASSWORD:=root}"
@@ -62,10 +62,17 @@ done
 for exe in "$BUILD_DIR/state/state" "$BUILD_DIR/file/file" "$BUILD_DIR/message/message" "$BUILD_DIR/gateway/gateway" "$BUILD_DIR/gate/gate" ; do
   if [[ ! -x "$exe" ]]; then
     echo "Missing build output: $exe"
-    echo "Run ./scripts/build.sh first."
+    echo "Run ./scripts/build-server.sh first."
     exit 1
   fi
 done
+
+if [[ "$ROOT_DIR/server/public/proto/tcp_message.proto" -nt "$BUILD_DIR/gateway/gateway" ||
+      "$ROOT_DIR/server/public/proto/tcp_message.proto" -nt "$BUILD_DIR/message/message" ]]; then
+  echo "Build output is older than tcp_message.proto: $BUILD_DIR" >&2
+  echo "Run ./scripts/build-server.sh, then restart with --stop-existing." >&2
+  exit 1
+fi
 
 stop_existing_services() {
   if ! command -v pgrep >/dev/null 2>&1; then
@@ -73,40 +80,33 @@ stop_existing_services() {
     return 1
   fi
 
-  local -a service_commands=(
-    "$BUILD_DIR/state/state"
-    "$BUILD_DIR/file/file"
-    "$BUILD_DIR/message/message"
-    "$BUILD_DIR/gateway/gateway"
-    "$BUILD_DIR/gate/gate"
-  )
   local -a service_pids=()
   local -A seen=()
-  local command pid
+  local pid
 
   pid_is_wimi_service() {
     local target_pid="$1"
-    local argument expected
+    local argument
     [[ -r "/proc/$target_pid/cmdline" ]] || return 1
     while IFS= read -r -d '' argument; do
-      for expected in "${service_commands[@]}"; do
-        if [[ "$argument" == "$expected" ]]; then
+      case "$argument" in
+        "$ROOT_DIR"/build/*/state/state | "$ROOT_DIR"/build/*/file/file | \
+        "$ROOT_DIR"/build/*/message/message | "$ROOT_DIR"/build/*/gateway/gateway | \
+        "$ROOT_DIR"/build/*/gate/gate)
           return 0
-        fi
-      done
+          ;;
+      esac
     done < "/proc/$target_pid/cmdline"
     return 1
   }
 
-  for command in "${service_commands[@]}"; do
-    while IFS= read -r pid; do
-      if [[ -n "$pid" && "$pid" != "$$" && -z "${seen[$pid]:-}" ]] &&
-        pid_is_wimi_service "$pid"; then
-        service_pids+=("$pid")
-        seen["$pid"]=1
-      fi
-    done < <(pgrep -u "$(id -u)" -f -- "$command" || true)
-  done
+  while IFS= read -r pid; do
+    if [[ -n "$pid" && "$pid" != "$$" && -z "${seen[$pid]:-}" ]] &&
+      pid_is_wimi_service "$pid"; then
+      service_pids+=("$pid")
+      seen["$pid"]=1
+    fi
+  done < <(pgrep -u "$(id -u)" -f -- "$ROOT_DIR/build/" || true)
 
   if [[ "${#service_pids[@]}" -eq 0 ]]; then
     echo "No existing WIMI services found for the current user."

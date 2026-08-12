@@ -11,7 +11,7 @@ set -euo pipefail
 # 注意：
 #   该脚本会向测试库写入临时用户、好友申请、好友关系和消息数据。
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<EOF
@@ -165,7 +165,7 @@ import os
 import subprocess
 import time
 
-from wimi_tcp_client import WimClient, request_chat_auth, require
+from wimi_tcp_client import WimClient, is_retryable_error, request_chat_auth, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])
@@ -194,7 +194,6 @@ ID_TEXT_SEND_REQ = 1027
 ID_TEXT_READ_RECEIPT_NOTIFY = 1045
 
 NOTIFY_MESSAGE_READ = 2 
-MESSAGE_READ = 3
 
 def redis_session_lease(uid, device_id):
     output = subprocess.check_output(
@@ -299,9 +298,6 @@ try:
         },
     )
     require(text_rsp.get("error") == 0, f"cross-node text response failed: {text_rsp}")
-    require(text_rsp.get("clientMessageId") == client_message_id,
-            f"cross-node client message id changed: {text_rsp}")
-    require(text_rsp.get("messageState") == 1, f"cross-node text was not accepted: {text_rsp}")
     require(text_rsp.get("messageId", 0) > 0, f"cross-node message id missing: {text_rsp}")
 
     text_push = b.expect_async(
@@ -310,7 +306,7 @@ try:
         and payload.get("to") == UID_B
         and payload.get("data") == TEXT_PAYLOAD,
     )
-    server_seq = int(text_push["seq"])
+    server_seq = int(text_push["messageId"])
     require(text_rsp["messageId"] == server_seq,
             f"response/push message id mismatch: {text_rsp}, {text_push}")
     b.ack(server_seq, conversation_id=text_push["conversationId"],
@@ -324,7 +320,7 @@ try:
       ID_TEXT_READ_RECEIPT_NOTIFY,
       lambda payload: payload.get("conversationId") == text_push["conversationId"]
       and payload.get("conversationSeq") == text_push["conversationSeq"]
-      and payload.get("messageState") == MESSAGE_READ    # state 3 = MESSAGE_READ
+      and payload.get("messageId") == server_seq
     )
 
     print("cross-node text push ok")
@@ -340,18 +336,18 @@ try:
         }
         delayed_first = a.request(ID_TEXT_SEND_REQ, delayed_body)
         require(delayed_first.get("error", 0) != 0 and
-                delayed_first.get("retryable") is True,
+                is_retryable_error(delayed_first.get("error")),
                 f"delayed RPC did not time out retryably: {delayed_first}")
         delayed_push = b.expect_async(
             ID_TEXT_SEND_REQ,
             lambda payload: payload.get("data") == "rpc_delay_after_accept",
         )
-        delayed_server_seq = int(delayed_push["seq"])
+        delayed_server_seq = int(delayed_push["messageId"])
 
         delayed_body["requestTimeoutMs"] = 2000
         delayed_retry = a.request(ID_TEXT_SEND_REQ, delayed_body)
         require(delayed_retry.get("error", 0) != 0 and
-                delayed_retry.get("retryable") is False,
+                not is_retryable_error(delayed_retry.get("error")),
                 f"delayed RPC retry was not rejected as duplicate: {delayed_retry}")
         b.ack(delayed_server_seq,
               conversation_id=delayed_push["conversationId"],

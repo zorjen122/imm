@@ -27,7 +27,7 @@ class Service : public Singleton<Service>
     friend class Singleton<Service>;
 
   public:
-    using HandleType = std::function<TcpPacket(uint32_t, TcpPacket&)>;
+    using HandleType = std::function<TcpPacket(uint32_t, int64_t, TcpPacket&)>;
 
     ~Service();
     bool PostBackgroundTask(ThreadPool::Task task);

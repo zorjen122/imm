@@ -2,51 +2,50 @@ syntax = "proto3";
 
 package wimi.protocol;
 
-// 对外消息生命周期；状态只能从 ACCEPTED 向 READ 单调推进。
-enum MessageState {
-  MESSAGE_STATE_UNSPECIFIED = 0; // 未指定消息状态
-  MESSAGE_STATE_ACCEPTED = 1;    // Message Core 已持久化接受
-  MESSAGE_STATE_DELIVERED = 2;   // 接收方客户端已确认送达
-  MESSAGE_STATE_READ = 3;        // 接收方客户端已确认已读
+// 每个客户端请求都携带的传输控制信息，不属于具体业务载荷。
+message RequestContext {
+  string request_id = 1;          // 命令与响应的稳定关联 ID
+  uint32 timeout_ms = 2;          // 客户端请求相对超时预算
 }
 
-// DELIVERED/READ 分别确认客户端已持久化和用户已读。
+// 每个响应都携带的统一处理结果，不与具体业务字段混排。
+message ResponseStatus {
+  optional int32 error = 1;       // 统一业务错误码
+  optional string message = 2;    // 面向客户端的错误/提示文本
+}
+
 enum ReceiptType {
-  RECEIPT_TYPE_UNSPECIFIED = 0; // 未指定回执类型
-  RECEIPT_TYPE_DELIVERED = 1;   // 业务送达回执
-  RECEIPT_TYPE_READ = 2;        // 业务已读回执
+  RECEIPT_TYPE_UNSPECIFIED = 0;
+  RECEIPT_TYPE_DELIVERED = 1;
+  RECEIPT_TYPE_READ = 2;
+}
+
+enum ConversationType {
+  CONVERSATION_TYPE_UNSPECIFIED = 0;
+  CONVERSATION_TYPE_DIRECT = 1;
+  CONVERSATION_TYPE_GROUP = 2;
+}
+
+enum GroupChangeKind {
+  GROUP_CHANGE_KIND_UNSPECIFIED = 0;
+  GROUP_CHANGE_KIND_JOINED = 1;
+  GROUP_CHANGE_KIND_LEFT = 2;
+  GROUP_CHANGE_KIND_KICKED = 3;
+  GROUP_CHANGE_KIND_DISSOLVED = 4;
 }
 
 message UserInfo {
-  int64 uid = 1;             // 用户 ID
-  string name = 2;           // 用户显示名称
-  int32 age = 3;             // 用户年龄
-  string sex = 4;            // 用户性别文本
-  string head_image_url = 5; // 用户头像地址
+  int64 uid = 1;
+  string name = 2;
+  int32 age = 3;
+  string sex = 4;
+  string head_image_url = 5;
 }
 
 message FriendApply {
-  int64 from = 1;               // 申请人用户 ID
-  int64 to = 2;                 // 被申请人用户 ID
-  int32 status = 3;             // 好友申请状态
-  string content = 4;           // 好友申请附言
-  string apply_date_time = 5;   // 申请处理时间
-  string create_time = 6;       // 申请创建时间
-}
-
-message ChatMessage {
-  int64 message_id = 1;          // 服务端持久消息 ID
-  int64 from = 2;                // 发送者用户 ID
-  int64 to = 3;                  // 接收用户或群组 ID
-  int32 type = 4;                // 消息内容类型
-  string content = 5;            // 消息正文
-  int32 status = 6;              // 消息生命周期状态
-  string send_date_time = 7;     // 消息发送时间
-  string read_date_time = 8;     // 消息已读时间
-  int64 conversation_id = 9;     // 所属会话 ID
-  int64 conversation_seq = 10;   // 会话内严格递增序号
-  string client_message_id = 11; // 客户端生成的持久幂等键
-  optional FileInfo file = 12;   // 文件消息的权威附件元数据
+  int64 from = 1;
+  int32 status = 3;
+  string content = 4;
 }
 
 message FileInfo {
@@ -58,82 +57,340 @@ message FileInfo {
   bool expired = 6;
 }
 
-enum ConversationType {
-  CONVERSATION_TYPE_UNSPECIFIED = 0; // 未指定会话类型
-  CONVERSATION_TYPE_DIRECT = 1;      // 单聊会话
-  CONVERSATION_TYPE_GROUP = 2;       // 群聊会话
+message ChatMessage {
+  int64 message_id = 1;
+  int64 from = 2;
+  int64 to = 3;
+  int32 type = 4;
+  string content = 5;
+  int32 status = 6;
+  string send_date_time = 7;
+  string read_date_time = 8;
+  int64 conversation_id = 9;
+  int64 conversation_seq = 10;
+  string client_message_id = 11;
+  optional FileInfo file = 12;
 }
 
 message GroupMember {
-  int64 uid = 1;         // 群成员用户 ID
-  string name = 2;       // 群内显示名称
-  string join_time = 3;  // 加群时间
+  int64 uid = 1;
+  string name = 2;
+  string join_time = 3;
 }
 
-enum GroupChangeKind {
-  GROUP_CHANGE_KIND_UNSPECIFIED = 0;
-  GROUP_CHANGE_KIND_JOINED = 1;
-  GROUP_CHANGE_KIND_LEFT = 2;
-  GROUP_CHANGE_KIND_KICKED = 3;
-  GROUP_CHANGE_KIND_DISSOLVED = 4;
+message GroupJoinApplication {
+  int64 requestor_uid = 1;
+  string request_message = 2;
+  string create_time = 3;
 }
 
-// 客户端 TCP/TLV 的通用 Protobuf 载荷；字段按具体 service_id 组合使用。
+// 连接与资料。
+message LoginRequest {
+  int64 uid = 1;
+  string auth_token = 2;
+  string device_id = 3;
+  bool init_profile = 4;
+  string name = 5;
+  int32 age = 6;
+  string sex = 7;
+  string head_image_url = 8;
+}
+
+message LoginResponse {
+  int64 uid = 1;
+}
+
+message PingRequest {}
+message PingResponse {}
+message QuitRequest {}
+message QuitResponse {}
+
+message UpdateUserInfoRequest {
+  string name = 1;
+  int32 age = 2;
+  string sex = 3;
+  string head_image_url = 4;
+}
+message UpdateUserInfoResponse { optional UserInfo user = 1; }
+message SearchUserRequest { int64 uid = 1; }
+message SearchUserResponse { optional UserInfo user = 1; }
+
+// 好友。
+message PullFriendListRequest {}
+message PullFriendListResponse { repeated UserInfo friends = 1; }
+message PullFriendApplyListRequest {}
+message PullFriendApplyListResponse { repeated FriendApply applications = 1; }
+
+message AddFriendRequest {
+  int64 to = 1;
+  string request_message = 2;
+}
+message AddFriendResponse {}
+message FriendRequestPush {
+  int64 seq = 1;
+  int64 from = 2;
+  int64 to = 3;
+  string request_message = 4;
+}
+
+message ReplyFriendRequest {
+  int64 to = 1;
+  optional bool accept = 2;
+  string reply_message = 3;
+}
+message ReplyFriendResponse {}
+message FriendReplyPush {
+  int64 seq = 1;
+  int64 from = 2;
+  int64 to = 3;
+  optional bool accept = 4;
+  string reply_message = 5;
+}
+
+message RemoveFriendRequest { int64 to = 1; }
+message RemoveFriendResponse {}
+
+// 单聊/群聊消息与同步。
+message SendTextRequest {
+  int64 to = 1;
+  bytes content = 2;
+  string client_message_id = 3;
+  int64 conversation_id = 4;
+}
+
+message SendGroupTextRequest {
+  int64 group_id = 1;
+  bytes content = 2;
+  string client_message_id = 3;
+  int64 conversation_id = 4;
+}
+
+message SendMessageResponse {
+  int64 message_id = 1;
+  int64 conversation_id = 2;
+  int64 conversation_seq = 3;
+}
+
+message TextMessagePush {
+  int64 message_id = 2;
+  int64 from = 3;
+  int64 to = 4;
+  bytes content = 5;
+  string client_message_id = 6;
+  int64 conversation_id = 7;
+  int64 conversation_seq = 8;
+  string send_date_time = 10;
+  int64 group_id = 11;
+}
+
+message PullConversationMessagesRequest {
+  int64 conversation_id = 1;
+  int64 after_seq = 2;
+  int32 limit = 3;
+}
+
+message PullConversationMessagesResponse {
+  int64 conversation_id = 1;
+  int64 next_seq = 2;
+  bool has_more = 3;
+  int64 latest_seq = 4;
+  ConversationType conversation_type = 5;
+  repeated ChatMessage messages = 6;
+}
+
+message MessageReceipt {
+  int64 seq = 1;
+  ReceiptType receipt_type = 2;
+  int64 conversation_id = 3;
+  int64 conversation_seq = 4;
+}
+
+message ReadReceiptPush {
+  int64 message_id = 2;
+  int64 from = 3;
+  int64 to = 4;
+  int64 conversation_id = 5;
+  int64 conversation_seq = 6;
+}
+
+// 文件上传、下载与文件消息。
+message FileUploadRequest {
+  FileInfo file = 1;
+  int64 offset = 2;
+  bytes data = 3;
+  bool complete = 4;
+}
+message FileUploadResponse {
+  int64 next_offset = 1;
+  bool complete = 2;
+}
+message FileUploadChunkRequest {
+  FileInfo file = 1;
+  int64 offset = 2;
+  bytes data = 3;
+  bool complete = 4;
+}
+message FileUploadChunkResponse {
+  int64 next_offset = 1;
+  bool complete = 2;
+}
+message FileUploadCompleteRequest {
+  FileInfo file = 1;
+  int64 offset = 2;
+  bytes data = 3;
+  bool complete = 4;
+}
+message FileUploadCompleteResponse {
+  int64 next_offset = 1;
+  bool complete = 2;
+}
+message FileDownloadRequest {
+  FileInfo file = 1;
+  int64 offset = 2;
+  int32 limit = 3;
+}
+message FileDownloadResponse {
+  bytes data = 1;
+  int64 next_offset = 2;
+  bool complete = 3;
+  FileInfo file = 4;
+}
+
+message SendFileRequest {
+  int64 to = 1;
+  FileInfo file = 2;
+  string client_message_id = 3;
+  int64 conversation_id = 4;
+}
+message SendGroupFileRequest {
+  int64 group_id = 1;
+  FileInfo file = 2;
+  string client_message_id = 3;
+  int64 conversation_id = 4;
+}
+message FileMessagePush {
+  int64 message_id = 2;
+  int64 from = 3;
+  int64 to = 4;
+  FileInfo file = 5;
+  string client_message_id = 6;
+  int64 conversation_id = 7;
+  int64 conversation_seq = 8;
+  int64 group_id = 10;
+}
+
+// 群组。
+message CreateGroupRequest { string group_name = 1; }
+message CreateGroupResponse {
+  int64 group_id = 1;
+  int64 conversation_id = 2;
+}
+message JoinGroupRequest {
+  int64 group_id = 1;
+  string request_message = 2;
+}
+message JoinGroupResponse {}
+message GroupJoinRequestPush {
+  int64 requestor_uid = 1;
+  int64 group_id = 2;
+  string request_message = 3;
+}
+message ReplyJoinGroupRequest {
+  int64 group_id = 1;
+  int64 requestor_uid = 2;
+  optional bool accept = 3;
+}
+message ReplyJoinGroupResponse {}
+message GroupChangePush {
+  int64 group_id = 1;
+  int64 requestor_uid = 2;
+  int64 replyor_uid = 3;
+  optional bool accept = 4;
+  GroupChangeKind change = 5;
+  string group_name = 6;
+}
+message QuitGroupRequest { int64 group_id = 1; }
+message QuitGroupResponse {}
+message KickGroupMemberRequest {
+  int64 group_id = 1;
+  int64 member_uid = 2;
+}
+message KickGroupMemberResponse {}
+message PullGroupMembersRequest { int64 group_id = 1; }
+message PullGroupMembersResponse {
+  int64 group_id = 1;
+  int64 conversation_id = 2;
+  int64 master_uid = 3;
+  string group_name = 4;
+  repeated GroupMember members = 5;
+  repeated GroupJoinApplication applications = 6;
+}
+
+// TCP 帧中的 Protobuf 载荷。公共字段只保留传输上下文和响应状态；
+// 每个业务 service_id 必须对应 oneof 中唯一、明确的业务载荷。
 message Packet {
-  optional int64 uid = 1;                   // 用户 ID
-  optional int64 seq = 2;                   // 消息/通知 ACK 序号
-  optional int64 from = 3;                  // 发送者用户 ID
-  optional int64 to = 4;                    // 接收者用户 ID
-  optional bytes data = 5;                  // 文本或二进制业务数据
-  optional int32 error = 7;                 // 统一业务错误码
-  optional string message = 8;              // 面向客户端的错误/提示文本
-  optional bool accept = 10;                // 是否接受申请或操作
-  optional string request_message = 11;     // 申请附言
-  optional string reply_message = 12;       // 回复附言
-  optional string username = 13;            // 登录用户名
-  optional string name = 14;                // 用户或成员显示名称
-  optional int32 age = 15;                  // 用户年龄
-  optional string sex = 16;                 // 用户性别文本
-  optional string head_image_url = 17;      // 用户头像地址
-  optional bool init = 18;                  // 是否首次初始化用户资料
-  optional string file_name = 19;           // 文件名
-  optional string file_type = 20;           // 文件类型文本
-  optional int32 type = 21;                 // 消息/业务类型
-  optional int32 limit = 23;                // 单次拉取数量上限
-  optional int64 group_id = 24;             // 群组业务 ID
-  optional string group_name = 26;          // 群组名称
-  optional int64 requestor_uid = 28;        // 群申请人用户 ID
-  optional int64 replyor_uid = 29;          // 群申请处理人用户 ID
-  optional string content = 30;             // 文本/申请内容；文件消息为 file_id
-  optional string create_time = 31;         // 记录创建时间
-  optional string apply_date_time = 32;     // 申请处理时间
-  optional string send_date_time = 33;      // 消息发送时间
-  optional string read_date_time = 34;      // 消息已读时间
-  optional string join_time = 35;           // 成员加群时间
-  optional string auth_token = 39;           // Gate 签发的短期连接凭证
-  optional int64 message_id = 40;            // 服务端持久消息 ID
-  optional MessageState message_state = 41;  // 消息生命周期状态
-  optional ReceiptType receipt_type = 42;    // ACK 回执类型
-  optional bool retryable = 43;              // 当前错误是否允许重试
-  optional uint32 request_timeout_ms = 44;   // 客户端请求相对超时预算
-  optional string request_id = 45;           // 命令与响应的稳定关联 ID
-  optional int64 conversation_id = 46;       // 会话 ID
-  optional int64 conversation_seq = 47;      // 会话内严格递增序号
-  optional string client_message_id = 48;    // 客户端持久幂等键
-  optional int64 after_seq = 49;              // 增量同步的起始序号（不含）
+  optional RequestContext request = 1;
+  optional ResponseStatus status = 2;
 
-  repeated UserInfo friend_list = 50;         // 好友资料列表
-  repeated FriendApply apply_list = 51;       // 好友申请列表
-  repeated ChatMessage message_list = 52;     // 聊天消息列表
-  repeated GroupMember member_list = 53;      // 群成员列表
-  optional int64 next_seq = 54;               // 下一页继续同步的序号
-  optional bool has_more = 55;                // 是否仍有后续消息
-  optional int64 latest_seq = 56;             // 会话当前最新序号
-  optional ConversationType conversation_type = 57; // 会话类型
-  optional string device_id = 58;           // 客户端安装实例 UUID
-  optional FileInfo file = 59;              // 文件元数据
-  optional int64 file_offset = 60;          // 分块偏移
-  optional int64 file_next_offset = 61;     // 服务端确认的下一偏移
-  optional bool file_complete = 62;         // 传输完成标记
-  optional GroupChangeKind group_change_kind = 63;
+  oneof payload {
+    LoginRequest login_request = 10;
+    LoginResponse login_response = 11;
+    PingRequest ping_request = 12;
+    PingResponse ping_response = 13;
+    QuitRequest quit_request = 14;
+    QuitResponse quit_response = 15;
+    UpdateUserInfoRequest update_user_info_request = 16;
+    UpdateUserInfoResponse update_user_info_response = 17;
+    SearchUserRequest search_user_request = 18;
+    SearchUserResponse search_user_response = 19;
+
+    PullFriendListRequest pull_friend_list_request = 20;
+    PullFriendListResponse pull_friend_list_response = 21;
+    PullFriendApplyListRequest pull_friend_apply_list_request = 22;
+    PullFriendApplyListResponse pull_friend_apply_list_response = 23;
+    AddFriendRequest add_friend_request = 24;
+    AddFriendResponse add_friend_response = 25;
+    FriendRequestPush friend_request_push = 26;
+    ReplyFriendRequest reply_friend_request = 27;
+    ReplyFriendResponse reply_friend_response = 28;
+    FriendReplyPush friend_reply_push = 29;
+    RemoveFriendRequest remove_friend_request = 30;
+    RemoveFriendResponse remove_friend_response = 31;
+
+    SendTextRequest send_text_request = 40;
+    SendGroupTextRequest send_group_text_request = 41;
+    SendMessageResponse send_message_response = 42;
+    TextMessagePush text_message_push = 43;
+    PullConversationMessagesRequest pull_conversation_messages_request = 44;
+    PullConversationMessagesResponse pull_conversation_messages_response = 45;
+    MessageReceipt receipt = 46;
+    ReadReceiptPush read_receipt_push = 48;
+
+    FileUploadRequest file_upload_request = 50;
+    FileUploadResponse file_upload_response = 51;
+    FileUploadChunkRequest file_upload_chunk_request = 52;
+    FileUploadChunkResponse file_upload_chunk_response = 53;
+    FileUploadCompleteRequest file_upload_complete_request = 54;
+    FileUploadCompleteResponse file_upload_complete_response = 55;
+    FileDownloadRequest file_download_request = 56;
+    FileDownloadResponse file_download_response = 57;
+    SendFileRequest send_file_request = 58;
+    SendGroupFileRequest send_group_file_request = 59;
+    FileMessagePush file_message_push = 60;
+
+    CreateGroupRequest create_group_request = 70;
+    CreateGroupResponse create_group_response = 71;
+    JoinGroupRequest join_group_request = 72;
+    JoinGroupResponse join_group_response = 73;
+    GroupJoinRequestPush group_join_request_push = 74;
+    ReplyJoinGroupRequest reply_join_group_request = 75;
+    ReplyJoinGroupResponse reply_join_group_response = 76;
+    GroupChangePush group_change_push = 77;
+    QuitGroupRequest quit_group_request = 78;
+    QuitGroupResponse quit_group_response = 79;
+    KickGroupMemberRequest kick_group_member_request = 80;
+    KickGroupMemberResponse kick_group_member_response = 81;
+    PullGroupMembersRequest pull_group_members_request = 82;
+    PullGroupMembersResponse pull_group_members_response = 83;
+  }
 }

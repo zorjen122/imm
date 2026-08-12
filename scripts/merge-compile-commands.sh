@@ -11,24 +11,24 @@ set -euo pipefail
 #   相对路径仍按原构建目录解析，因此安全。
 # 常用方式：
 #   ./scripts/merge-compile-commands.sh
-# 指定输入（默认 server=build/wimi，client=build/client-clang）：
+# 指定输入（默认 server=build/wimi-server，client=build/client-clang）：
 #   WIMI_SERVER_DB=... WIMI_CLIENT_DB=... ./scripts/merge-compile-commands.sh
 #   或直接追加位置参数，可传任意多个数据库：
-#   ./scripts/merge-compile-commands.sh build/wimi/compile_commands.json \
+#   ./scripts/merge-compile-commands.sh build/wimi-server/compile_commands.json \
 #       build/client-clang/compile_commands.json
 # 指定输出文件（默认仓库根 compile_commands.json）：
 #   ./scripts/merge-compile-commands.sh -o /tmp/cc.json
 # 前置条件：
-#   已分别执行 ./scripts/build.sh 与 client 的 CMake 构建，使得
-#   build/wimi/compile_commands.json 与 build/client-clang/compile_commands.json 存在。
+#   已分别执行 ./scripts/build-server.sh 与 client 的 CMake 构建，使得
+#   build/wimi-server/compile_commands.json 与 build/client-clang/compile_commands.json 存在。
 # 注意：
-#   之后若重新执行 ./scripts/build.sh，根目录 compile_commands.json 会被重新指向
+#   之后若重新执行 ./scripts/build-server.sh，根目录 compile_commands.json 会被重新指向
 #   仅含 server 的符号链接，需再次运行本脚本合并。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 OUTPUT="${OUTPUT:-$ROOT_DIR/build/compile_commands.json}"
-: "${WIMI_SERVER_DB:=$ROOT_DIR/build/wimi/compile_commands.json}"
+: "${WIMI_SERVER_DB:=$ROOT_DIR/build/wimi-server/compile_commands.json}"
 : "${WIMI_CLIENT_DB:=$ROOT_DIR/build/client-clang/compile_commands.json}"
 
 usage() {
@@ -84,7 +84,7 @@ fi
 for db in "${inputs[@]}"; do
   if [[ ! -f "$db" ]]; then
     echo "Missing compile database: $db" >&2
-    echo "Build it first (e.g. ./scripts/build.sh and the client CMake build)." >&2
+    echo "Build it first (e.g. ./scripts/build-server.sh and the client CMake build)." >&2
     exit 1
   fi
 done

@@ -98,9 +98,10 @@ gateway::ClientForwardStatus SessionManager::Forward(const gateway::ClientForwar
         lease.generation != forward.expected_connection_generation())
         return gateway::CLIENT_FORWARD_STATUS_STALE_ROUTE;
     TcpPacket packet;
-    const bool hasTransportSequence = ParseTcpPacket(forward.packet(), packet) && packet.has_seq() && packet.seq() > 0;
-    const bool queued = hasTransportSequence
-                            ? session->SendReliable(forward.packet(), forward.protocol_id(), packet.seq())
+    const int64_t transportSequence =
+        ParseTcpPacket(forward.packet(), packet) ? TcpPacketReliableSequence(forward.protocol_id(), packet) : 0;
+    const bool queued = transportSequence > 0
+                            ? session->SendReliable(forward.packet(), forward.protocol_id(), transportSequence)
                             : session->SendRaw(forward.packet(), forward.protocol_id());
     if (!queued)
         return gateway::CLIENT_FORWARD_STATUS_BACKPRESSURED;

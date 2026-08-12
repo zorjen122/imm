@@ -5,13 +5,13 @@ set -euo pipefail
 #   面向本地 Connection Gateway 拓扑的端到端 smoke 测试。
 #   覆盖验证码、注册、登录、state 路由、文本消息落库、文件上传和在线直发消息。
 # 前置条件：
-#   已执行 ./scripts/build.sh 和 ./scripts/init-mysql.sh，
+#   已执行 ./scripts/build-server.sh 和 ./scripts/init-mysql.sh，
 #   并通过 ./scripts/run-local-services.sh 启动本地服务。
 # 注意：
 #   该脚本会使用测试用户 1001/1002，并创建临时上传文件和临时 FIFO。
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
 
 : "${GATE_URL:=http://127.0.0.1:18080}"
 : "${MYSQL_HOST:=127.0.0.1}"

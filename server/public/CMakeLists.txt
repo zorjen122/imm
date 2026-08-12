@@ -65,6 +65,10 @@ if(BUILD_TESTING)
   target_include_directories(gatewaySecurityTest PRIVATE ./include)
   target_link_libraries(gatewaySecurityTest PRIVATE imPublic imProto)
   add_test(NAME public.gateway_security COMMAND gatewaySecurityTest)
+  add_executable(tcpPacketProtocolTest test/tcpPacketProtocolTest.cc)
+  target_include_directories(tcpPacketProtocolTest PRIVATE ./include)
+  target_link_libraries(tcpPacketProtocolTest PRIVATE imPublic imProto)
+  add_test(NAME public.tcp_packet_protocol COMMAND tcpPacketProtocolTest)
 endif()
 
 # 单元测试

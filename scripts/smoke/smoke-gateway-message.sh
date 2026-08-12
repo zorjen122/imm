@@ -5,7 +5,7 @@ set -euo pipefail
 # The test uses the three default users created by init-mysql.sh and writes
 # temporary group, conversation, file and message rows to chatServ.
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<EOF
@@ -145,7 +145,7 @@ import subprocess
 import hashlib
 import uuid
 
-from wimi_tcp_client import WimClient, request_chat_auth, require
+from wimi_tcp_client import WimClient, is_retryable_error, request_chat_auth, require
 
 ID_PULL_SESSION_MESSAGE_LIST_REQ = 1005
 ID_GROUP_PULL_MEMBER_REQ = 1009
@@ -221,7 +221,6 @@ try:
             "lease generation was not allocated")
 
     command = {
-        "seq": int(client_message_id.split("_")[-1]) % 9_000_000_000 + 1,
         "to": uid_b,
         "data": payload,
         "conversationId": conversation_id,
@@ -229,7 +228,6 @@ try:
     }
     accepted = a.request(ID_TEXT_SEND_REQ, command)
     require(accepted.get("error") == 0, accepted)
-    require(accepted.get("messageState") == 1, accepted)
     require(accepted.get("conversationId") == conversation_id, accepted)
     require(accepted.get("conversationSeq", 0) > 0, accepted)
 
@@ -252,17 +250,17 @@ try:
     require(sender_secondary.get("messageId") == accepted.get("messageId"),
             sender_secondary)
     b.ack(
-        pushed["seq"], receipt_type=1,
+        pushed["messageId"], receipt_type=1,
         conversation_id=conversation_id,
         conversation_seq=pushed["conversationSeq"],
     )
     b_secondary.ack(
-        pushed_secondary["seq"], receipt_type=1,
+        pushed_secondary["messageId"], receipt_type=1,
         conversation_id=conversation_id,
         conversation_seq=pushed_secondary["conversationSeq"],
     )
     a_secondary.ack(
-        sender_secondary["seq"], receipt_type=1,
+        sender_secondary["messageId"], receipt_type=1,
         conversation_id=conversation_id,
         conversation_seq=sender_secondary["conversationSeq"],
     )
@@ -282,7 +280,7 @@ try:
     conflict["data"] = payload + "_conflict"
     conflict_rsp = a.request(ID_TEXT_SEND_REQ, conflict)
     require(conflict_rsp.get("error", 0) != 0, conflict_rsp)
-    require(not conflict_rsp.get("retryable", True), conflict_rsp)
+    require(not is_retryable_error(conflict_rsp.get("error", 0)), conflict_rsp)
 
     sync = b.request(
         ID_PULL_SESSION_MESSAGE_LIST_REQ,
@@ -297,7 +295,6 @@ try:
     group_first = a.request(
         ID_GROUP_TEXT_SEND_REQ,
         {
-            "seq": command["seq"] + 1,
             "groupId": group_id,
             "data": payload + "_group_a",
             "conversationId": group_conversation_id,
@@ -310,13 +307,12 @@ try:
         ID_GROUP_TEXT_SEND_REQ,
         lambda item: item.get("clientMessageId") == client_message_id + "_group_a",
     )
-    b.ack(group_push_b["seq"], conversation_id=group_conversation_id,
+    b.ack(group_push_b["messageId"], conversation_id=group_conversation_id,
           conversation_seq=group_push_b["conversationSeq"])
 
     group_second = b.request(
         ID_GROUP_TEXT_SEND_REQ,
         {
-            "seq": command["seq"] + 2,
             "groupId": group_id,
             "data": payload + "_group_b",
             "conversationId": group_conversation_id,
@@ -329,7 +325,7 @@ try:
         ID_GROUP_TEXT_SEND_REQ,
         lambda item: item.get("clientMessageId") == client_message_id + "_group_b",
     )
-    a.ack(group_push_a["seq"], conversation_id=group_conversation_id,
+    a.ack(group_push_a["messageId"], conversation_id=group_conversation_id,
           conversation_seq=group_push_a["conversationSeq"])
 
     group_sync = a.request(
@@ -422,7 +418,8 @@ try:
     require(group_file.get("error") == 0, group_file)
     file_push = b.expect_async(ID_GROUP_FILE_SEND_REQ,
         lambda item: item.get("clientMessageId") == client_message_id + "_group_file")
-    b.ack(file_push["seq"], conversation_id=group_conversation_id, conversation_seq=file_push["conversationSeq"])
+    b.ack(file_push["messageId"], conversation_id=group_conversation_id,
+          conversation_seq=file_push["conversationSeq"])
     downloaded = b.request(ID_FILE_DOWNLOAD_REQ, {"file": file_meta, "fileOffset": 0, "limit": 1024})
     require(downloaded.get("error") == 0 and downloaded.get("data") == file_data.decode(), downloaded)
 

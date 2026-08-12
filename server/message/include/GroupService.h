@@ -15,12 +15,12 @@ class GroupService
   public:
     explicit GroupService(ClientForwardService& clientForwardService);
 
-    TcpPacket Create(unsigned int msgID, TcpPacket& request);
-    TcpPacket NotifyJoin(unsigned int msgID, TcpPacket& request);
-    TcpPacket PullNotify(unsigned int msgID, TcpPacket& request);
-    TcpPacket ReplyJoin(unsigned int msgID, TcpPacket& request);
-    TcpPacket Quit(unsigned int msgID, TcpPacket& request);
-    TcpPacket Kick(unsigned int msgID, TcpPacket& request);
+    TcpPacket Create(unsigned int msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket NotifyJoin(unsigned int msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket PullNotify(unsigned int msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket ReplyJoin(unsigned int msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket Quit(unsigned int msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket Kick(unsigned int msgID, int64_t actorUid, TcpPacket& request);
 
   private:
     void NotifyJoinRequest(int64_t masterUid, int64_t requestorUid, int64_t groupId, const std::string& requestMessage);
