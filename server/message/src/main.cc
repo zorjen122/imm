@@ -1,15 +1,15 @@
 ﻿
 #include "ImActiver.h"
 #include "Logger.h"
-#include <boost/asio/signal_set.hpp>
+#include <iostream>
 #include <spdlog/common.h>
 #include <string>
 
 int main(int argc, char* argv[])
 {
     wimi::initializeLoggers(argv[0]);
-    if (argc < 3) {
-        std::cout << "Usage: " << argv[0] << " [config file] [--normal or --backup] | other: [logger level]\n";
+    if (argc < 2 || argc > 3) {
+        std::cout << "Usage: " << argv[0] << " [config file] [--debug | --info | --trace]\n";
         return -1;
     }
 
@@ -18,14 +18,8 @@ int main(int argc, char* argv[])
     if (!loadSuccess || node.IsNull())
         return -1;
 
-    std::cout << "Usage: ";
-
-    for (int i = 0; i < argc; i++)
-        std::cout << argv[i] << " ";
-    std::cout << std::endl;
-
-    if (argc == 4) {
-        auto level = std::string(argv[3]);
+    if (argc == 3) {
+        auto level = std::string(argv[2]);
         if (level == "--debug") {
             wimi::setLoggerLevel(spdlog::level::debug);
         } else if (level == "--info") {
@@ -34,12 +28,12 @@ int main(int argc, char* argv[])
             wimi::setLoggerLevel(spdlog::level::trace);
         } else {
             std::cout << "Invalid log level: " << level << ". Valid options: --debug, --info, --trace\n";
+            return -1;
         }
     }
-    if (argc >= 3 && std::string(argv[2]) == "--normal") {
-        LOG_INFO(wimi::businessLogger, "ImServiceRunner 启动, 模式: normal, 日志等级: {}", wimi::getLogLevelStr());
-        wimi::ImServiceRunner::GetInstance()->Activate();
-    }
+
+    LOG_INFO(wimi::businessLogger, "ImServiceRunner 启动, 日志等级: {}", wimi::getLogLevelStr());
+    wimi::ImServiceRunner::GetInstance()->Activate();
 
     return 0;
 }

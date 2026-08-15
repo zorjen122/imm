@@ -127,23 +127,6 @@ TEST_F(MysqlDaoTest, TestFriendOperations)
     EXPECT_FALSE(friends->empty()) << "Friend not found in list";
 }
 
-TEST_F(MysqlDaoTest, TestMessageOperations)
-{
-    std::shared_ptr<MysqlDao> dao = MysqlDao::GetInstance();
-
-    Message::Ptr msg(new Message(TEST_MESSAGE_ID, TEST_UID, TEST_FRIEND_UID, 1323214125123, 1,
-                                 1, // text
-                                 "Hello World",
-                                 1, // wait
-                                 "2023-01-01 00:00:00"));
-
-    int msgResult = dao->insertMessage(msg);
-    EXPECT_NE(msgResult, -1) << "Message insert failed";
-
-    int updateResult = dao->updateMessage(TEST_MESSAGE_ID, 2); // status 2 is delivered
-    EXPECT_EQ(updateResult, 0) << "Message update failed";
-}
-
 } // namespace wimi::db
 
 int main(int argc, char** argv)

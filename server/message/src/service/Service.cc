@@ -32,24 +32,11 @@ std::size_t ResolveServiceWorkerCount()
     return std::clamp<std::size_t>(hardware / 2, 2, 8);
 }
 
-std::chrono::milliseconds ResolvePositiveMilliseconds(const char* name, int fallback)
-{
-    if (const char* value = std::getenv(name)) {
-        int configured = std::atoi(value);
-        if (configured > 0) {
-            return std::chrono::milliseconds(configured);
-        }
-    }
-    return std::chrono::milliseconds(fallback);
-}
-
 } // namespace
 
 Service::Service() : friendService(clientForwardService), groupService(clientForwardService)
 {
     Init();
-    requestTimeout = ResolvePositiveMilliseconds("WIMI_CHAT_REQUEST_TIMEOUT_MS", 3000);
-    queueAcquireTimeout = ResolvePositiveMilliseconds("WIMI_CHAT_QUEUE_ACQUIRE_MS", 2);
     threadPool = std::make_unique<ThreadPool>("message-biz", ResolveServiceWorkerCount());
 }
 
@@ -58,14 +45,12 @@ Service::~Service()
     if (threadPool) {
         auto stats = threadPool->GetStats();
         LOG_INFO(businessLogger,
-                 "message service dispatcher stop, workers: {}, queued: {}, light "
-                 "direct: {}, heavy dispatched/rejected: {}/{}, thread pool "
+                 "message service dispatcher stop, workers: {}, queued: {}, thread pool "
                  "submitted/completed/rejected/acquire-timeout/expired: "
                  "{}/{}/{}/{}/{}, requests started/succeeded/failed/expired: "
                  "{}/{}/{}/{}",
-                 stats.workerCount, stats.queueSize, lightDispatched.load(std::memory_order_relaxed),
-                 heavyDispatched.load(std::memory_order_relaxed), heavyRejected.load(std::memory_order_relaxed),
-                 stats.submitted, stats.completed, stats.rejected, stats.acquireTimeouts, stats.expired,
+                 stats.workerCount, stats.queueSize, stats.submitted, stats.completed, stats.rejected,
+                 stats.acquireTimeouts, stats.expired,
                  Metrics::Get(Metric::RequestsStarted), Metrics::Get(Metric::RequestsSucceeded),
                  Metrics::Get(Metric::RequestsFailed), Metrics::Get(Metric::RequestsExpired));
         threadPool->Stop();
@@ -159,8 +144,6 @@ bool Service::PostBackgroundTask(ThreadPool::Task task)
     }
     return threadPool->Post(std::move(task));
 }
-
-ClientForwardService& Service::ClientForwards() { return clientForwardService; }
 
 MessageService& Service::Messages() { return messageService; }
 

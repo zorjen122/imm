@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Logger.h"
 #include "RpcPool.h"
 #include <memory>
 #include <string>
@@ -73,19 +72,6 @@ struct FriendApply {
     {
     }
 
-    std::string formatStatus(short status)
-    {
-        switch (status) {
-        case 0:
-            return "wait";
-        case 1:
-            return "agree";
-        case 2:
-            return "refuse";
-        default:
-            return "unknown";
-        }
-    }
     size_t from;
     size_t to;
     short status;
@@ -115,38 +101,6 @@ struct Message {
     {
     }
 
-    std::string formatType(short type)
-    {
-        switch (type) {
-        case 1:
-            return "text";
-        case 2:
-            return "image";
-        case 3:
-            return "audio";
-        case 4:
-            return "video";
-        case 5:
-            return "file";
-        default:
-            LOG_DEBUG(dbLogger, "no such type value: {}", type);
-            return "";
-        }
-    }
-    std::string formatStatus(short status)
-    {
-        switch (status) {
-        case 0:
-            return "withdraw"; // 撤回
-        case 1:
-            return "wait";
-        case 2:
-            return "done";
-        default:
-            LOG_DEBUG(dbLogger, "no such status value: {}", status);
-            return "";
-        }
-    }
     long messageId;
     long from;
     long to;
@@ -189,23 +143,6 @@ struct GroupMember {
     long uid;
     std::string joinTime;
     std::string memberName;
-};
-
-// 暂放
-struct File {
-    using Ptr = std::shared_ptr<File>;
-
-    enum Type { IMAGE = 1, AUDIO = 2, VIDEO = 3, TEXT = 4 };
-    File() = default;
-    long seq;
-    long offset;
-    long total;
-    Type type;
-
-    std::string data;
-    std::string name;
-    std::string savePath;
-    std::string createTime;
 };
 
 struct GroupApply {

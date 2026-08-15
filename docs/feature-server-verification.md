@@ -67,7 +67,6 @@ Message 节点之间不再建立业务转发连接；Gateway 之间也不直接�
 | S25 | 查找用户 | 未实现 | 旧 `SerachUser` 逻辑没有注册到当前 `Service::Init`，当前协议请求会返回 NotFound。 |
 | S26 | 点对点文件发送与接收 | 部分验证 | 上传完成后以 `ID_FILE_SEND_REQ` 创建 `messages.type=FILE`，其 `content` 保存 `fileId`。下载按会话成员权限查询对象，历史同步和在线推送携带完整 `FileInfo`。尚未完成跨进程真实服务 smoke。 |
 | S27 | 群退出/群成员拉取 | 未实现 | 群退出和群成员/群消息拉取尚未形成当前主线闭环。 |
-| S28 | KafkaProducer | 非主线 | 代码仍存在，但当前消息路径不依赖 Kafka；第一阶段明确不引入 MQ/Outbox。 |
 
 ## 关键验证脚本
 

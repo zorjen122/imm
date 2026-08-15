@@ -44,7 +44,3 @@ server:
     password: root
     clientCount: 2
     machineId: 1
-  kafka:
-    broker: bootstrap.servers
-    host: 127.0.0.1
-    port: 9092

@@ -30,16 +30,10 @@ target_link_libraries(
          hiredis
          redis++
          mysqlcppconnx
-         jsoncpp
-         rdkafka
-         rdkafka++)
+         jsoncpp)
 
 target_compile_options(imState PRIVATE -Wall -g)
 
 target_link_libraries(state PRIVATE imState)
 
 target_compile_options(state PRIVATE -Wall)
-
-if(WIMI_BUILD_UNIT_TESTS)
-  add_subdirectory(test)
-endif()

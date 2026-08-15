@@ -658,28 +658,6 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
         });
     }
 
-    int insertMessage(Message::Ptr message)
-    {
-        return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> int {
-            std::string f =
-                R"(INSERT INTO messages (messageId, senderId, receiverId, conversationId, conversationSeq, type, content, status, sendDateTime, readDateTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?))";
-            auto result = session->sql(f)
-                              .bind(message->messageId)
-                              .bind(message->from)
-                              .bind(message->to)
-                              .bind(message->conversationId)
-                              .bind(message->conversationSeq)
-                              .bind(message->type)
-                              .bind(message->content)
-                              .bind(message->status)
-                              .bind(message->sendDateTime)
-                              .bind(message->readDateTime)
-                              .execute();
-
-            return 0;
-        });
-    }
-
     MessageAcceptResult acceptDirectText(long senderId, long receiverId, const std::string& clientMessageId,
                                          const std::string& content, const std::string& sendDateTime,
                                          int messageType = Message::Type::TEXT)
@@ -1190,21 +1168,6 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
             return 0;
         });
     }
-    int updateMessage(long messageId, short status, const std::string& readDateTime = "")
-    {
-        return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> int {
-            if (readDateTime.empty()) {
-                std::string f = R"(UPDATE messages SET status = ? WHERE messageId = ?)";
-                auto result = session->sql(f).bind(status).bind(messageId).execute();
-            } else {
-                std::string f = R"(UPDATE messages SET status = ?, readDateTime = ? WHERE messageId = ?)";
-                auto result = session->sql(f).bind(status).bind(readDateTime).bind(messageId).execute();
-            }
-
-            return 0;
-        });
-    }
-
     int advanceConversationCursor(long uid, long conversationId, long conversationSeq, bool read)
     {
         if (uid <= 0 || conversationId <= 0 || conversationSeq <= 0)

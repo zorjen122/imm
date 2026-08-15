@@ -32,9 +32,7 @@ target_link_libraries(
          hiredis
          redis++
          mysqlcppconnx
-         jsoncpp
-         rdkafka
-         rdkafka++)
+         jsoncpp)
 
 target_compile_options(imMessage PRIVATE -Wall -g)
 

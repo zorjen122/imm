@@ -284,12 +284,6 @@ class RedisDao : public Singleton<RedisDao>, std::enable_shared_from_this<RedisP
 
     void Close() { return redisPool->Close(); }
 
-    const std::string PrefixUserId = "im:userId:";
-    std::string getPrefixUserId() { return PrefixUserId; }
-
-    const std::string PrefixOnlineUserInfo = "im:user:";
-    std::string getPrefixOnlineUserInfo() { return PrefixOnlineUserInfo; }
-
     const std::string PrefixSessionLease = "im:session:";
     const std::string PrefixSessionGeneration = "im:sessionGeneration:";
     const std::string PrefixUserSessions = "im:userSessions:";
@@ -461,41 +455,6 @@ return 1
     const std::string __prefixGroupId = "im:groupId";
     int64_t generateGroupId() { return generateId(__prefixGroupId); }
 
-    std::string getMsgId(int64_t msgId)
-    {
-        return executeTemplate([&](std::unique_ptr<sw::redis::Redis>& redis) -> std::string {
-            auto result = redis->get(__prefixMsgId + ":" + std::to_string(msgId));
-
-            return *result;
-        });
-    }
-
-    const std::string __prefixUserMsgId = "im:userMsgId";
-    bool setUserMsgId(long userId, int64_t msgId, short expired)
-    {
-        return executeTemplate([&](std::unique_ptr<sw::redis::Redis>& redis) {
-            redis->setex(__prefixUserMsgId + ":" + std::to_string(userId) + ":" + std::to_string(msgId), expired, "1");
-            return true;
-        });
-    }
-
-    bool getUserMsgId(long userId, int64_t msgId)
-    {
-        return executeTemplate([&](std::unique_ptr<sw::redis::Redis>& redis) {
-            auto result = redis->get(__prefixUserMsgId + ":" + std::to_string(userId) + ":" + std::to_string(msgId));
-            return result.has_value();
-        });
-    }
-
-    bool expireUserMsgId(long userId, int64_t msgId, short expired)
-    {
-        return executeTemplate([&](std::unique_ptr<sw::redis::Redis>& redis) {
-            auto result =
-                redis->expire(__prefixUserMsgId + ":" + std::to_string(userId) + ":" + std::to_string(msgId), expired);
-            return result;
-        });
-    }
-
     int issueVerificationCode(const std::string& email, const std::string& code, long ttlSeconds, long cooldownSeconds)
     {
         if (email.empty() || code.empty() || ttlSeconds <= 0 || cooldownSeconds <= 0)
@@ -567,60 +526,6 @@ return 1
             const std::string prefix = "im:verify:{" + email + "}:";
             return redis->eval<long long>(script, {prefix + "code", prefix + "attempts", prefix + "cooldown"},
                                           {expectedCode}) == 1;
-        });
-    }
-
-    // 暂用字符串MachineId标识机器
-    bool setOnlineUserInfo(db::UserInfo::Ptr userInfo, std::string machineId)
-    {
-        return executeTemplate([&](std::unique_ptr<sw::redis::Redis>& redis) {
-            Json::Value jsonData;
-            jsonData["userId"] = Json::Value::Int64(userInfo->uid);
-            jsonData["name"] = userInfo->name;
-            jsonData["age"] = userInfo->age;
-            jsonData["sex"] = userInfo->sex;
-            jsonData["headImageURL"] = userInfo->headImageURL;
-            jsonData["machineId"] = machineId;
-            bool status =
-                redis->set(getPrefixOnlineUserInfo() + std::to_string(userInfo->uid), jsonData.toStyledString());
-            return status;
-        });
-    }
-
-    std::string getOnlineUserInfo(long uid)
-    {
-        auto redis = redisPool->GetConnection();
-        if (!redis) {
-            LOG_DEBUG(wimi::dbLogger, "redis connection is null");
-        }
-        Defer defer([this, &redis]() { redisPool->ReturnConnection(std::move(redis)); });
-
-        auto source = redis->get(getPrefixOnlineUserInfo() + std::to_string(uid));
-        if (!source.has_value())
-            return "";
-
-        return source.value();
-    }
-
-    Json::Value getOnlineUserInfoObject(long uid)
-    {
-        std::string source = getOnlineUserInfo(uid);
-        if (source.empty())
-            return {};
-        Json::Reader reader;
-        Json::Value jsonData;
-        if (!reader.parse(source, jsonData)) {
-            LOG_DEBUG(wimi::dbLogger, "parse online user info json data error");
-            return {};
-        }
-        return jsonData;
-    }
-
-    bool delOnlineUserInfo(long uid)
-    {
-        return executeTemplate([&](std::unique_ptr<sw::redis::Redis>& redis) {
-            redis->del(getPrefixOnlineUserInfo() + std::to_string(uid));
-            return true;
         });
     }
 

@@ -35,5 +35,3 @@ YAML::Node Configer::getNode(const std::string& filed)
 
     return it->second;
 }
-
-std::string Configer::getSaveFilePath() { return "./"; }

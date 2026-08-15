@@ -42,10 +42,6 @@ target_link_libraries(gate PRIVATE imGate)
 
 target_compile_options(gate PRIVATE -Wall)
 
-if(WIMI_BUILD_UNIT_TESTS)
-  add_subdirectory(test)
-endif()
-
 if(BUILD_TESTING)
   add_executable(gateVerificationInputTest test/verificationInputTest.cc)
   target_link_libraries(gateVerificationInputTest PRIVATE imGate)

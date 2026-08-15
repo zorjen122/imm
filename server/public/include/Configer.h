@@ -10,6 +10,4 @@ class Configer
     static std::unordered_map<std::string, YAML::Node> configMap;
     static bool loadConfig(const std::string& configFile);
     static YAML::Node getNode(const std::string& filed);
-
-    static std::string getSaveFilePath();
 }; // namespace Configer

@@ -11,8 +11,6 @@ namespace wimi
 
 namespace util
 {
-unsigned char ToHex(unsigned char x) { return x > 9 ? x + 55 : x + 48; }
-
 unsigned char FromHex(unsigned char x)
 {
     unsigned char y;
@@ -25,24 +23,6 @@ unsigned char FromHex(unsigned char x)
     else
         assert(0);
     return y;
-}
-
-std::string UrlEncode(const std::string& str)
-{
-    std::string strTemp = "";
-    size_t length = str.length();
-    for (size_t i = 0; i < length; i++) {
-        if (isalnum((unsigned char)str[i]) || (str[i] == '-') || (str[i] == '_') || (str[i] == '.') || (str[i] == '~'))
-            strTemp += str[i];
-        else if (str[i] == ' ')
-            strTemp += "+";
-        else {
-            strTemp += '%';
-            strTemp += util::ToHex((unsigned char)str[i] >> 4);
-            strTemp += util::ToHex((unsigned char)str[i] & 0x0F);
-        }
-    }
-    return strTemp;
 }
 
 std::string UrlDecode(const std::string& str)

@@ -259,32 +259,6 @@ bool Service::signIn(HttpSession::ResponsePtr response, Json::Value& requestData
     return true;
 }
 
-bool Service::initUserinfo(HttpSession::ResponsePtr response, Json::Value& requestData)
-{
-    Json::Value rspInfo;
-    Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
-
-    try {
-        auto uid = requestData["uid"].asInt64();
-        auto name = requestData["name"].asString();
-        auto age = requestData["age"].asInt();
-        auto sex = requestData["sex"].asString();
-        auto headImageURI = requestData.asString();
-
-        db::UserInfo::Ptr userInfo(new db::UserInfo(uid, name, age, sex, headImageURI));
-        int hasUserInfo = db::MysqlDao::GetInstance()->insertUserInfo(userInfo);
-        if (hasUserInfo != 0) {
-            rspInfo["error"] = -1;
-            businessLogger->debug("register user info failed");
-            return false;
-        }
-        rspInfo["error"] = 0;
-        return true;
-    } catch (std::exception& e) {
-        rspInfo["error"] = ErrorCodes::JsonParser;
-        return false;
-    }
-}
 bool Service::chatArrhythmia(HttpSession::ResponsePtr response, Json::Value& requestData)
 {
     Json::Value rspInfo;

@@ -1,5 +1,4 @@
 #pragma once
-#include <atomic>
 #include <functional>
 #include <map>
 #include <memory>
@@ -31,7 +30,6 @@ class Service : public Singleton<Service>
 
     ~Service();
     bool PostBackgroundTask(ThreadPool::Task task);
-    ClientForwardService& ClientForwards();
     MessageService& Messages();
     void SetGatewayStreamService(rpc::GatewayStreamService* service);
     TcpPacket ExecuteGatewayCommand(uint32_t msgID, int64_t actorUid, TcpPacket request);
@@ -53,11 +51,6 @@ class Service : public Singleton<Service>
     MessageService messageService;
     FileService fileService;
     std::unique_ptr<ThreadPool> threadPool;
-    std::atomic<uint64_t> lightDispatched{0};
-    std::atomic<uint64_t> heavyDispatched{0};
-    std::atomic<uint64_t> heavyRejected{0};
-    std::chrono::milliseconds requestTimeout{3000};
-    std::chrono::milliseconds queueAcquireTimeout{2};
     std::map<uint32_t, HandlerEntry> serviceGroup;
 };
 }; // namespace wimi

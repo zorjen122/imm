@@ -543,9 +543,4 @@ void GatewaySession::SendError(uint32_t requestId, int error, const std::string&
     SendRaw(SerializeTcpPacket(response), __getServiceResponseId(ServiceID(requestId)));
 }
 
-std::string GatewaySession::NextRequestId()
-{
-    return connectionId + ":" + std::to_string(requestSequence.fetch_add(1, std::memory_order_relaxed) + 1);
-}
-
 } // namespace wimi::connection

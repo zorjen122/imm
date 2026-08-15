@@ -52,7 +52,6 @@ class GatewaySession : public std::enable_shared_from_this<GatewaySession>
     void SendError(uint32_t requestId, int error, const std::string& message);
     void ArmReliableWrite(int64_t ackSeq);
     void AcknowledgeDelivery(int64_t ackSeq);
-    std::string NextRequestId();
 
     boost::asio::ip::tcp::socket socket;
     boost::asio::strand<boost::asio::any_io_executor> strand;
@@ -64,7 +63,6 @@ class GatewaySession : public std::enable_shared_from_this<GatewaySession>
     db::SessionLease lease;
     std::atomic<bool> closed{false};
     std::atomic<std::size_t> queuedWrites{0};
-    std::atomic<uint64_t> requestSequence{0};
     std::deque<std::shared_ptr<std::string>> writeQueue;
     bool writeActive{false};
     bool closeAfterWrite{false};

@@ -291,14 +291,6 @@ inline std::string getServiceIdString(int id)
 
 inline int __getServiceResponseId(ServiceID id) { return id + 1; }
 
-// redis key 前缀
-#define PREFIX_REDIS_UIP "uip_"
-#define PREFIX_REDIS_USER_TOKEN "utoken_"
-#define PREFIX_REDIS_IP_COUNT "ipcount_"
-#define PREFIX_REDIS_USER_INFO "ubaseinfo_"
-#define PREFIX_REDIS_USER_ACTIVE_COUNT "logincount"
-#define PREFIX_REDIS_NAME_INFO "nameinfo_"
-
 inline std::string getCurrentDateTime()
 {
     auto now = std::chrono::system_clock::now();
@@ -310,6 +302,3 @@ inline std::string getCurrentDateTime()
     std::string dateTime(buffer);
     return dateTime;
 }
-
-// 缓存消息的过期时间，避免重复消息
-#define MESSAGE_CACHE_EXPIRE_TIME_SECONDS (10)
