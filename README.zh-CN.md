@@ -9,8 +9,7 @@
   中文 · <a href="README.md">English</a>
 </p>
 
-> **实验性、非商用项目。** WIMI 用于学习和工程实践，不是可投入生产的服务；它不
-> 提供公网安全或运维保证。请勿将其暴露到互联网，也不要用它处理敏感数据。
+> **实验性项目。** WIMI 用于学习和工程实践，不是可投入生产的服务；
 
 <p align="center">
   <img src="docs/icons/view.png" width="680" alt="WIMI 桌面客户端预览">
@@ -88,12 +87,3 @@ flowchart LR
   端口和 smoke 测试。
 - [配置说明](docs/configuration.zh-CN.md)：配置文件与覆盖规则。
 - [服务端验证状态](docs/feature-server-verification.md)：当前能力与已知边界。
-
-## 开发
-
-仓库由 `client/` 中的 Qt 客户端、`server/` 中的 C++ 服务、
-`server/public/proto/` 中的共享协议，以及 `scripts/` 中的本地脚本组成。客户端使用
-C++20、Qt 6、QML、QtProtobuf 和 SQLite；服务端使用 C++20、gRPC、MySQL 和 Redis。
-
-开始修改前请阅读上面的详细文档，并保持实验性定位：TLS、凭证安全存储、生产部署与部分
-平台路径均不在当前已验证基线内。

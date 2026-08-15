@@ -60,8 +60,10 @@ verify_rsp="$(curl --max-time 10 -sS -H 'Content-Type: application/json' \
   -d "{\"email\":\"$signup_email\"}" \
   "$GATE_URL/post-verifycode")"
 require_error_zero verify "$verify_rsp"
-verification_code="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["verificationCode"])' \
-  <<<"$verify_rsp")"
+verification_code="$(
+  python3 "$ROOT_DIR/scripts/smoke/src/smoke_support.py" \
+    json-fields verificationCode <<<"$verify_rsp"
+)"
 
 signup_rsp="$(curl --max-time 10 -sS -H 'Content-Type: application/json' \
   -d "{\"username\":\"$signup_user\",\"password\":\"123456\",\"email\":\"$signup_email\",\"verifycode\":\"$verification_code\"}" \
@@ -74,8 +76,8 @@ signin_rsp="$(curl --max-time 10 -sS -H 'Content-Type: application/json' \
 require_error_zero signin "$signin_rsp"
 grep -q '"ip" : "127.0.0.1"' <<<"$signin_rsp"
 read -r gateway_host gateway_port < <(
-  python3 -c 'import json,sys; response=json.load(sys.stdin); print(response["ip"], response["port"])' \
-    <<<"$signin_rsp"
+  python3 "$ROOT_DIR/scripts/smoke/src/smoke_support.py" \
+    json-fields ip port <<<"$signin_rsp"
 )
 if [[ -z "$gateway_host" || ! "$gateway_port" =~ ^[0-9]+$ || "$gateway_port" == "0" ]]; then
   echo "state route did not return a usable Gateway endpoint"

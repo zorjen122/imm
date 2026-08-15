@@ -9,10 +9,8 @@
   <a href="README.zh-CN.md">简体中文</a> · English
 </p>
 
-> **Experimental and non-commercial.** WIMI is a learning and engineering
-> experiment, not a production service. It has no public-service security or
-> operational guarantee; do not expose it to the Internet or use it for
-> sensitive data.
+> **Experimental.** WIMI is a learning and engineering
+> experiment, not a production service. 
 
 <p align="center">
   <img src="docs/icons/view.png" width="800" alt="WIMI desktop client preview">
@@ -100,14 +98,3 @@ Detailed setup of this page:
   override rules.
 - [Server verification status (Chinese)](docs/feature-server-verification.md)
   — current service capability and known boundaries.
-
-## Development
-
-The repository is organized around a Qt client in `client/`, C++ services in
-`server/`, shared protocols in `server/public/proto/`, and repeatable local
-scripts in `scripts/`. The client uses C++20, Qt 6, QML, QtProtobuf, and
-SQLite; services use C++20, gRPC, MySQL, and Redis.
-
-Before changing the system, read the guides above and keep the experimental
-scope in mind: TLS, secure credential storage, production deployment, and
-several platform paths remain outside the verified baseline.
