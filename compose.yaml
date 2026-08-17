@@ -1,0 +1,101 @@
+name: wimi
+
+include:
+  - ./infra.yaml
+
+x-wimi-service: &wimi-service
+  image: wimi-server:local
+  restart: unless-stopped
+
+services:
+  state:
+    <<: *wimi-service
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: [/opt/wimi/bin/state]
+    environment:
+      WIMI_CONFIG: /etc/wimi/state.yaml
+    configs:
+      - source: state-config
+        target: /etc/wimi/state.yaml
+
+  file:
+    <<: *wimi-service
+    command: [/opt/wimi/bin/file]
+    environment:
+      WIMI_CONFIG: /etc/wimi/file.yaml
+    configs:
+      - source: file-config
+        target: /etc/wimi/file.yaml
+    volumes:
+      - file-data:/var/lib/wimi/files
+
+  message:
+    <<: *wimi-service
+    command: [/opt/wimi/bin/message, /etc/wimi/message.yaml, --info]
+    configs:
+      - source: message-config
+        target: /etc/wimi/message.yaml
+    depends_on:
+      file:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      sentinel:
+        condition: service_healthy
+      state:
+        condition: service_started
+
+  gateway:
+    <<: *wimi-service
+    command: [/opt/wimi/bin/gateway]
+    environment:
+      WIMI_CONFIG: /etc/wimi/gateway.yaml
+    configs:
+      - source: gateway-config
+        target: /etc/wimi/gateway.yaml
+    depends_on:
+      message:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      sentinel:
+        condition: service_healthy
+      state:
+        condition: service_started
+    ports:
+      - "8090:8090"
+
+  gate:
+    <<: *wimi-service
+    command: [/opt/wimi/bin/gate]
+    environment:
+      WIMI_CONFIG: /etc/wimi/gate.yaml
+    configs:
+      - source: gate-config
+        target: /etc/wimi/gate.yaml
+    depends_on:
+      mysql:
+        condition: service_healthy
+      sentinel:
+        condition: service_healthy
+      state:
+        condition: service_started
+    ports:
+      - "18080:18080"
+
+configs:
+  state-config:
+    file: ./server/conf/compose/state.yaml
+  file-config:
+    file: ./server/conf/compose/file.yaml
+  message-config:
+    file: ./server/conf/compose/message.yaml
+  gateway-config:
+    file: ./server/conf/compose/gateway.yaml
+  gate-config:
+    file: ./server/conf/compose/gate.yaml
+
+volumes:
+  file-data:

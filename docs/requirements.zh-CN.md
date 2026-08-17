@@ -79,6 +79,26 @@ sudo apt-get install -y libmysqlcppconn-dev libmysqlcppconn10 libmysqlcppconnx2
 `/tmp/wimi-redis`。可使用 `scripts/test-redis-sentinel.sh` 验证主节点停止后 Sentinel 能提升
 一个副本；测试会重建并停止这套本地 Redis 拓扑。
 
+## Docker Compose
+
+Docker Compose 2.20.3 或更高版本可从仓库根目录启动单实例服务端：
+
+```bash
+docker compose up -d --build --wait
+```
+
+总入口 `compose.yaml` 通过 `include` 加载 `infra.yaml` 中的单节点 MySQL、Redis 和
+Sentinel，并启动各一个 State、File、Message、Gateway 和 Gate。Gate 暴露在 `18080`，
+Gateway 暴露在 `8090`；MySQL、Redis 和内部 RPC 端口不暴露到宿主机。该开发拓扑不使用
+Compose watch，也不挂载源码目录；代码变化后重新执行带 `--build` 的启动命令。
+
+```bash
+docker compose ps
+docker compose down
+```
+
+MySQL、Redis 和 File 使用命名卷，因此普通 `docker compose down` 不删除数据。
+
 ## 启动 G × N 拓扑
 
 以下命令启动两个 Gateway、两个 Message 节点的本地拓扑：

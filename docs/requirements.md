@@ -80,6 +80,30 @@ the disposable `/tmp/wimi-redis` directory on every run. Run
 `scripts/test-redis-sentinel.sh` to rebuild the local topology and verify
 replica promotion after the master stops.
 
+## Docker Compose
+
+Docker Compose 2.20.3 or newer can start the single-instance server stack from
+the repository root:
+
+```bash
+docker compose up -d --build --wait
+```
+
+The top-level `compose.yaml` uses `include` to load the single-node MySQL,
+Redis, and Sentinel services from `infra.yaml`, then starts one State, File,
+Message, Gateway, and Gate process. Gate is published on port `18080` and
+Gateway on port `8090`; MySQL, Redis, and internal RPC ports remain private to
+the Compose network. This development topology has no Compose watch or source
+bind mount. Run the command with `--build` again after a code change.
+
+```bash
+docker compose ps
+docker compose down
+```
+
+MySQL, Redis, and File use named volumes, so a normal `docker compose down`
+keeps their data.
+
 ## Run Services
 
 ```bash

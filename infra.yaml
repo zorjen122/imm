@@ -1,0 +1,70 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: chatServ
+      MYSQL_USER: zorjen
+      MYSQL_PASSWORD: root
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./scripts/sql/init_message_mysql_test.sql:/docker-entrypoint-initdb.d/10-wimi.sql:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysql --protocol=tcp -h 127.0.0.1
+          -uroot -D$$MYSQL_DATABASE -Nse 'SELECT COUNT(*) FROM users' >/dev/null
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - root
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, --no-auth-warning, -a, root, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  sentinel:
+    image: redis:7.4-alpine
+    command:
+      - /bin/sh
+      - -ec
+      - cp /etc/redis/sentinel.conf /tmp/sentinel.conf && exec redis-server /tmp/sentinel.conf --sentinel
+    configs:
+      - source: sentinel-config
+        target: /etc/redis/sentinel.conf
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          redis-cli --no-auth-warning -a root -p 26379
+          SENTINEL get-master-addr-by-name wimi-master | grep -q '^redis$$'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+configs:
+  sentinel-config:
+    file: ./server/conf/compose/sentinel.conf
+
+volumes:
+  mysql-data:
+  redis-data:

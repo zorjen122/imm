@@ -1,0 +1,35 @@
+server:
+  transportSecurity:
+    environment: development
+    mode: insecure
+  self:
+    name: message-1
+    host: 0.0.0.0
+    rpcPort: 50055
+  file:
+    host: file
+    rpcPort: 51000
+    rpcCount: 1
+  gateway:
+    host: gate
+    port: 18080
+  state:
+    host: state
+    port: 50052
+  mysql:
+    host: mysql
+    port: 33060
+    user: zorjen
+    password: root
+    schema: chatServ
+    clientCount: 2
+    machineId: 1
+  redis:
+    masterName: wimi-master
+    sentinels:
+      - host: sentinel
+        port: 26379
+    password: root
+    sentinelPassword: root
+    clientCount: 2
+    machineId: 1

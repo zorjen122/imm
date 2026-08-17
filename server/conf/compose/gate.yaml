@@ -1,0 +1,35 @@
+server:
+  gateway:
+    host: 0.0.0.0
+    port: 18080
+  verification:
+    codeTtlSeconds: 180
+    resendCooldownSeconds: 60
+    maxAttempts: 5
+    exposeCodeInResponse: true
+    email:
+      enabled: false
+      smtpUrl: smtps://smtp.qq.com:465
+      username: ""
+      password: ""
+  stateRPC:
+    host: state
+    port: 50052
+    rpcCount: 2
+  mysql:
+    host: mysql
+    port: 33060
+    user: zorjen
+    password: root
+    schema: chatServ
+    clientCount: 2
+    machineId: 1
+  redis:
+    masterName: wimi-master
+    sentinels:
+      - host: sentinel
+        port: 26379
+    password: root
+    sentinelPassword: root
+    clientCount: 2
+    machineId: 1
