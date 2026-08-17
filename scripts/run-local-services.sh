@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 作用：
 #   启动本地联调所需的 state/file/message/gateway/gate 服务。
-#   若 Redis 未运行，会调用 start-redis.sh 启动临时 Redis；脚本退出时会清理本次启动的服务。
+#   若本地 Redis 主从和 Sentinel 未运行，会调用 start-redis.sh 启动；脚本退出时清理本次启动的进程。
 # 常用方式：
 #   ./scripts/run-local-services.sh
 # 停止当前用户从本仓库启动的旧 WIMI 服务，然后启动新服务：
@@ -18,9 +18,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
-: "${WIMI_REDIS_HOST:=127.0.0.1}"
-: "${WIMI_REDIS_PORT:=6380}"
-: "${WIMI_REDIS_PASSWORD:=root}"
 : "${WIMI_STATE_CONFIG:=$ROOT_DIR/server/conf/state-multi.yaml}"
 : "${WIMI_GATE_CONFIG:=$ROOT_DIR/server/conf/gate.yaml}"
 : "${WIMI_FILE_CONFIG:=$ROOT_DIR/server/conf/file.yaml}"
@@ -159,15 +156,16 @@ if [[ "$stop_existing" == "1" ]]; then
   stop_existing_services
 fi
 
-started_redis=0
-redis_ping() {
-  timeout 3 redis-cli -h "$WIMI_REDIS_HOST" -p "$WIMI_REDIS_PORT" -a "$WIMI_REDIS_PASSWORD" PING >/dev/null 2>&1
+redis_topology_ready() {
+  [[ "$(timeout 1 redis-cli --no-auth-warning --raw -h 127.0.0.1 -p 26389 -a root \
+    SENTINEL get-master-addr-by-name wimi-master 2>/dev/null | tail -n 1)" =~ ^638[0-2]$ ]]
 }
 
-if ! redis_ping; then
+started_redis=0
+if ! redis_topology_ready; then
   started_redis=1
+  "$ROOT_DIR/scripts/start-redis.sh"
 fi
-"$ROOT_DIR/scripts/start-redis.sh"
 
 pids=()
 cleanup() {
@@ -175,7 +173,7 @@ cleanup() {
     kill "$pid" >/dev/null 2>&1 || true
   done
   if [[ "$started_redis" == "1" ]]; then
-    timeout 3 redis-cli -h "$WIMI_REDIS_HOST" -p "$WIMI_REDIS_PORT" -a "$WIMI_REDIS_PASSWORD" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
+    "$ROOT_DIR/scripts/stop-redis.sh" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT INT TERM

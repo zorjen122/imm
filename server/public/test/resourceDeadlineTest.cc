@@ -70,7 +70,13 @@ bool TestMysqlPoolDeadline()
 
 bool TestRedisPoolDeadline()
 {
-    wimi::db::RedisPool pool("127.0.0.1", 6380, "root", 1);
+    sw::redis::SentinelOptions options;
+    options.nodes.emplace_back("127.0.0.1", 26389);
+    options.nodes.emplace_back("127.0.0.1", 26390);
+    options.nodes.emplace_back("127.0.0.1", 26391);
+    options.password = "root";
+    auto sentinel = std::make_shared<sw::redis::Sentinel>(options);
+    wimi::db::RedisPool pool(std::move(sentinel), "wimi-master", "root", 1);
     auto held = pool.GetConnectionUntil(wimi::RequestContext::Clock::now() + 1s);
     if (!Require(held != nullptr, "unable to acquire Redis test connection")) {
         return false;

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <memory>
 #include <sw/redis++/redis.h>
+#include <sw/redis++/sentinel.h>
 
 #include <atomic>
 
@@ -44,8 +45,9 @@ class RedisPool
   public:
     using Ptr = std::shared_ptr<RedisPool>;
 
-    RedisPool(const std::string& host, unsigned int port, const std::string& password, size_t poolSize = 2)
-        : stopEnable(false), host(host), port(port), password(password)
+    RedisPool(std::shared_ptr<sw::redis::Sentinel> sentinel, const std::string& masterName, const std::string& password,
+              size_t poolSize = 2)
+        : stopEnable(false), sentinel(std::move(sentinel)), masterName(masterName), password(password)
     {
         for (size_t i = 0; i < poolSize; ++i) {
             try {
@@ -161,12 +163,14 @@ class RedisPool
         // socket 上限防止已借出的 Redis 连接无限挂起；连接池获取仍服从当前请求
         // 更短的 deadline，两层限制分别约束排队时间和网络时间。
         sw::redis::ConnectionOptions options;
-        options.host = host;
-        options.port = static_cast<int>(port);
         options.password = password;
         options.connect_timeout = std::chrono::milliseconds(1000);
         options.socket_timeout = std::chrono::milliseconds(1000);
-        return std::make_unique<sw::redis::Redis>(options);
+
+        // 所有读写都连接 Sentinel 当前认定的主节点。这样写入成功后，紧接着的读取
+        // 不会因为副本还没同步而拿到旧数据。两个副本只在主节点不可用时接替它，
+        // 平时不承担应用请求。
+        return std::make_unique<sw::redis::Redis>(sentinel, masterName, sw::redis::Role::MASTER, options);
     }
 
     void keepConnectionHandle()
@@ -192,7 +196,7 @@ class RedisPool
                     auto session = CreateConnection();
                     connections.push(std::move(session));
                 } catch (sw::redis::Error& e) {
-                    spdlog::warn("redis reconnection is error: {} | host: {}, port: {}", e.what(), host, port);
+                    spdlog::warn("redis reconnection is error: {} | master: {}", e.what(), masterName);
                 }
             }
         }
@@ -200,8 +204,8 @@ class RedisPool
 
   private:
     std::atomic<bool> stopEnable;
-    std::string host;
-    unsigned int port;
+    std::shared_ptr<sw::redis::Sentinel> sentinel;
+    std::string masterName;
     std::string password;
     std::queue<std::unique_ptr<sw::redis::Redis>> connections;
     std::mutex poolMutex;
@@ -224,25 +228,34 @@ class RedisDao : public Singleton<RedisDao>, std::enable_shared_from_this<RedisP
             return;
         }
         auto conf = Configer::getNode("server");
-        auto host = conf["redis"]["host"].as<std::string>();
-        auto port = conf["redis"]["port"].as<int>();
+        auto masterName = conf["redis"]["masterName"].as<std::string>();
         auto password = conf["redis"]["password"].as<std::string>();
+        auto sentinelPassword = conf["redis"]["sentinelPassword"].as<std::string>();
         auto clientCount = conf["redis"]["clientCount"].as<int>();
         auto machine = conf["redis"]["machineId"].as<int>();
 
-        redisPool.reset(new RedisPool(host, port, password, clientCount));
+        sw::redis::SentinelOptions sentinelOptions;
+        sentinelOptions.password = sentinelPassword;
+        for (const auto& node : conf["redis"]["sentinels"]) {
+            sentinelOptions.nodes.emplace_back(node["host"].as<std::string>(), node["port"].as<int>());
+        }
+        sentinelOptions.connect_timeout = std::chrono::milliseconds(1000);
+        sentinelOptions.socket_timeout = std::chrono::milliseconds(1000);
+        auto sentinel = std::make_shared<sw::redis::Sentinel>(sentinelOptions);
+
+        redisPool.reset(new RedisPool(std::move(sentinel), masterName, password, clientCount));
         machineId = machine;
 
         if (!redisPool->Empty()) {
             LOG_INFO(dbLogger,
-                     "redis connection pool init success | host: {}, port: "
+                     "redis connection pool init success | master: {}, sentinelCount: "
                      "{}, clientCount: {}, machineId: {}",
-                     host, port, clientCount, machine);
+                     masterName, sentinelOptions.nodes.size(), clientCount, machine);
         } else {
             LOG_WARN(dbLogger,
-                     "redis connection pool init failed | host: {}, port: "
+                     "redis connection pool init failed | master: {}, sentinelCount: "
                      "{}, clientCount: {}, machineId: {}",
-                     host, port, clientCount, machine);
+                     masterName, sentinelOptions.nodes.size(), clientCount, machine);
         }
         inited = true;
     }

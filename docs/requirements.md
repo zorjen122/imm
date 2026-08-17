@@ -50,7 +50,9 @@ The code uses MySQL Connector/C++ X DevAPI, so MySQL X Plugin must listen on `12
 - `8090`: primary Connection Gateway TCP
 - `8091`: secondary Connection Gateway TCP
 - `51000`: file gRPC
-- `6380`: project Redis, password `root`
+- `6380`: initial Redis master, password `root`
+- `6381`, `6382`: Redis replicas, password `root`
+- `26389`, `26390`, `26391`: Redis Sentinels, password `root`
 - `33060`: MySQL X Plugin
 
 ## Build
@@ -72,6 +74,11 @@ The build generates gRPC/protobuf C++ sources into the CMake build directory.
 `scripts/sql/init_message_mysql_test.sql`. The seed data contains three chat
 users: `zorjen` (1001), `alice` (1002), and `bob` (1003), all with password
 `123456`.
+
+`start-redis.sh` starts one master, two replicas, and three Sentinels, replacing
+the disposable `/tmp/wimi-redis` directory on every run. Run
+`scripts/test-redis-sentinel.sh` to rebuild the local topology and verify
+replica promotion after the master stops.
 
 ## Run Services
 

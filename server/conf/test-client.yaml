@@ -11,8 +11,15 @@ server:
     clientCount: 2
     machineId: 1
   redis:
-    host: 127.0.0.1
-    port: 6380
+    masterName: wimi-master
+    sentinels:
+      - host: 127.0.0.1
+        port: 26389
+      - host: 127.0.0.1
+        port: 26390
+      - host: 127.0.0.1
+        port: 26391
     password: root
+    sentinelPassword: root
     clientCount: 1
     machineId: 1

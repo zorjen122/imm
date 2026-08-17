@@ -51,7 +51,9 @@ sudo apt-get install -y libmysqlcppconn-dev libmysqlcppconn10 libmysqlcppconnx2
 | `50055`、`50056` | Message gRPC 节点 |
 | `8090`、`8091` | Connection Gateway TCP 节点 |
 | `51000` | File gRPC |
-| `6380` | 项目 Redis，密码为 `root` |
+| `6380` | Redis 初始主节点，密码为 `root` |
+| `6381`、`6382` | Redis 副本节点，密码为 `root` |
+| `26389`、`26390`、`26391` | Redis Sentinel，密码为 `root` |
 | `33060` | MySQL X Plugin |
 
 ## 构建、初始化与启动
@@ -72,6 +74,10 @@ sudo apt-get install -y libmysqlcppconn-dev libmysqlcppconn10 libmysqlcppconnx2
 
 本地 smoke 为方便验证，会通过 `gate.yaml` 中的 `exposeCodeInResponse` 返回验证码。
 生产环境必须关闭该选项并配置 SMTP。
+
+`start-redis.sh` 会启动一主两从和三个 Sentinel，并在每次启动时覆盖临时目录
+`/tmp/wimi-redis`。可使用 `scripts/test-redis-sentinel.sh` 验证主节点停止后 Sentinel 能提升
+一个副本；测试会重建并停止这套本地 Redis 拓扑。
 
 ## 启动 G × N 拓扑
 
