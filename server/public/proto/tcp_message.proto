@@ -2,395 +2,509 @@ syntax = "proto3";
 
 package wimi.protocol;
 
-// 每个客户端请求都携带的传输控制信息，不属于具体业务载荷。
+// 每个客户端请求都要携带的通用信息。
 message RequestContext {
-  string request_id = 1;          // 命令与响应的稳定关联 ID
-  uint32 timeout_ms = 2;          // 客户端请求相对超时预算
+  string request_id = 1; // 用于匹配请求和响应，不能为空
+  uint32 timeout_ms = 2; // 希望服务端在多少毫秒内处理完；0 表示使用服务端默认值
 }
 
-// 每个响应都携带的统一处理结果，不与具体业务字段混排。
+// 服务端返回的通用处理结果。
 message ResponseStatus {
-  optional int32 error = 1;       // 统一业务错误码
-  optional string message = 2;    // 面向客户端的错误/提示文本
+  optional int32 error = 1;    // 错误码；0 表示成功
+  optional string message = 2; // 给客户端的错误或提示文本
 }
 
+// 客户端对消息的确认类型。
 enum ReceiptType {
-  RECEIPT_TYPE_UNSPECIFIED = 0;
-  RECEIPT_TYPE_DELIVERED = 1;
-  RECEIPT_TYPE_READ = 2;
+  RECEIPT_TYPE_UNSPECIFIED = 0; // 未指定，服务端不接受该值
+  RECEIPT_TYPE_DELIVERED = 1;   // 消息已到达客户端
+  RECEIPT_TYPE_READ = 2;        // 用户已读消息
 }
 
+// 会话类型。
 enum ConversationType {
-  CONVERSATION_TYPE_UNSPECIFIED = 0;
-  CONVERSATION_TYPE_DIRECT = 1;
-  CONVERSATION_TYPE_GROUP = 2;
+  CONVERSATION_TYPE_UNSPECIFIED = 0; // 未指定
+  CONVERSATION_TYPE_DIRECT = 1;      // 两个用户的单聊
+  CONVERSATION_TYPE_GROUP = 2;       // 群聊
 }
 
+// 群成员发生的变化。
 enum GroupChangeKind {
-  GROUP_CHANGE_KIND_UNSPECIFIED = 0;
-  GROUP_CHANGE_KIND_JOINED = 1;
-  GROUP_CHANGE_KIND_LEFT = 2;
-  GROUP_CHANGE_KIND_KICKED = 3;
-  GROUP_CHANGE_KIND_DISSOLVED = 4;
+  GROUP_CHANGE_KIND_UNSPECIFIED = 0; // 未指定变化，例如入群申请被拒绝
+  GROUP_CHANGE_KIND_JOINED = 1;      // 新成员已加入
+  GROUP_CHANGE_KIND_LEFT = 2;        // 成员主动退出
+  GROUP_CHANGE_KIND_KICKED = 3;      // 成员被移出
+  GROUP_CHANGE_KIND_DISSOLVED = 4;   // 群已解散
 }
 
+// 用户的公开资料。
 message UserInfo {
-  int64 uid = 1;
-  string name = 2;
-  int32 age = 3;
-  string sex = 4;
-  string head_image_url = 5;
+  int64 uid = 1;              // 用户 ID
+  string name = 2;            // 昵称
+  int32 age = 3;              // 年龄
+  string sex = 4;             // 性别
+  string head_image_url = 5;  // 头像地址
 }
 
+// 一条好友申请。
 message FriendApply {
-  int64 from = 1;
-  int32 status = 3;
-  string content = 4;
+  int64 from = 1;     // 发起申请的用户 ID
+  int32 status = 3;   // 申请状态：0 待处理，1 已同意，2 已拒绝
+  string content = 4; // 申请或回复时填写的消息
 }
 
+// 文件的基本信息。
 message FileInfo {
-  string file_id = 1;
-  string file_name = 2;
-  string file_type = 3;
-  int64 file_size = 4;
-  bytes sha256 = 5;
-  bool expired = 6;
+  string file_id = 1;   // 客户端生成的 36 字符文件 ID
+  string file_name = 2; // 原始文件名
+  string file_type = 3; // MIME 类型，例如 image/png
+  int64 file_size = 4;  // 文件总字节数，最大 100 MiB
+  bytes sha256 = 5;     // 文件内容的 32 字节 SHA-256 值
+  bool expired = 6;     // 文件是否已过期；为 true 时不能下载
 }
 
+// 拉取历史消息时返回的一条消息。
 message ChatMessage {
-  int64 message_id = 1;
-  int64 from = 2;
-  int64 to = 3;
-  int32 type = 4;
-  string content = 5;
-  int32 status = 6;
-  string send_date_time = 7;
-  string read_date_time = 8;
-  int64 conversation_id = 9;
-  int64 conversation_seq = 10;
-  string client_message_id = 11;
-  optional FileInfo file = 12;
+  int64 message_id = 1;             // 服务端生成的消息 ID
+  int64 from = 2;                   // 发送者用户 ID
+  int64 to = 3;                     // 单聊时为接收者 ID，群聊时为群 ID
+  int32 type = 4;                   // 消息类型：1 文本，2 图片，3 音频，4 视频，5 文件
+  string content = 5;               // 文本内容；文件消息中为文件 ID
+  int32 status = 6;                 // 消息状态：0 已撤回，1 待送达，2 已送达，3 已读
+  string send_date_time = 7;        // 服务端记录的发送时间
+  string read_date_time = 8;        // 服务端记录的已读时间；未读时为空
+  int64 conversation_id = 9;        // 所属会话 ID
+  int64 conversation_seq = 10;      // 消息在该会话中的递增序号
+  string client_message_id = 11;    // 客户端生成的发送幂等 ID
+  optional FileInfo file = 12;      // 文件消息的文件信息；其他类型不填
 }
 
+// 群成员的简要信息。
 message GroupMember {
-  int64 uid = 1;
-  string name = 2;
-  string join_time = 3;
+  int64 uid = 1;         // 成员用户 ID
+  string name = 2;       // 成员昵称
+  string join_time = 3;  // 加入群的时间
 }
 
+// 一条待处理的入群申请。
 message GroupJoinApplication {
-  int64 requestor_uid = 1;
-  string request_message = 2;
-  string create_time = 3;
+  int64 requestor_uid = 1;      // 申请人用户 ID
+  string request_message = 2;   // 申请留言
+  string create_time = 3;       // 申请时间
 }
 
-// 连接与资料。
+// 连接与用户资料。
+
+// 登录 Gateway，并把当前连接绑定到用户和设备。
 message LoginRequest {
-  int64 uid = 1;
-  string auth_token = 2;
-  string device_id = 3;
-  bool init_profile = 4;
-  string name = 5;
-  int32 age = 6;
-  string sex = 7;
-  string head_image_url = 8;
+  int64 uid = 1;             // 要登录的用户 ID
+  string auth_token = 2;     // 登录服务签发的短期连接凭证
+  string device_id = 3;      // 客户端设备 ID，最长 36 个字符
+  bool init_profile = 4;     // 是否在首次登录时创建用户资料
+  string name = 5;           // 首次创建资料时使用的昵称
+  int32 age = 6;             // 首次创建资料时使用的年龄
+  string sex = 7;            // 首次创建资料时使用的性别
+  string head_image_url = 8; // 首次创建资料时使用的头像地址
 }
 
+// 登录成功后返回已绑定的用户。
 message LoginResponse {
-  int64 uid = 1;
+  int64 uid = 1; // 已绑定到连接的用户 ID
 }
 
+// 检查连接是否正常，无需业务字段。
 message PingRequest {}
+// 对 PingRequest 的回应。
 message PingResponse {}
+// 主动退出并在响应发送完后关闭连接。
 message QuitRequest {}
+// 确认服务端将关闭当前连接。
 message QuitResponse {}
 
+// 更新当前登录用户的公开资料。
 message UpdateUserInfoRequest {
-  string name = 1;
-  int32 age = 2;
-  string sex = 3;
-  string head_image_url = 4;
+  string name = 1;           // 新昵称
+  int32 age = 2;             // 新年龄
+  string sex = 3;            // 新性别
+  string head_image_url = 4; // 新头像地址
 }
-message UpdateUserInfoResponse { optional UserInfo user = 1; }
-message SearchUserRequest { int64 uid = 1; }
-message SearchUserResponse { optional UserInfo user = 1; }
+
+// 返回更新后的用户资料。
+message UpdateUserInfoResponse {
+  optional UserInfo user = 1; // 更新后的完整资料
+}
+
+// 按用户 ID 查找用户。
+message SearchUserRequest {
+  int64 uid = 1; // 要查找的用户 ID
+}
+
+// 返回查找到的用户资料。
+message SearchUserResponse {
+  optional UserInfo user = 1; // 匹配的用户；未找到时不填
+}
 
 // 好友。
+
+// 拉取当前用户的好友列表。
 message PullFriendListRequest {}
-message PullFriendListResponse { repeated UserInfo friends = 1; }
+
+// 好友列表。
+message PullFriendListResponse {
+  repeated UserInfo friends = 1; // 好友的公开资料
+}
+
+// 拉取当前用户收到的好友申请。
 message PullFriendApplyListRequest {}
-message PullFriendApplyListResponse { repeated FriendApply applications = 1; }
 
+// 好友申请列表。
+message PullFriendApplyListResponse {
+  repeated FriendApply applications = 1; // 收到的申请
+}
+
+// 向指定用户发起好友申请。
 message AddFriendRequest {
-  int64 to = 1;
-  string request_message = 2;
+  int64 to = 1;              // 接收申请的用户 ID
+  string request_message = 2; // 申请留言
 }
+// 好友申请的处理结果，详见 Packet.status。
 message AddFriendResponse {}
+
+// 服务端向目标用户推送新的好友申请。
 message FriendRequestPush {
-  int64 seq = 1;
-  int64 from = 2;
-  int64 to = 3;
-  string request_message = 4;
+  int64 seq = 1;              // 推送序号，客户端用它发送到达确认
+  int64 from = 2;             // 发起申请的用户 ID
+  int64 to = 3;               // 接收申请的用户 ID
+  string request_message = 4; // 申请留言
 }
 
+// 同意或拒绝一条好友申请。
 message ReplyFriendRequest {
-  int64 to = 1;
-  optional bool accept = 2;
-  string reply_message = 3;
+  int64 to = 1;             // 原申请人的用户 ID
+  optional bool accept = 2; // true 表示同意，false 表示拒绝；必须填写
+  string reply_message = 3; // 回复留言
 }
+// 好友申请回复的处理结果，详见 Packet.status。
 message ReplyFriendResponse {}
+
+// 服务端向原申请人推送处理结果。
 message FriendReplyPush {
-  int64 seq = 1;
-  int64 from = 2;
-  int64 to = 3;
-  optional bool accept = 4;
-  string reply_message = 5;
+  int64 seq = 1;              // 推送序号，客户端用它发送到达确认
+  int64 from = 2;             // 处理申请的用户 ID
+  int64 to = 3;               // 原申请人的用户 ID
+  optional bool accept = 4;   // true 表示同意，false 表示拒绝
+  string reply_message = 5;   // 回复留言
 }
 
-message RemoveFriendRequest { int64 to = 1; }
+// 删除与指定用户的好友关系。
+message RemoveFriendRequest {
+  int64 to = 1; // 要删除的好友用户 ID
+}
+// 删除好友的处理结果，详见 Packet.status。
 message RemoveFriendResponse {}
 
 // 单聊/群聊消息与同步。
+
+// 向好友发送一条文本消息。
 message SendTextRequest {
-  int64 to = 1;
-  bytes content = 2;
-  string client_message_id = 3;
-  int64 conversation_id = 4;
+  int64 to = 1;                   // 接收者用户 ID
+  bytes content = 2;              // 文本内容的字节数据
+  string client_message_id = 3;   // 客户端生成的幂等 ID，重试同一条消息时保持不变
+  int64 conversation_id = 4;      // 客户端已知的会话 ID；服务端以好友关系中的会话为准
 }
 
+// 向群组发送一条文本消息。
 message SendGroupTextRequest {
-  int64 group_id = 1;
-  bytes content = 2;
-  string client_message_id = 3;
-  int64 conversation_id = 4;
+  int64 group_id = 1;              // 目标群 ID
+  bytes content = 2;               // 文本内容的字节数据
+  string client_message_id = 3;    // 客户端生成的幂等 ID，重试同一条消息时保持不变
+  int64 conversation_id = 4;       // 客户端已知的会话 ID；服务端以群组绑定的会话为准
 }
 
+// 文本或文件消息被服务端接收后返回的位置信息。
 message SendMessageResponse {
-  int64 message_id = 1;
-  int64 conversation_id = 2;
-  int64 conversation_seq = 3;
+  int64 message_id = 1;        // 服务端生成的消息 ID
+  int64 conversation_id = 2;   // 消息所属的会话 ID
+  int64 conversation_seq = 3;  // 消息在该会话中的递增序号
 }
 
+// 服务端向会话成员推送的文本消息。
 message TextMessagePush {
-  int64 message_id = 2;
-  int64 from = 3;
-  int64 to = 4;
-  bytes content = 5;
-  string client_message_id = 6;
-  int64 conversation_id = 7;
-  int64 conversation_seq = 8;
-  string send_date_time = 10;
-  int64 group_id = 11;
+  int64 message_id = 2;            // 服务端生成的消息 ID
+  int64 from = 3;                  // 发送者用户 ID
+  int64 to = 4;                    // 单聊接收者用户 ID；群聊时为 0
+  bytes content = 5;               // 文本内容的字节数据
+  string client_message_id = 6;    // 发送方生成的幂等 ID
+  int64 conversation_id = 7;       // 所属会话 ID
+  int64 conversation_seq = 8;      // 消息在该会话中的递增序号
+  string send_date_time = 10;      // 服务端记录的发送时间
+  int64 group_id = 11;             // 群聊的群 ID；单聊时为 0
 }
 
+// 按会话序号增量拉取消息。
 message PullConversationMessagesRequest {
-  int64 conversation_id = 1;
-  int64 after_seq = 2;
-  int32 limit = 3;
+  int64 conversation_id = 1; // 要拉取的会话 ID
+  int64 after_seq = 2;       // 只返回此序号之后的消息；0 表示从可见的第一条开始
+  int32 limit = 3;           // 本次最多返回的条数；不大于 0 时默认为 50，最大为 100
 }
 
+// 一页会话消息及下次拉取位置。
 message PullConversationMessagesResponse {
-  int64 conversation_id = 1;
-  int64 next_seq = 2;
-  bool has_more = 3;
-  int64 latest_seq = 4;
-  ConversationType conversation_type = 5;
-  repeated ChatMessage messages = 6;
+  int64 conversation_id = 1;             // 本次拉取的会话 ID
+  int64 next_seq = 2;                     // 下次请求应传入的 after_seq
+  bool has_more = 3;                      // next_seq 之后是否还有消息
+  int64 latest_seq = 4;                   // 会话当前已分配的最大序号
+  ConversationType conversation_type = 5; // 单聊或群聊
+  repeated ChatMessage messages = 6;      // 按会话序号排列的消息
 }
 
+// 客户端确认一条推送已送达或已读。
 message MessageReceipt {
-  int64 seq = 1;
-  ReceiptType receipt_type = 2;
-  int64 conversation_id = 3;
-  int64 conversation_seq = 4;
+  int64 seq = 1;                 // 推送序号；消息推送中就是 message_id
+  ReceiptType receipt_type = 2;  // 确认到达还是已读
+  int64 conversation_id = 3;     // 消息所属会话 ID；非会话通知可为 0
+  int64 conversation_seq = 4;    // 消息的会话序号；非会话通知可为 0
 }
 
+// 服务端向单聊发送者推送的已读通知。
 message ReadReceiptPush {
-  int64 message_id = 2;
-  int64 from = 3;
-  int64 to = 4;
-  int64 conversation_id = 5;
-  int64 conversation_seq = 6;
+  int64 message_id = 2;        // 已读消息 ID
+  int64 from = 3;              // 读取消息的用户 ID
+  int64 to = 4;                // 原消息发送者 ID
+  int64 conversation_id = 5;   // 消息所属会话 ID
+  int64 conversation_seq = 6;  // 已读消息的会话序号
 }
 
 // 文件上传、下载与文件消息。
+
+// 上传文件的首个数据块。
 message FileUploadRequest {
-  FileInfo file = 1;
-  int64 offset = 2;
-  bytes data = 3;
-  bool complete = 4;
-}
-message FileUploadResponse {
-  int64 next_offset = 1;
-  bool complete = 2;
-}
-message FileUploadChunkRequest {
-  FileInfo file = 1;
-  int64 offset = 2;
-  bytes data = 3;
-  bool complete = 4;
-}
-message FileUploadChunkResponse {
-  int64 next_offset = 1;
-  bool complete = 2;
-}
-message FileUploadCompleteRequest {
-  FileInfo file = 1;
-  int64 offset = 2;
-  bytes data = 3;
-  bool complete = 4;
-}
-message FileUploadCompleteResponse {
-  int64 next_offset = 1;
-  bool complete = 2;
-}
-message FileDownloadRequest {
-  FileInfo file = 1;
-  int64 offset = 2;
-  int32 limit = 3;
-}
-message FileDownloadResponse {
-  bytes data = 1;
-  int64 next_offset = 2;
-  bool complete = 3;
-  FileInfo file = 4;
+  FileInfo file = 1; // 文件的完整信息，每个数据块都要填写
+  int64 offset = 2;  // 本块数据在文件中的起始字节位置；首块为 0
+  bytes data = 3;    // 本块的文件数据
+  bool complete = 4; // 本块后是否已上传完整个文件
 }
 
+// 首个上传数据块的处理结果。
+message FileUploadResponse {
+  int64 next_offset = 1; // 服务端希望下一块从这个字节位置开始
+  bool complete = 2;     // 整个文件是否已校验并保存完成
+}
+
+// 继续上传文件的中间数据块。
+message FileUploadChunkRequest {
+  FileInfo file = 1; // 与首块一致的文件信息
+  int64 offset = 2;  // 本块数据的起始字节位置，应使用上次返回的 next_offset
+  bytes data = 3;    // 本块的文件数据
+  bool complete = 4; // 中间块通常为 false
+}
+
+// 中间上传数据块的处理结果。
+message FileUploadChunkResponse {
+  int64 next_offset = 1; // 服务端希望下一块从这个字节位置开始
+  bool complete = 2;     // 整个文件是否已校验并保存完成
+}
+
+// 上传文件的最后一个数据块。
+message FileUploadCompleteRequest {
+  FileInfo file = 1; // 与前面数据块一致的文件信息
+  int64 offset = 2;  // 末块数据的起始字节位置，应使用上次返回的 next_offset
+  bytes data = 3;    // 最后一块文件数据，也可为空
+  bool complete = 4; // 应为 true，触发大小和 SHA-256 校验
+}
+
+// 最后一个上传数据块的处理结果。
+message FileUploadCompleteResponse {
+  int64 next_offset = 1; // 服务端已保存到的字节位置
+  bool complete = 2;     // 文件是否已校验并保存完成
+}
+
+// 从指定位置下载一块文件数据。
+message FileDownloadRequest {
+  FileInfo file = 1; // 要下载的文件；服务端使用 file_id 查找文件
+  int64 offset = 2;  // 从第几个字节开始读取
+  int32 limit = 3;   // 本次希望读取的最大字节数；不大于 0 时默认为 1 MiB
+}
+
+// 一块下载数据及下次读取位置。
+message FileDownloadResponse {
+  bytes data = 1;        // 本次返回的文件数据
+  int64 next_offset = 2; // 下次请求应传入的 offset
+  bool complete = 3;     // 是否已读到文件末尾
+  FileInfo file = 4;     // 服务端保存的完整文件信息
+}
+
+// 向好友发送一条已上传的文件。
 message SendFileRequest {
-  int64 to = 1;
-  FileInfo file = 2;
-  string client_message_id = 3;
-  int64 conversation_id = 4;
+  int64 to = 1;                  // 接收者用户 ID
+  FileInfo file = 2;             // 已完成上传的文件；服务端使用 file_id 查找文件
+  string client_message_id = 3;  // 客户端生成的幂等 ID，重试同一条消息时保持不变
+  int64 conversation_id = 4;     // 客户端已知的会话 ID；服务端以好友关系中的会话为准
 }
+
+// 向群组发送一条已上传的文件。
 message SendGroupFileRequest {
-  int64 group_id = 1;
-  FileInfo file = 2;
-  string client_message_id = 3;
-  int64 conversation_id = 4;
+  int64 group_id = 1;             // 目标群 ID
+  FileInfo file = 2;              // 已完成上传的文件；服务端使用 file_id 查找文件
+  string client_message_id = 3;   // 客户端生成的幂等 ID，重试同一条消息时保持不变
+  int64 conversation_id = 4;      // 客户端已知的会话 ID；服务端以群组绑定的会话为准
 }
+
+// 服务端向会话成员推送的文件消息。
 message FileMessagePush {
-  int64 message_id = 2;
-  int64 from = 3;
-  int64 to = 4;
-  FileInfo file = 5;
-  string client_message_id = 6;
-  int64 conversation_id = 7;
-  int64 conversation_seq = 8;
-  int64 group_id = 10;
+  int64 message_id = 2;           // 服务端生成的消息 ID
+  int64 from = 3;                 // 发送者用户 ID
+  int64 to = 4;                   // 单聊接收者用户 ID；群聊时为 0
+  FileInfo file = 5;              // 可下载的文件信息
+  string client_message_id = 6;   // 发送方生成的幂等 ID
+  int64 conversation_id = 7;      // 所属会话 ID
+  int64 conversation_seq = 8;     // 消息在该会话中的递增序号
+  int64 group_id = 10;            // 群聊的群 ID；单聊时为 0
 }
 
 // 群组。
-message CreateGroupRequest { string group_name = 1; }
+
+// 以当前用户为群主创建群组。
+message CreateGroupRequest {
+  string group_name = 1; // 群名称，不能为空
+}
+
+// 创建成功后返回群和对应会话。
 message CreateGroupResponse {
-  int64 group_id = 1;
-  int64 conversation_id = 2;
+  int64 group_id = 1;        // 新群 ID
+  int64 conversation_id = 2; // 新群对应的会话 ID
 }
+
+// 申请加入指定群组。
 message JoinGroupRequest {
-  int64 group_id = 1;
-  string request_message = 2;
+  int64 group_id = 1;         // 要加入的群 ID
+  string request_message = 2; // 申请留言
 }
+// 入群申请的处理结果，详见 Packet.status。
 message JoinGroupResponse {}
+
+// 服务端向群主推送新的入群申请。
 message GroupJoinRequestPush {
-  int64 requestor_uid = 1;
-  int64 group_id = 2;
-  string request_message = 3;
+  int64 requestor_uid = 1;    // 申请人用户 ID
+  int64 group_id = 2;         // 申请加入的群 ID
+  string request_message = 3; // 申请留言
 }
+
+// 群主同意或拒绝一条入群申请。
 message ReplyJoinGroupRequest {
-  int64 group_id = 1;
-  int64 requestor_uid = 2;
-  optional bool accept = 3;
+  int64 group_id = 1;          // 申请所属的群 ID
+  int64 requestor_uid = 2;     // 申请人用户 ID
+  optional bool accept = 3;    // true 表示同意，false 表示拒绝；必须填写
 }
+// 入群申请回复的处理结果，详见 Packet.status。
 message ReplyJoinGroupResponse {}
+
+// 服务端向相关用户推送群成员变化。
 message GroupChangePush {
-  int64 group_id = 1;
-  int64 requestor_uid = 2;
-  int64 replyor_uid = 3;
-  optional bool accept = 4;
-  GroupChangeKind change = 5;
-  string group_name = 6;
+  int64 group_id = 1;         // 发生变化的群 ID
+  int64 requestor_uid = 2;    // 受影响的用户 ID，例如入群、退群或被移出的成员
+  int64 replyor_uid = 3;      // 执行操作的用户 ID，例如审批人或群主
+  optional bool accept = 4;   // 审批入群时是否同意；其他变化可忽略
+  GroupChangeKind change = 5; // 具体发生的成员变化
+  string group_name = 6;      // 群名称
 }
-message QuitGroupRequest { int64 group_id = 1; }
+
+// 当前用户退出群组；群主退出时会解散群。
+message QuitGroupRequest {
+  int64 group_id = 1; // 要退出的群 ID
+}
+// 退群的处理结果，详见 Packet.status。
 message QuitGroupResponse {}
+
+// 群主将指定成员移出群组。
 message KickGroupMemberRequest {
-  int64 group_id = 1;
-  int64 member_uid = 2;
+  int64 group_id = 1;   // 目标群 ID
+  int64 member_uid = 2; // 要移出的成员用户 ID
 }
+// 移出群成员的处理结果，详见 Packet.status。
 message KickGroupMemberResponse {}
-message PullGroupMembersRequest { int64 group_id = 1; }
-message PullGroupMembersResponse {
-  int64 group_id = 1;
-  int64 conversation_id = 2;
-  int64 master_uid = 3;
-  string group_name = 4;
-  repeated GroupMember members = 5;
-  repeated GroupJoinApplication applications = 6;
+
+// 拉取群资料、成员和入群申请。
+message PullGroupMembersRequest {
+  int64 group_id = 1; // 要查看的群 ID
 }
 
-// TCP 帧中的 Protobuf 载荷。公共字段只保留传输上下文和响应状态；
-// 每个业务 service_id 必须对应 oneof 中唯一、明确的业务载荷。
+// 群资料、成员和待处理的入群申请。
+message PullGroupMembersResponse {
+  int64 group_id = 1;                            // 群 ID
+  int64 conversation_id = 2;                     // 群对应的会话 ID
+  int64 master_uid = 3;                          // 群主用户 ID
+  string group_name = 4;                         // 群名称
+  repeated GroupMember members = 5;              // 当前群成员
+  repeated GroupJoinApplication applications = 6; // 待处理的入群申请
+}
+
+// TCP 帧中的 Protobuf 数据。一个包只能携带一种业务内容，
+// 并且必须与 TCP 帧里的 service_id 对应。
 message Packet {
-  optional RequestContext request = 1;
-  optional ResponseStatus status = 2;
+  optional RequestContext request = 1; // 请求时填写的通用信息
+  optional ResponseStatus status = 2;  // 响应时填写的处理结果
 
+  // 本包携带的唯一业务内容。
   oneof payload {
-    LoginRequest login_request = 10;
-    LoginResponse login_response = 11;
-    PingRequest ping_request = 12;
-    PingResponse ping_response = 13;
-    QuitRequest quit_request = 14;
-    QuitResponse quit_response = 15;
-    UpdateUserInfoRequest update_user_info_request = 16;
-    UpdateUserInfoResponse update_user_info_response = 17;
-    SearchUserRequest search_user_request = 18;
-    SearchUserResponse search_user_response = 19;
+    LoginRequest login_request = 10;                            // 登录请求
+    LoginResponse login_response = 11;                          // 登录响应
+    PingRequest ping_request = 12;                              // 连接检查请求
+    PingResponse ping_response = 13;                            // 连接检查响应
+    QuitRequest quit_request = 14;                              // 退出请求
+    QuitResponse quit_response = 15;                            // 退出响应
+    UpdateUserInfoRequest update_user_info_request = 16;        // 更新用户资料请求
+    UpdateUserInfoResponse update_user_info_response = 17;      // 更新用户资料响应
+    SearchUserRequest search_user_request = 18;                  // 查找用户请求
+    SearchUserResponse search_user_response = 19;                // 查找用户响应
 
-    PullFriendListRequest pull_friend_list_request = 20;
-    PullFriendListResponse pull_friend_list_response = 21;
-    PullFriendApplyListRequest pull_friend_apply_list_request = 22;
-    PullFriendApplyListResponse pull_friend_apply_list_response = 23;
-    AddFriendRequest add_friend_request = 24;
-    AddFriendResponse add_friend_response = 25;
-    FriendRequestPush friend_request_push = 26;
-    ReplyFriendRequest reply_friend_request = 27;
-    ReplyFriendResponse reply_friend_response = 28;
-    FriendReplyPush friend_reply_push = 29;
-    RemoveFriendRequest remove_friend_request = 30;
-    RemoveFriendResponse remove_friend_response = 31;
+    PullFriendListRequest pull_friend_list_request = 20;                 // 拉取好友列表请求
+    PullFriendListResponse pull_friend_list_response = 21;               // 拉取好友列表响应
+    PullFriendApplyListRequest pull_friend_apply_list_request = 22;      // 拉取好友申请列表请求
+    PullFriendApplyListResponse pull_friend_apply_list_response = 23;    // 拉取好友申请列表响应
+    AddFriendRequest add_friend_request = 24;                             // 发起好友申请
+    AddFriendResponse add_friend_response = 25;                           // 发起好友申请的响应
+    FriendRequestPush friend_request_push = 26;                           // 新好友申请推送
+    ReplyFriendRequest reply_friend_request = 27;                         // 回复好友申请
+    ReplyFriendResponse reply_friend_response = 28;                       // 回复好友申请的响应
+    FriendReplyPush friend_reply_push = 29;                               // 好友申请结果推送
+    RemoveFriendRequest remove_friend_request = 30;                       // 删除好友请求
+    RemoveFriendResponse remove_friend_response = 31;                     // 删除好友响应
 
-    SendTextRequest send_text_request = 40;
-    SendGroupTextRequest send_group_text_request = 41;
-    SendMessageResponse send_message_response = 42;
-    TextMessagePush text_message_push = 43;
-    PullConversationMessagesRequest pull_conversation_messages_request = 44;
-    PullConversationMessagesResponse pull_conversation_messages_response = 45;
-    MessageReceipt receipt = 46;
-    ReadReceiptPush read_receipt_push = 48;
+    SendTextRequest send_text_request = 40;                                      // 发送单聊文本请求
+    SendGroupTextRequest send_group_text_request = 41;                           // 发送群聊文本请求
+    SendMessageResponse send_message_response = 42;                              // 发送文本或文件的响应
+    TextMessagePush text_message_push = 43;                                      // 文本消息推送
+    PullConversationMessagesRequest pull_conversation_messages_request = 44;    // 拉取会话消息请求
+    PullConversationMessagesResponse pull_conversation_messages_response = 45;  // 拉取会话消息响应
+    MessageReceipt receipt = 46;                                                 // 消息到达或已读确认
+    ReadReceiptPush read_receipt_push = 48;                                      // 单聊已读推送
 
-    FileUploadRequest file_upload_request = 50;
-    FileUploadResponse file_upload_response = 51;
-    FileUploadChunkRequest file_upload_chunk_request = 52;
-    FileUploadChunkResponse file_upload_chunk_response = 53;
-    FileUploadCompleteRequest file_upload_complete_request = 54;
-    FileUploadCompleteResponse file_upload_complete_response = 55;
-    FileDownloadRequest file_download_request = 56;
-    FileDownloadResponse file_download_response = 57;
-    SendFileRequest send_file_request = 58;
-    SendGroupFileRequest send_group_file_request = 59;
-    FileMessagePush file_message_push = 60;
+    FileUploadRequest file_upload_request = 50;                    // 首个文件上传块
+    FileUploadResponse file_upload_response = 51;                  // 首个文件上传块的响应
+    FileUploadChunkRequest file_upload_chunk_request = 52;         // 中间文件上传块
+    FileUploadChunkResponse file_upload_chunk_response = 53;       // 中间文件上传块的响应
+    FileUploadCompleteRequest file_upload_complete_request = 54;   // 最后一个文件上传块
+    FileUploadCompleteResponse file_upload_complete_response = 55; // 最后一个文件上传块的响应
+    FileDownloadRequest file_download_request = 56;                // 文件分块下载请求
+    FileDownloadResponse file_download_response = 57;              // 文件分块下载响应
+    SendFileRequest send_file_request = 58;                         // 发送单聊文件请求
+    SendGroupFileRequest send_group_file_request = 59;              // 发送群聊文件请求
+    FileMessagePush file_message_push = 60;                         // 文件消息推送
 
-    CreateGroupRequest create_group_request = 70;
-    CreateGroupResponse create_group_response = 71;
-    JoinGroupRequest join_group_request = 72;
-    JoinGroupResponse join_group_response = 73;
-    GroupJoinRequestPush group_join_request_push = 74;
-    ReplyJoinGroupRequest reply_join_group_request = 75;
-    ReplyJoinGroupResponse reply_join_group_response = 76;
-    GroupChangePush group_change_push = 77;
-    QuitGroupRequest quit_group_request = 78;
-    QuitGroupResponse quit_group_response = 79;
-    KickGroupMemberRequest kick_group_member_request = 80;
-    KickGroupMemberResponse kick_group_member_response = 81;
-    PullGroupMembersRequest pull_group_members_request = 82;
-    PullGroupMembersResponse pull_group_members_response = 83;
+    CreateGroupRequest create_group_request = 70;                    // 创建群请求
+    CreateGroupResponse create_group_response = 71;                  // 创建群响应
+    JoinGroupRequest join_group_request = 72;                        // 申请入群请求
+    JoinGroupResponse join_group_response = 73;                      // 申请入群响应
+    GroupJoinRequestPush group_join_request_push = 74;               // 新入群申请推送
+    ReplyJoinGroupRequest reply_join_group_request = 75;             // 审批入群申请
+    ReplyJoinGroupResponse reply_join_group_response = 76;           // 审批入群申请的响应
+    GroupChangePush group_change_push = 77;                           // 群成员变化推送
+    QuitGroupRequest quit_group_request = 78;                         // 退群请求
+    QuitGroupResponse quit_group_response = 79;                       // 退群响应
+    KickGroupMemberRequest kick_group_member_request = 80;            // 移出群成员请求
+    KickGroupMemberResponse kick_group_member_response = 81;          // 移出群成员响应
+    PullGroupMembersRequest pull_group_members_request = 82;          // 拉取群资料请求
+    PullGroupMembersResponse pull_group_members_response = 83;        // 拉取群资料响应
   }
 }

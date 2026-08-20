@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Verifies the first-phase Connection Gateway topology with G=2 and N=2.
-# The test uses the three default users created by init-mysql.sh and writes
-# temporary group, conversation, file and message rows to chatServ.
+# 验证 G=2和 N=2 的第一阶段连接网关拓扑。
+# 测试使用 init-mysql.sh 创建的三个默认用户，并编写
+# chatServ 的临时组、对话、文件和消息行。
+
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
