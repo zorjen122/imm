@@ -62,7 +62,7 @@ ThreadPool::ThreadPool(std::string name, std::size_t workerCount, ThreadPoolOpti
     for (std::size_t i = 0; i < workerCount; ++i) {
         workers.emplace_back([this, i]() { WorkerLoop(i); });
     }
-    LOG_INFO(businessLogger, "ThreadPool {} started with {} workers", this->name, workerCount);
+    LOG_INFO(logger, "ThreadPool {} started with {} workers", this->name, workerCount);
 }
 
 ThreadPool::~ThreadPool() { Stop(); }
@@ -92,8 +92,8 @@ ThreadPool::PostStatus ThreadPool::PostUntil(Task task, RequestContext::Deadline
             rejected.fetch_add(1, std::memory_order_relaxed);
             acquireTimeouts.fetch_add(1, std::memory_order_relaxed);
             Metrics::Increment(Metric::ThreadPoolAcquireTimeout);
-            LOG_WARN(businessLogger, "线程池获取队列容量超时, pool: {}, queueSize: {}, capacity: {}", name,
-                     queue.size(), options.maxQueueSize);
+            LOG_WARN(logger, "线程池获取队列容量超时, pool: {}, queueSize: {}, capacity: {}", name, queue.size(),
+                     options.maxQueueSize);
             return PostStatus::TimedOut;
         }
         if (stopping) {
@@ -157,15 +157,15 @@ void ThreadPool::WorkerLoop(std::size_t index)
             // 仍执行任务，让上层有机会返回明确的 DeadlineExceeded，而不是静默丢弃。
             expired.fetch_add(1, std::memory_order_relaxed);
             Metrics::Increment(Metric::ThreadPoolTaskExpired);
-            LOG_WARN(businessLogger, "线程池任务开始执行时已过期, pool: {}", name);
+            LOG_WARN(logger, "线程池任务开始执行时已过期, pool: {}", name);
         }
 
         try {
             task.task();
         } catch (const std::exception& error) {
-            LOG_ERROR(businessLogger, "ThreadPool {} task failed: {}", name, error.what());
+            LOG_ERROR(logger, "ThreadPool {} task failed: {}", name, error.what());
         } catch (...) {
-            LOG_ERROR(businessLogger, "ThreadPool {} task failed: unknown exception", name);
+            LOG_ERROR(logger, "ThreadPool {} task failed: unknown exception", name);
         }
 
         completed.fetch_add(1, std::memory_order_relaxed);

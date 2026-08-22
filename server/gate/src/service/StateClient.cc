@@ -30,7 +30,7 @@ void RecordStatus(const grpc::Status& status)
 {
     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
         Metrics::Increment(Metric::RpcDeadlineExceeded);
-        LOG_WARN(netLogger, "Gate调用State RPC超时");
+        LOG_WARN(logger, "Gate调用State RPC超时");
     }
 }
 
@@ -45,10 +45,10 @@ StateClient::StateClient()
     rpcPool.reset(new RpcPool<StateService>(rpcCount, host, port));
 
     if (rpcPool->empty()) {
-        netLogger->warn("StateClient init failed, host: {}, port: {}, rpcCount: {}");
+        logger->warn("StateClient init failed, host: {}, port: {}, rpcCount: {}");
         return;
     }
-    netLogger->info("StateClient init success, host: {}, port: {}, rpcCount: {}", host, port, rpcPool->getPoolSize());
+    logger->info("StateClient init success, host: {}, port: {}, rpcCount: {}", host, port, rpcPool->getPoolSize());
 }
 
 ServerNode StateClient::PickConnectionGateway(int uid)

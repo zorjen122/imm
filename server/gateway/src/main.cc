@@ -12,23 +12,53 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <algorithm>
 #include <cstdlib>
+#include <iostream>
+#include <string_view>
 #include <thread>
 #include <vector>
 
+using wimi::Logger;
+using wimi::logger;
+
 int main(int argc, char** argv)
 {
-    wimi::initializeLoggers(argv[0]);
+    Logger::instance().initialize(argv[0], Logger::Service::Gateway);
     const char* configPath = std::getenv("WIMI_CONFIG");
-    if (!configPath && argc > 1)
+    const char* logLevel = std::getenv("WIMI_SERVER_LOG_LEVEL");
+    auto logLevelArgument = 1;
+    if (configPath == nullptr && argc > 1) {
         configPath = argv[1];
+        logLevelArgument = 2;
+    }
+    if (argc == logLevelArgument + 2 && std::string_view(argv[logLevelArgument]) == "--log_level") {
+        if (logLevel == nullptr)
+            logLevel = argv[logLevelArgument + 1];
+    } else if (argc != logLevelArgument) {
+        std::cerr << "Usage: " << argv[0] << " [config file] [--log_level <debug|info|trace>]\n";
+        return EXIT_FAILURE;
+    }
+    if (logLevel != nullptr) {
+        if (std::string_view(logLevel) == "debug")
+            Logger::instance().setLevel(spdlog::level::debug);
+        else if (std::string_view(logLevel) == "info")
+            Logger::instance().setLevel(spdlog::level::info);
+        else if (std::string_view(logLevel) == "trace")
+            Logger::instance().setLevel(spdlog::level::trace);
+        else {
+            std::cerr << "Invalid log level: " << logLevel << '\n';
+            return EXIT_FAILURE;
+        }
+    }
+
+    // []
     if (!Configer::loadConfig(configPath ? configPath : "../conf/gateway-hunan.yaml")) {
-        LOG_ERROR(wimi::businessLogger, "[gateway/startup] 配置加载失败");
+        LOG_ERROR(logger, "[gateway/startup] 配置加载失败");
         return EXIT_FAILURE;
     }
 
     auto config = Configer::getNode("server");
     if (!config || !config["self"] || !config["self"]["name"] || !config["self"]["port"]) {
-        LOG_ERROR(wimi::businessLogger, "[gateway/startup] 缺少服务名称或监听端口配置");
+        LOG_ERROR(logger, "[gateway/startup] 缺少服务名称或监听端口配置");
         return EXIT_FAILURE;
     }
 
@@ -54,7 +84,7 @@ int main(int argc, char** argv)
     signals.async_wait([&](const boost::system::error_code& error, int signalNumber) {
         if (error)
             return;
-        LOG_INFO(wimi::businessLogger, "[gateway/shutdown] 收到退出信号, signal: {}", signalNumber);
+        LOG_INFO(logger, "[gateway/shutdown] 收到退出信号, signal: {}", signalNumber);
         messageLinks.Stop();
         ioContext.stop();
     });
@@ -64,8 +94,7 @@ int main(int argc, char** argv)
     workers.reserve(workerCount - 1);
     for (std::size_t i = 1; i < workerCount; ++i)
         workers.emplace_back([&]() { ioContext.run(); });
-    LOG_INFO(wimi::businessLogger, "[gateway/startup] 服务已启动, gateway: {}, instance: {}, port: {}", gatewayId,
-             instanceId, port);
+    LOG_INFO(logger, "[gateway/startup] 服务已启动, gateway: {}, instance: {}, port: {}", gatewayId, instanceId, port);
     ioContext.run();
     for (auto& worker : workers)
         worker.join();
@@ -75,6 +104,6 @@ int main(int argc, char** argv)
     businessPool.join();
     wimi::db::MysqlDao::GetInstance()->Close();
     wimi::db::RedisDao::GetInstance()->Close();
-    LOG_INFO(wimi::businessLogger, "[gateway/shutdown] 服务已停止, gateway: {}, instance: {}", gatewayId, instanceId);
+    LOG_INFO(logger, "[gateway/shutdown] 服务已停止, gateway: {}, instance: {}", gatewayId, instanceId);
     return EXIT_SUCCESS;
 }

@@ -30,7 +30,7 @@ MessageService::AcceptedText MessageService::AcceptText(int64_t actorUid, const 
     const auto& send = request.send_text_request();
     auto* response = result.response.mutable_send_message_response();
     if (actorUid <= 0 || send.to() <= 0 || send.content().empty() || send.client_message_id().empty()) {
-        LOG_WARN(businessLogger, "[message/direct-text] 拒绝无效消息, from_uid: {}, to_uid: {}", actorUid, send.to());
+        LOG_WARN(logger, "[message/direct-text] 拒绝无效消息, from_uid: {}, to_uid: {}", actorUid, send.to());
         SetTcpPacketStatus(result.response, ErrorCodes::JsonParser,
                            "actor, to, content and client_message_id are required");
         return result;
@@ -45,11 +45,11 @@ MessageService::AcceptedText MessageService::AcceptText(int64_t actorUid, const 
                            : (accepted.diagnostic.empty() ? "persistent message accept failed" : accepted.diagnostic));
     if (accepted.error != ErrorCodes::Success) {
         if (!accepted.diagnostic.empty())
-            LOG_ERROR(dbLogger, "[message/direct-text] 消息保存失败, from_uid: {}, to_uid: {}, error: {}, detail: {}",
+            LOG_ERROR(logger, "[message/direct-text] 消息保存失败, from_uid: {}, to_uid: {}, error: {}, detail: {}",
                       actorUid, send.to(), accepted.error, accepted.diagnostic);
         else
-            LOG_WARN(businessLogger, "[message/direct-text] 消息未被接受, from_uid: {}, to_uid: {}, error: {}",
-                     actorUid, send.to(), accepted.error);
+            LOG_WARN(logger, "[message/direct-text] 消息未被接受, from_uid: {}, to_uid: {}, error: {}", actorUid,
+                     send.to(), accepted.error);
         return result;
     }
 
@@ -68,7 +68,7 @@ MessageService::AcceptedText MessageService::AcceptText(int64_t actorUid, const 
     push->set_send_date_time(sendDateTime);
     result.recipientUid = send.to();
     result.shouldForward = !accepted.duplicate;
-    LOG_INFO(businessLogger,
+    LOG_INFO(logger,
              "[message/direct-text] 消息已保存, message_id: {}, conversation_id: {}, conversation_seq: {}, "
              "from_uid: {}, to_uid: {}, duplicate: {}",
              accepted.messageId, accepted.conversationId, accepted.conversationSeq, actorUid, send.to(),
@@ -82,8 +82,7 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupText(int64_t actorU
     const auto& send = request.send_group_text_request();
     auto* response = result.response.mutable_send_message_response();
     if (actorUid <= 0 || send.group_id() <= 0 || send.content().empty() || send.client_message_id().empty()) {
-        LOG_WARN(businessLogger, "[message/group-text] 拒绝无效消息, from_uid: {}, group_id: {}", actorUid,
-                 send.group_id());
+        LOG_WARN(logger, "[message/group-text] 拒绝无效消息, from_uid: {}, group_id: {}", actorUid, send.group_id());
         SetTcpPacketStatus(result.response, ErrorCodes::JsonParser,
                            "actor, group_id, content and client_message_id are required");
         return result;
@@ -98,11 +97,11 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupText(int64_t actorU
                            : (accepted.diagnostic.empty() ? getErrorCodeMsg(accepted.error) : accepted.diagnostic));
     if (accepted.error != ErrorCodes::Success) {
         if (!accepted.diagnostic.empty())
-            LOG_ERROR(dbLogger, "[message/group-text] 消息保存失败, from_uid: {}, group_id: {}, error: {}, detail: {}",
+            LOG_ERROR(logger, "[message/group-text] 消息保存失败, from_uid: {}, group_id: {}, error: {}, detail: {}",
                       actorUid, send.group_id(), accepted.error, accepted.diagnostic);
         else
-            LOG_WARN(businessLogger, "[message/group-text] 消息未被接受, from_uid: {}, group_id: {}, error: {}",
-                     actorUid, send.group_id(), accepted.error);
+            LOG_WARN(logger, "[message/group-text] 消息未被接受, from_uid: {}, group_id: {}, error: {}", actorUid,
+                     send.group_id(), accepted.error);
         return result;
     }
 
@@ -120,7 +119,7 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupText(int64_t actorU
     push->set_send_date_time(sendDateTime);
     result.recipientUids = std::move(accepted.recipientUids);
     result.shouldForward = !accepted.duplicate;
-    LOG_INFO(businessLogger,
+    LOG_INFO(logger,
              "[message/group-text] 消息已保存, message_id: {}, conversation_id: {}, conversation_seq: {}, "
              "from_uid: {}, group_id: {}, recipients: {}, duplicate: {}",
              accepted.messageId, accepted.conversationId, accepted.conversationSeq, actorUid, send.group_id(),
@@ -135,7 +134,7 @@ MessageService::AckResult MessageService::Ack(int64_t actorUid, const TcpPacket&
     if (receipt.seq() <= 0 || receipt.conversation_id() <= 0 || receipt.conversation_seq() <= 0 ||
         (receipt.receipt_type() != protocol::RECEIPT_TYPE_DELIVERED &&
          receipt.receipt_type() != protocol::RECEIPT_TYPE_READ)) {
-        LOG_WARN(businessLogger,
+        LOG_WARN(logger,
                  "[message/receipt] 拒绝无效回执, uid: {}, message_id: {}, conversation_id: {}, "
                  "conversation_seq: {}",
                  actorUid, receipt.seq(), receipt.conversation_id(), receipt.conversation_seq());
@@ -151,9 +150,8 @@ MessageService::AckResult MessageService::Ack(int64_t actorUid, const TcpPacket&
         receipt.seq(), actorUid, deviceId, receipt.conversation_id(), receipt.conversation_seq(), messageStatus,
         readTime);
     if (acknowledged.updated <= 0) {
-        LOG_WARN(wimi::businessLogger,
-                 "[message/receipt] 回执更新失败或消息不属于当前用户, uid: {}, message_id: {}, result: {}", actorUid,
-                 receipt.seq(), acknowledged.updated);
+        LOG_WARN(logger, "[message/receipt] 回执更新失败或消息不属于当前用户, uid: {}, message_id: {}, result: {}",
+                 actorUid, receipt.seq(), acknowledged.updated);
         SetTcpPacketStatus(result.response,
                            acknowledged.updated == -1 ? ErrorCodes::MysqlFailed : ErrorCodes::MessageOwnershipInvalid);
         return result;
@@ -171,9 +169,8 @@ MessageService::AckResult MessageService::Ack(int64_t actorUid, const TcpPacket&
         push->set_conversation_id(receipt.conversation_id());
         push->set_conversation_seq(receipt.conversation_seq());
     }
-    LOG_DEBUG(businessLogger,
-              "[message/receipt] 回执已更新, uid: {}, message_id: {}, receipt_type: {}, forward_read: {}", actorUid,
-              receipt.seq(), static_cast<int>(receipt.receipt_type()), result.shouldForwardRead);
+    LOG_DEBUG(logger, "[message/receipt] 回执已更新, uid: {}, message_id: {}, receipt_type: {}, forward_read: {}",
+              actorUid, receipt.seq(), static_cast<int>(receipt.receipt_type()), result.shouldForwardRead);
     return result;
 }
 
@@ -183,14 +180,14 @@ MessageService::AcceptedFile MessageService::AcceptFile(int64_t actorUid, const 
     const auto& send = request.send_file_request();
     auto* response = result.response.mutable_send_message_response();
     if (actorUid <= 0 || send.to() <= 0 || !send.has_file() || send.client_message_id().empty()) {
-        LOG_WARN(businessLogger, "[message/direct-file] 拒绝无效消息, from_uid: {}, to_uid: {}", actorUid, send.to());
+        LOG_WARN(logger, "[message/direct-file] 拒绝无效消息, from_uid: {}, to_uid: {}", actorUid, send.to());
         SetTcpPacketStatus(result.response, ErrorCodes::JsonParser, "to, file and client_message_id are required");
         return result;
     }
     const auto file = db::MysqlDao::GetInstance()->findReadyFile(send.file().file_id(), actorUid);
     if (!file) {
-        LOG_WARN(businessLogger, "[message/direct-file] 文件未就绪, from_uid: {}, to_uid: {}, file_id: {}", actorUid,
-                 send.to(), send.file().file_id());
+        LOG_WARN(logger, "[message/direct-file] 文件未就绪, from_uid: {}, to_uid: {}, file_id: {}", actorUid, send.to(),
+                 send.file().file_id());
         SetTcpPacketStatus(result.response, ErrorCodes::NotFound, "ready file not found");
         return result;
     }
@@ -198,7 +195,7 @@ MessageService::AcceptedFile MessageService::AcceptFile(int64_t actorUid, const 
         actorUid, send.to(), send.client_message_id(), file->fileId, getCurrentDateTime(), db::Message::Type::FILE);
     SetTcpPacketStatus(result.response, accepted.error, accepted.diagnostic);
     if (accepted.error != ErrorCodes::Success) {
-        LOG_ERROR(dbLogger, "[message/direct-file] 文件消息保存失败, from_uid: {}, to_uid: {}, error: {}", actorUid,
+        LOG_ERROR(logger, "[message/direct-file] 文件消息保存失败, from_uid: {}, to_uid: {}, error: {}", actorUid,
                   send.to(), accepted.error);
         return result;
     }
@@ -216,7 +213,7 @@ MessageService::AcceptedFile MessageService::AcceptFile(int64_t actorUid, const 
     push->set_conversation_seq(accepted.conversationSeq);
     result.recipientUid = send.to();
     result.shouldForward = !accepted.duplicate;
-    LOG_INFO(businessLogger,
+    LOG_INFO(logger,
              "[message/direct-file] 文件消息已保存, message_id: {}, conversation_id: {}, from_uid: {}, "
              "to_uid: {}, file_id: {}, duplicate: {}",
              accepted.messageId, accepted.conversationId, actorUid, send.to(), file->fileId, accepted.duplicate);
@@ -229,15 +226,14 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupFile(int64_t actorU
     const auto& send = request.send_group_file_request();
     auto* response = result.response.mutable_send_message_response();
     if (actorUid <= 0 || send.group_id() <= 0 || !send.has_file() || send.client_message_id().empty()) {
-        LOG_WARN(businessLogger, "[message/group-file] 拒绝无效消息, from_uid: {}, group_id: {}", actorUid,
-                 send.group_id());
+        LOG_WARN(logger, "[message/group-file] 拒绝无效消息, from_uid: {}, group_id: {}", actorUid, send.group_id());
         SetTcpPacketStatus(result.response, ErrorCodes::JsonParser,
                            "group_id, file and client_message_id are required");
         return result;
     }
     const auto file = db::MysqlDao::GetInstance()->findReadyFile(send.file().file_id(), actorUid);
     if (!file) {
-        LOG_WARN(businessLogger, "[message/group-file] 文件未就绪, from_uid: {}, group_id: {}, file_id: {}", actorUid,
+        LOG_WARN(logger, "[message/group-file] 文件未就绪, from_uid: {}, group_id: {}, file_id: {}", actorUid,
                  send.group_id(), send.file().file_id());
         SetTcpPacketStatus(result.response, ErrorCodes::NotFound, "ready file not found");
         return result;
@@ -247,7 +243,7 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupFile(int64_t actorU
         getCurrentDateTime(), true);
     SetTcpPacketStatus(result.response, accepted.error, accepted.diagnostic);
     if (accepted.error != ErrorCodes::Success) {
-        LOG_ERROR(dbLogger, "[message/group-file] 文件消息保存失败, from_uid: {}, group_id: {}, error: {}", actorUid,
+        LOG_ERROR(logger, "[message/group-file] 文件消息保存失败, from_uid: {}, group_id: {}, error: {}", actorUid,
                   send.group_id(), accepted.error);
         return result;
     }
@@ -265,7 +261,7 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupFile(int64_t actorU
     push->set_conversation_seq(accepted.conversationSeq);
     result.recipientUids = accepted.recipientUids;
     result.shouldForward = !accepted.duplicate;
-    LOG_INFO(businessLogger,
+    LOG_INFO(logger,
              "[message/group-file] 文件消息已保存, message_id: {}, conversation_id: {}, from_uid: {}, "
              "group_id: {}, file_id: {}, recipients: {}, duplicate: {}",
              accepted.messageId, accepted.conversationId, actorUid, send.group_id(), file->fileId,
@@ -298,7 +294,7 @@ TcpPacket MessageService::PullConversationMessages(uint32_t, int64_t actorUid, T
     TcpPacket rsp;
     const auto& pull = request.pull_conversation_messages_request();
     if (pull.conversation_id() <= 0) {
-        LOG_WARN(businessLogger, "[message/history] 拒绝无效拉取请求, uid: {}, conversation_id: {}", actorUid,
+        LOG_WARN(logger, "[message/history] 拒绝无效拉取请求, uid: {}, conversation_id: {}", actorUid,
                  pull.conversation_id());
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser);
         return rsp;
@@ -318,8 +314,8 @@ TcpPacket MessageService::PullConversationMessages(uint32_t, int64_t actorUid, T
         response->set_conversation_type(protocol::CONVERSATION_TYPE_GROUP);
     SetTcpPacketStatus(rsp, sync.error);
     if (sync.error != ErrorCodes::Success) {
-        LOG_WARN(businessLogger, "[message/history] 消息记录读取失败, uid: {}, conversation_id: {}, error: {}",
-                 actorUid, pull.conversation_id(), sync.error);
+        LOG_WARN(logger, "[message/history] 消息记录读取失败, uid: {}, conversation_id: {}, error: {}", actorUid,
+                 pull.conversation_id(), sync.error);
         return rsp;
     }
     for (const auto& message : sync.messages) {
@@ -341,7 +337,7 @@ TcpPacket MessageService::PullConversationMessages(uint32_t, int64_t actorUid, T
             file->set_expired(message.file->expired);
         }
     }
-    LOG_DEBUG(businessLogger,
+    LOG_DEBUG(logger,
               "[message/history] 消息记录读取成功, uid: {}, conversation_id: {}, messages: {}, "
               "next_seq: {}, has_more: {}",
               actorUid, pull.conversation_id(), sync.messages.size(), sync.nextSeq, sync.hasMore);

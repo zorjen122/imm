@@ -54,7 +54,7 @@ class RedisPool
                 auto session = CreateConnection();
                 connections.push(std::move(session));
             } catch (sw::redis::Error& e) {
-                LOG_DEBUG(wimi::dbLogger, "redis connection is error: {}, continue this connection", e.what());
+                LOG_DEBUG(logger, "redis connection is error: {}, continue this connection", e.what());
                 continue;
             }
         }
@@ -89,7 +89,7 @@ class RedisPool
         // 等待时间不超1秒钟，因为keepThread线程函数每次休眠1秒
         if (keepThread.joinable())
             keepThread.join();
-        LOG_INFO(dbLogger, "RedisPool::~RedisPool()!");
+        LOG_INFO(logger, "RedisPool::~RedisPool()!");
     }
 
     void ClearConnections()
@@ -117,7 +117,7 @@ class RedisPool
         });
         if (!ready) {
             Metrics::Increment(Metric::RedisAcquireTimeout);
-            LOG_WARN(wimi::dbLogger, "Redis连接池获取超时, available: {}", connections.size());
+            LOG_WARN(logger, "Redis连接池获取超时, available: {}", connections.size());
             return nullptr;
         }
         if (stopEnable || connections.empty()) {
@@ -190,7 +190,7 @@ class RedisPool
 
                 connections.push(std::move(con));
             } catch (sw::redis::Error& e) {
-                LOG_DEBUG(wimi::dbLogger, "redis connection is error: {}, reconnect....", e.what());
+                LOG_DEBUG(logger, "redis connection is error: {}, reconnect....", e.what());
                 con.reset();
                 try {
                     auto session = CreateConnection();
@@ -224,7 +224,7 @@ class RedisDao : public Singleton<RedisDao>, std::enable_shared_from_this<RedisP
     {
         static bool inited = false;
         if (inited) {
-            LOG_WARN(dbLogger, "RedisDao is already inited");
+            LOG_WARN(logger, "RedisDao is already inited");
             return;
         }
         auto conf = Configer::getNode("server");
@@ -247,12 +247,12 @@ class RedisDao : public Singleton<RedisDao>, std::enable_shared_from_this<RedisP
         machineId = machine;
 
         if (!redisPool->Empty()) {
-            LOG_INFO(dbLogger,
+            LOG_INFO(logger,
                      "redis connection pool init success | master: {}, sentinelCount: "
                      "{}, clientCount: {}, machineId: {}",
                      masterName, sentinelOptions.nodes.size(), clientCount, machine);
         } else {
-            LOG_WARN(dbLogger,
+            LOG_WARN(logger,
                      "redis connection pool init failed | master: {}, sentinelCount: "
                      "{}, clientCount: {}, machineId: {}",
                      masterName, sentinelOptions.nodes.size(), clientCount, machine);
@@ -272,7 +272,7 @@ class RedisDao : public Singleton<RedisDao>, std::enable_shared_from_this<RedisP
     {
         auto con = redisPool->GetConnection();
         if (con == nullptr) {
-            LOG_INFO(dbLogger, "Redis connection pool is empty!");
+            LOG_INFO(logger, "Redis connection pool is empty!");
             return defaultForType<decltype(processor(con))>();
         }
         Defer defer([&con, this]() { redisPool->ReturnConnection(std::move(con)); });
@@ -280,7 +280,7 @@ class RedisDao : public Singleton<RedisDao>, std::enable_shared_from_this<RedisP
         try {
             return processor(con);
         } catch (sw::redis::Error& e) {
-            LOG_TRACE(dbLogger, "MySQL error: {}", e.what());
+            LOG_TRACE(logger, "MySQL error: {}", e.what());
             return defaultForType<decltype(processor(con))>();
         }
     }

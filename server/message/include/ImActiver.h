@@ -31,18 +31,18 @@ class ImServiceRunner : public Singleton<ImServiceRunner>
             rpcServer->Shutdown();
         if (rpcRunThread.joinable()) {
             rpcRunThread.join();
-            LOG_INFO(wimi::businessLogger, "[message/shutdown] RPC 服务线程已退出");
+            LOG_INFO(logger, "[message/shutdown] RPC 服务线程已退出");
         }
 
         size_t refCount;
         refCount = db::MysqlDao::GetInstance().use_count() - 1;
         db::MysqlDao::GetInstance()->Close();
         if (refCount > 1)
-            LOG_ERROR(wimi::dbLogger, "[message/shutdown] MySQL 资源仍被引用, references: {}", refCount);
+            LOG_ERROR(logger, "[message/shutdown] MySQL 资源仍被引用, references: {}", refCount);
 
         refCount = db::RedisDao::GetInstance().use_count() - 1;
         if (refCount > 1)
-            LOG_ERROR(wimi::dbLogger, "[message/shutdown] Redis 资源仍被引用, references: {}", refCount);
+            LOG_ERROR(logger, "[message/shutdown] Redis 资源仍被引用, references: {}", refCount);
         db::RedisDao::GetInstance()->Close();
     }
 
@@ -54,7 +54,7 @@ class ImServiceRunner : public Singleton<ImServiceRunner>
             std::string host = config["self"]["host"].as<std::string>();
             std::string rpcPort = config["self"]["rpcPort"].as<std::string>();
             std::string address = host + ":" + rpcPort;
-            LOG_INFO(wimi::netLogger, "[message/startup] RPC 服务配置已加载, host: {}, port: {}", host, rpcPort);
+            LOG_INFO(logger, "[message/startup] RPC 服务配置已加载, host: {}, port: {}", host, rpcPort);
 
             wimi::db::MysqlDao::GetInstance();
             wimi::db::RedisDao::GetInstance();
@@ -70,12 +70,12 @@ class ImServiceRunner : public Singleton<ImServiceRunner>
             builder.RegisterService(&gatewayStreamService);
             rpcServer = builder.BuildAndStart();
             if (!rpcServer) {
-                LOG_ERROR(wimi::netLogger, "[message/startup] RPC 服务启动失败, address: {}", address);
+                LOG_ERROR(logger, "[message/startup] RPC 服务启动失败, address: {}", address);
                 Service::GetInstance()->SetGatewayStreamService(nullptr);
                 ClearUp();
                 return false;
             }
-            LOG_INFO(wimi::businessLogger, "[message/startup] RPC 服务已启动, address: {}", address);
+            LOG_INFO(logger, "[message/startup] RPC 服务已启动, address: {}", address);
 
             rpcRunThread = std::thread([&]() { rpcServer->Wait(); });
 
@@ -85,7 +85,7 @@ class ImServiceRunner : public Singleton<ImServiceRunner>
                 [&signalIoc, &gatewayStreamService](const boost::system::error_code& error, int signalNumber) {
                     if (error)
                         return;
-                    LOG_INFO(wimi::businessLogger, "[message/shutdown] 收到退出信号, signal: {}", signalNumber);
+                    LOG_INFO(logger, "[message/shutdown] 收到退出信号, signal: {}", signalNumber);
                     gatewayStreamService.DrainAll("message node is shutting down");
                     signalIoc.stop();
                 });
@@ -98,7 +98,7 @@ class ImServiceRunner : public Singleton<ImServiceRunner>
         } catch (const std::exception& e) {
             Service::GetInstance()->SetGatewayStreamService(nullptr);
             ClearUp();
-            LOG_ERROR(businessLogger, "[message/startup] 服务启动异常, error: {}", e.what());
+            LOG_ERROR(logger, "[message/startup] 服务启动异常, error: {}", e.what());
             return false;
         }
     }
@@ -107,7 +107,7 @@ class ImServiceRunner : public Singleton<ImServiceRunner>
     ~ImServiceRunner()
     {
         ClearUp();
-        LOG_INFO(businessLogger, "[message/shutdown] 服务已停止");
+        LOG_INFO(logger, "[message/shutdown] 服务已停止");
     }
 
   private:

@@ -66,14 +66,14 @@ void Service::OnGetHandle(std::string url, HttpHandler handler)
 {
     auto ret = getHandlers.insert(make_pair(url, handler));
     if (ret.second == false)
-        businessLogger->error("RegisterGet insert is wrong!");
+        logger->error("RegisterGet insert is wrong!");
 }
 
 void Service::OnPostHandle(std::string url, HttpHandler handler)
 {
     auto ret = postHandlers.insert(make_pair(url, handler));
     if (ret.second == false)
-        businessLogger->error("RegisterPost insert is wrong!");
+        logger->error("RegisterPost insert is wrong!");
 }
 
 Service::~Service() {}
@@ -112,7 +112,7 @@ bool Service::Handle(std::shared_ptr<HttpSession> connection, std::string path, 
         return true;
     }
 
-    businessLogger->info("[service-handle] path as {}", path);
+    logger->info("[service-handle] path as {}", path);
 
     response->result(http::status::ok);
     response->set(http::field::server, "GateServer");
@@ -127,14 +127,14 @@ bool Service::requestVerificationCode(HttpSession::ResponsePtr response, Json::V
     Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
 
     if (!requestData.isMember("email")) {
-        businessLogger->info("[post_verifycode-email] Failed to parse JSON data!");
+        logger->info("[post_verifycode-email] Failed to parse JSON data!");
 
         rspInfo["error"] = ErrorCodes::JsonParser;
         return false;
     }
 
     auto email = VerificationService::NormalizeEmail(requestData["email"].asString());
-    businessLogger->info("service-post_verifycode] email as {}", email);
+    logger->info("service-post_verifycode] email as {}", email);
 
     auto result = VerificationService::GetInstance()->RequestEmailCode(email);
     rspInfo["error"] = result.error;
@@ -164,24 +164,24 @@ bool Service::signUp(HttpSession::ResponsePtr response, Json::Value& requestData
         rspInfo["error"] = ErrorCodes::JsonParser;
         return false;
     }
-    businessLogger->info("[signUp]: start, username: {}, email: {}", username, email);
+    logger->info("[signUp]: start, username: {}, email: {}", username, email);
 
     int hasEmail = db::MysqlDao::GetInstance()->hasEmail(email);
     if (hasEmail != 0) {
-        businessLogger->info("[signUp]: email is exist");
+        logger->info("[signUp]: email is exist");
         rspInfo["error"] = ErrorCodes::UserExist;
         return false;
     }
 
     int hasUsername = db::MysqlDao::GetInstance()->hasUsername(username);
     if (hasUsername != 0) {
-        businessLogger->info("[signUp]: username is exist");
+        logger->info("[signUp]: username is exist");
         rspInfo["error"] = ErrorCodes::UserExist;
         return false;
     }
 
     if (!VerificationService::GetInstance()->VerifyAndConsume(email, verificationCode)) {
-        businessLogger->info("[signUp]: invalid or expired verification code");
+        logger->info("[signUp]: invalid or expired verification code");
         rspInfo["error"] = ErrorCodes::VerificationCodeInvalid;
         return false;
     }
@@ -190,12 +190,12 @@ bool Service::signUp(HttpSession::ResponsePtr response, Json::Value& requestData
     db::User::Ptr user(new db::User(0, uid, username, password, email));
     int hasUser = db::MysqlDao::GetInstance()->userRegister(user);
     if (hasUser != 0) {
-        businessLogger->info("[signUp]: user or email exist");
+        logger->info("[signUp]: user or email exist");
         rspInfo["error"] = -1;
         return false;
     }
 
-    businessLogger->info("[signUp]: success! uid as {}, username as {}, email as {}", uid, username, email);
+    logger->info("[signUp]: success! uid as {}, username as {}, email as {}", uid, username, email);
     rspInfo["error"] = 0;
     rspInfo["uid"] = Json::Value::Int64(uid);
     rspInfo["username"] = username;
@@ -211,24 +211,24 @@ bool Service::signIn(HttpSession::ResponsePtr response, Json::Value& requestData
 
     auto username = requestData["username"].asString();
     auto password = requestData["password"].asString();
-    businessLogger->info("[signIn]: start, username: {}", username);
+    logger->info("[signIn]: start, username: {}", username);
 
     auto user = wimi::db::MysqlDao::GetInstance()->getUser(username);
     if (user == nullptr) {
-        businessLogger->debug("user is not existd!");
+        logger->debug("user is not existd!");
         rspInfo["error"] = -1;
         return false;
     }
 
     if (user->password != password) {
-        businessLogger->debug("password or email input is wrong!");
+        logger->debug("password or email input is wrong!");
         rspInfo["error"] = -1;
         return false;
     }
 
     auto node = rpc::StateClient::GetInstance()->PickConnectionGateway(user->uid);
     if (node.empty()) {
-        businessLogger->info("rpc request state service is fialed, user id as {} ", user->uid);
+        logger->info("rpc request state service is fialed, user id as {} ", user->uid);
         rspInfo["error"] = -1;
         return false;
     }
@@ -238,7 +238,7 @@ bool Service::signIn(HttpSession::ResponsePtr response, Json::Value& requestData
         rspInfo["init"] = 1;
     else
         rspInfo["init"] = 0;
-    businessLogger->info("[sigIn] user: {} login success", user->username);
+    logger->info("[sigIn] user: {} login success", user->username);
     rspInfo["error"] = 0;
     rspInfo["uid"] = Json::Value::Int64(user->uid);
     rspInfo["ip"] = node.ip;
@@ -248,7 +248,7 @@ bool Service::signIn(HttpSession::ResponsePtr response, Json::Value& requestData
     // token 按 uid 覆盖并设置 TTL；持久化失败时不得返回可用登录结果。
     std::string chatAuthToken = GenerateChatAuthToken();
     if (!db::RedisDao::GetInstance()->setChatAuthToken(user->uid, chatAuthToken, kChatAuthTokenTtlSeconds)) {
-        businessLogger->warn("[signIn] failed to persist chat auth token, uid: {}", user->uid);
+        logger->warn("[signIn] failed to persist chat auth token, uid: {}", user->uid);
         rspInfo.clear();
         rspInfo["error"] = ErrorCodes::InternalError;
         return false;
@@ -268,7 +268,7 @@ bool Service::chatArrhythmia(HttpSession::ResponsePtr response, Json::Value& req
     // Mysql select...
     rpc::ServerNode node = rpc::StateClient::GetInstance()->PickConnectionGateway(uid);
     if (node.ip.empty() || node.port == 0) {
-        businessLogger->error("[chat_arrhythmia] get im server failed");
+        logger->error("[chat_arrhythmia] get im server failed");
         rspInfo["error"] = ErrorCodes::RPCFailed;
         return false;
     }
@@ -298,7 +298,7 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response, Json::Value& req
 
     auto user = db::MysqlDao::GetInstance()->getUser(username);
     if (user == nullptr) {
-        businessLogger->info("user does not exist");
+        logger->info("user does not exist");
         rspInfo["error"] = ErrorCodes::NotFound;
         return false;
     }
@@ -311,7 +311,7 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response, Json::Value& req
         return false;
     }
     if (!VerificationService::GetInstance()->VerifyAndConsume(email, verificationCode)) {
-        businessLogger->info("verification code is expired or invalid");
+        logger->info("verification code is expired or invalid");
         rspInfo["error"] = ErrorCodes::VerificationCodeInvalid;
         return false;
     }
@@ -319,12 +319,12 @@ bool Service::forgetPassword(HttpSession::ResponsePtr response, Json::Value& req
     user->password = password;
     int updateResult = db::MysqlDao::GetInstance()->userModifyPassword(user);
     if (updateResult != 0) {
-        businessLogger->error(" update password is failed");
+        logger->error(" update password is failed");
         rspInfo["error"] = ErrorCodes::PasswdUpFailed;
         return false;
     }
 
-    businessLogger->info("password updated for username: {}", username);
+    logger->info("password updated for username: {}", username);
 
     rspInfo["error"] = 0;
     rspInfo["username"] = username;

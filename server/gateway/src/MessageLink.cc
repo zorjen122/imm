@@ -34,7 +34,7 @@ MessageLink::MessageLink(Node node, std::string gatewayId, std::string instanceI
 
 void MessageLink::Start()
 {
-    LOG_INFO(netLogger,
+    LOG_INFO(logger,
              "[gateway/message-link] 正在连接 Message 节点, node: {}, endpoint: {}:{}, "
              "gateway: {}, instance: {}",
              node.id, node.host, node.port, gatewayId, instanceId);
@@ -74,7 +74,7 @@ MessageLink::EnqueueResult MessageLink::Enqueue(gateway::GatewayToMessageFrame f
             return EnqueueResult::Stopped;
 
         if (writeQueue.size() >= kMaxStreamQueue) {
-            LOG_WARN(netLogger, "[gateway/message-link] 写队列已满, node: {}, queued: {}", node.id, writeQueue.size());
+            LOG_WARN(logger, "[gateway/message-link] 写队列已满, node: {}, queued: {}", node.id, writeQueue.size());
             return EnqueueResult::QueueFull;
         }
 
@@ -136,7 +136,7 @@ int64_t MessageLink::LastReadAt() const { return lastReadAt.load(std::memory_ord
 void MessageLink::OnReadDone(bool ok)
 {
     if (!ok) {
-        LOG_WARN(netLogger, "[gateway/message-link] Message 读取通道已关闭, node: {}, gateway: {}", node.id, gatewayId);
+        LOG_WARN(logger, "[gateway/message-link] Message 读取通道已关闭, node: {}, gateway: {}", node.id, gatewayId);
         stopped.store(true, std::memory_order_release);
         healthy.store(false, std::memory_order_release);
         ReleaseHold();
@@ -156,7 +156,7 @@ void MessageLink::OnReadDone(bool ok)
 void MessageLink::OnWriteDone(bool ok)
 {
     if (!ok) {
-        LOG_WARN(netLogger, "[gateway/message-link] Message 写入通道已关闭, node: {}, gateway: {}", node.id, gatewayId);
+        LOG_WARN(logger, "[gateway/message-link] Message 写入通道已关闭, node: {}, gateway: {}", node.id, gatewayId);
         stopped.store(true, std::memory_order_release);
         healthy.store(false, std::memory_order_release);
         ReleaseHold();
@@ -190,9 +190,9 @@ void MessageLink::OnDone(const grpc::Status& status)
     stopped.store(true, std::memory_order_release);
     healthy.store(false, std::memory_order_release);
     if (status.ok()) {
-        LOG_INFO(netLogger, "[gateway/message-link] Message 链路已关闭, node: {}", node.id);
+        LOG_INFO(logger, "[gateway/message-link] Message 链路已关闭, node: {}", node.id);
     } else {
-        LOG_WARN(netLogger, "[gateway/message-link] Message 链路异常关闭, node: {}, error: {}", node.id,
+        LOG_WARN(logger, "[gateway/message-link] Message 链路异常关闭, node: {}, error: {}", node.id,
                  status.error_message());
     }
     manager.OnLinkDone(node.id, this);

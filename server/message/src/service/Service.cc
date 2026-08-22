@@ -39,15 +39,15 @@ Service::Service() : friendService(clientForwardService), groupService(clientFor
     Init();
     const auto workerCount = ResolveServiceWorkerCount();
     threadPool = std::make_unique<ThreadPool>("message-biz", workerCount);
-    LOG_INFO(businessLogger, "[message/dispatcher-start] 业务调度器已启动, handlers: {}, workers: {}",
-             serviceGroup.size(), workerCount);
+    LOG_INFO(logger, "[message/dispatcher-start] 业务调度器已启动, handlers: {}, workers: {}", serviceGroup.size(),
+             workerCount);
 }
 
 Service::~Service()
 {
     if (threadPool) {
         auto stats = threadPool->GetStats();
-        LOG_INFO(businessLogger,
+        LOG_INFO(logger,
                  "[message/dispatcher-stop] 业务调度器已停止, workers: {}, queued: {}, thread_pool "
                  "submitted/completed/rejected/acquire-timeout/expired: "
                  "{}/{}/{}/{}/{}, requests started/succeeded/failed/expired: "
@@ -63,7 +63,7 @@ Service::~Service()
 void Service::RegisterHandle(uint32_t msgID, TaskType taskType, HandleType handle)
 {
     if (serviceGroup.find(msgID) != serviceGroup.end()) {
-        LOG_WARN(businessLogger, "[message/register-handler] 重复的服务处理器, service_id: {}", msgID);
+        LOG_WARN(logger, "[message/register-handler] 重复的服务处理器, service_id: {}", msgID);
         return;
     }
     serviceGroup[msgID] = HandlerEntry{std::move(handle), taskType};
@@ -158,15 +158,15 @@ void Service::SetGatewayStreamService(rpc::GatewayStreamService* service)
 TcpPacket Service::ExecuteGatewayCommand(uint32_t msgID, int64_t actorUid, TcpPacket request)
 {
     if (actorUid <= 0 || msgID == ID_LOGIN_INIT_REQ || msgID == ID_PING_REQ || msgID == ID_USER_QUIT_REQ) {
-        LOG_WARN(businessLogger, "[message/dispatch] 拒绝 Gateway 控制命令, uid: {}, service_id: {}", actorUid, msgID);
+        LOG_WARN(logger, "[message/dispatch] 拒绝 Gateway 控制命令, uid: {}, service_id: {}", actorUid, msgID);
         return MakeErrorPacket(ErrorCodes::AuthenticationRequired, "connection control command belongs to gateway");
     }
     auto handle = serviceGroup.find(msgID);
     if (handle == serviceGroup.end()) {
-        LOG_WARN(businessLogger, "[message/dispatch] 未找到服务处理器, uid: {}, service_id: {}", actorUid, msgID);
+        LOG_WARN(logger, "[message/dispatch] 未找到服务处理器, uid: {}, service_id: {}", actorUid, msgID);
         return MakeErrorPacket(ErrorCodes::NotFound);
     }
-    LOG_DEBUG(businessLogger, "[message/dispatch] 开始处理请求, uid: {}, service_id: {}", actorUid, msgID);
+    LOG_DEBUG(logger, "[message/dispatch] 开始处理请求, uid: {}, service_id: {}", actorUid, msgID);
     return handle->second.handle(msgID, actorUid, request);
 }
 

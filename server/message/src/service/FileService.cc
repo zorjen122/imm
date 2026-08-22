@@ -61,12 +61,11 @@ TcpPacket FileService::Upload(uint32_t msgID, int64_t actorUid, TcpPacket& reque
         rsp.mutable_file_upload_complete_response();
     }
     if (requestFile == nullptr || actorUid <= 0) {
-        LOG_WARN(businessLogger, "[message/file-upload] 拒绝缺少文件信息的请求, uid: {}, service_id: {}", actorUid,
-                 msgID);
+        LOG_WARN(logger, "[message/file-upload] 拒绝缺少文件信息的请求, uid: {}, service_id: {}", actorUid, msgID);
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser, "file metadata is required");
         return rsp;
     }
-    LOG_DEBUG(businessLogger,
+    LOG_DEBUG(logger,
               "[message/file-upload] 正在处理上传分片, uid: {}, file_id: {}, offset: {}, bytes: {}, complete: {}",
               actorUid, requestFile->file_id(), requestOffset, requestData.size(), requestComplete);
 
@@ -103,7 +102,7 @@ TcpPacket FileService::Upload(uint32_t msgID, int64_t actorUid, TcpPacket& reque
             const int progressResult = db::MysqlDao::GetInstance()->saveFileUploadProgress(
                 actorUid, requestFile->file_id(), rpcResponse.next_offset(), complete, getCurrentDateTime());
             if (progressResult != 0) {
-                LOG_ERROR(dbLogger,
+                LOG_ERROR(logger,
                           "[message/file-upload] 保存上传进度失败, uid: {}, file_id: {}, next_offset: {}, result: {}",
                           actorUid, requestFile->file_id(), rpcResponse.next_offset(), progressResult);
                 SetTcpPacketStatus(rsp, ErrorCodes::MysqlFailed, "file progress write failed");
@@ -122,22 +121,22 @@ TcpPacket FileService::Upload(uint32_t msgID, int64_t actorUid, TcpPacket& reque
                 const auto now = getCurrentDateTime();
                 const int objectResult = db::MysqlDao::GetInstance()->upsertReadyFile(object, now, FileExpiryTime());
                 if (objectResult != 0) {
-                    LOG_ERROR(dbLogger, "[message/file-upload] 保存文件信息失败, uid: {}, file_id: {}, result: {}",
+                    LOG_ERROR(logger, "[message/file-upload] 保存文件信息失败, uid: {}, file_id: {}, result: {}",
                               actorUid, requestFile->file_id(), objectResult);
                     SetTcpPacketStatus(rsp, ErrorCodes::MysqlFailed, "file persisted but metadata write failed");
                 } else {
-                    LOG_INFO(businessLogger, "[message/file-upload] 文件上传完成, uid: {}, file_id: {}, file_size: {}",
+                    LOG_INFO(logger, "[message/file-upload] 文件上传完成, uid: {}, file_id: {}, file_size: {}",
                              actorUid, requestFile->file_id(), requestFile->file_size());
                 }
             }
         } else {
-            LOG_WARN(netLogger, "[message/file-upload] 文件服务拒绝上传, uid: {}, file_id: {}, rpc_status: {}",
-                     actorUid, requestFile->file_id(), static_cast<int>(status.error_code()));
+            LOG_WARN(logger, "[message/file-upload] 文件服务拒绝上传, uid: {}, file_id: {}, rpc_status: {}", actorUid,
+                     requestFile->file_id(), static_cast<int>(status.error_code()));
             SetTcpPacketStatus(rsp, status.ok() ? ErrorCodes::FileTypeError : ErrorCodes::RPCFailed,
                                status.ok() ? rpcResponse.message() : "RPC failed: " + status.error_message());
         }
     } catch (const std::exception& e) {
-        LOG_ERROR(businessLogger, "[message/file-upload] 上传处理异常, uid: {}, file_id: {}, error: {}", actorUid,
+        LOG_ERROR(logger, "[message/file-upload] 上传处理异常, uid: {}, file_id: {}, error: {}", actorUid,
                   requestFile->file_id(), e.what());
         SetTcpPacketStatus(rsp, ErrorCodes::InternalError, "系统异常: " + std::string(e.what()));
     }
@@ -152,13 +151,13 @@ TcpPacket FileService::Download(uint32_t msgID, int64_t actorUid, TcpPacket& req
     auto* response = rsp.mutable_file_download_response();
     const auto& download = request.file_download_request();
     if (!download.has_file() || actorUid <= 0 || download.file().file_id().empty()) {
-        LOG_WARN(businessLogger, "[message/file-download] 拒绝缺少文件信息的请求, uid: {}", actorUid);
+        LOG_WARN(logger, "[message/file-download] 拒绝缺少文件信息的请求, uid: {}", actorUid);
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser);
         return rsp;
     }
     const auto fileObject = db::MysqlDao::GetInstance()->findDownloadableFile(download.file().file_id(), actorUid);
     if (!fileObject) {
-        LOG_WARN(businessLogger, "[message/file-download] 文件不可用或无权访问, uid: {}, file_id: {}", actorUid,
+        LOG_WARN(logger, "[message/file-download] 文件不可用或无权访问, uid: {}, file_id: {}", actorUid,
                  download.file().file_id());
         SetTcpPacketStatus(rsp, ErrorCodes::MessageOwnershipInvalid,
                            "file is unavailable or not owned by this conversation");
@@ -179,7 +178,7 @@ TcpPacket FileService::Download(uint32_t msgID, int64_t actorUid, TcpPacket& req
 
     const auto status = rpc::FileRpc::GetInstance()->forwardDownload(rpcRequest, rpcResponse);
     if (!status.ok() || rpcResponse.status() == file::FAILED) {
-        LOG_WARN(netLogger, "[message/file-download] 文件服务读取失败, uid: {}, file_id: {}, rpc_status: {}", actorUid,
+        LOG_WARN(logger, "[message/file-download] 文件服务读取失败, uid: {}, file_id: {}, rpc_status: {}", actorUid,
                  fileObject->fileId, static_cast<int>(status.error_code()));
         SetTcpPacketStatus(rsp, ErrorCodes::RPCFailed, status.ok() ? rpcResponse.message() : status.error_message());
         return rsp;
@@ -195,7 +194,7 @@ TcpPacket FileService::Download(uint32_t msgID, int64_t actorUid, TcpPacket& req
     output->set_file_type(fileObject->fileType);
     output->set_file_size(fileObject->fileSize);
     output->set_sha256(fileObject->sha256);
-    LOG_DEBUG(businessLogger,
+    LOG_DEBUG(logger,
               "[message/file-download] 文件分片读取成功, uid: {}, file_id: {}, offset: {}, bytes: {}, complete: {}",
               actorUid, fileObject->fileId, download.offset(), rpcResponse.data().size(), rpcResponse.complete());
     return rsp;

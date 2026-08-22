@@ -5,8 +5,10 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <iostream>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <string_view>
 
 namespace
 {
@@ -21,12 +23,36 @@ std::filesystem::path ResolveStorageRoot(const std::filesystem::path& configured
 }
 } // namespace
 
+using wimi::Logger;
+
 int main(int argc, char* argv[])
 {
-    wimi::initializeLoggers(argv[0]);
+    Logger::instance().initialize(argv[0], Logger::Service::File);
     const char* configPath = std::getenv("WIMI_CONFIG");
+    const char* logLevel = std::getenv("WIMI_SERVER_LOG_LEVEL");
+    auto logLevelArgument = 1;
     if (configPath == nullptr && argc > 1) {
         configPath = argv[1];
+        logLevelArgument = 2;
+    }
+    if (argc == logLevelArgument + 2 && std::string_view(argv[logLevelArgument]) == "--log_level") {
+        if (logLevel == nullptr)
+            logLevel = argv[logLevelArgument + 1];
+    } else if (argc != logLevelArgument) {
+        std::cerr << "Usage: " << argv[0] << " [config file] [--log_level <debug|info|trace>]\n";
+        return EXIT_FAILURE;
+    }
+    if (logLevel != nullptr) {
+        if (std::string_view(logLevel) == "debug")
+            Logger::instance().setLevel(spdlog::level::debug);
+        else if (std::string_view(logLevel) == "info")
+            Logger::instance().setLevel(spdlog::level::info);
+        else if (std::string_view(logLevel) == "trace")
+            Logger::instance().setLevel(spdlog::level::trace);
+        else {
+            std::cerr << "Invalid log level: " << logLevel << '\n';
+            return EXIT_FAILURE;
+        }
     }
     if (!Configer::loadConfig(configPath == nullptr ? "../conf/file.yaml" : configPath)) {
         spdlog::error("File service config load failed");

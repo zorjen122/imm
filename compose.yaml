@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
-    command: [/opt/wimi/bin/state]
+    command: [/opt/wimi/bin/state, --log_level, info]
     environment:
       WIMI_CONFIG: /etc/wimi/state.yaml
     configs:
@@ -22,7 +22,7 @@ services:
 
   file:
     <<: *wimi-service
-    command: [/opt/wimi/bin/file]
+    command: [/opt/wimi/bin/file, --log_level, info]
     environment:
       WIMI_CONFIG: /etc/wimi/file.yaml
     configs:
@@ -33,7 +33,7 @@ services:
 
   message:
     <<: *wimi-service
-    command: [/opt/wimi/bin/message, /etc/wimi/message.yaml, --info]
+    command: [/opt/wimi/bin/message, /etc/wimi/message.yaml, --log_level, info]
     configs:
       - source: message-config
         target: /etc/wimi/message.yaml
@@ -49,7 +49,7 @@ services:
 
   gateway:
     <<: *wimi-service
-    command: [/opt/wimi/bin/gateway]
+    command: [/opt/wimi/bin/gateway, --log_level, info]
     environment:
       WIMI_CONFIG: /etc/wimi/gateway.yaml
     configs:
@@ -69,7 +69,7 @@ services:
 
   gate:
     <<: *wimi-service
-    command: [/opt/wimi/bin/gate]
+    command: [/opt/wimi/bin/gate, --log_level, info]
     environment:
       WIMI_CONFIG: /etc/wimi/gate.yaml
     configs:

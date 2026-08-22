@@ -23,7 +23,7 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
 : "${WIMI_FILE_CONFIG:=$ROOT_DIR/server/conf/file.yaml}"
 : "${WIMI_MESSAGE_CONFIGS:=$ROOT_DIR/server/conf/message-hunan-im.yaml $ROOT_DIR/server/conf/message-beijing-im.yaml}"
 : "${WIMI_GATEWAY_CONFIGS:=$ROOT_DIR/server/conf/gateway-hunan.yaml $ROOT_DIR/server/conf/gateway-beijing.yaml}"
-: "${WIMI_MESSAGE_LOG_LEVEL:=--info}"
+: "${WIMI_LOG_LEVEL:=info}"
 
 usage() {
   cat <<EOF
@@ -192,19 +192,19 @@ start_service() {
   fi
 }
 
-start_service state "$ROOT_DIR/server/state" env WIMI_CONFIG="$WIMI_STATE_CONFIG" "$BUILD_DIR/state/state"
-start_service file "$ROOT_DIR/server/file" env WIMI_CONFIG="$WIMI_FILE_CONFIG" "$BUILD_DIR/file/file"
+start_service state "$ROOT_DIR/server/state" env WIMI_CONFIG="$WIMI_STATE_CONFIG" "$BUILD_DIR/state/state" --log_level "$WIMI_LOG_LEVEL"
+start_service file "$ROOT_DIR/server/file" env WIMI_CONFIG="$WIMI_FILE_CONFIG" "$BUILD_DIR/file/file" --log_level "$WIMI_LOG_LEVEL"
 message_index=1
 for message_config in $WIMI_MESSAGE_CONFIGS; do
-  start_service "message-$message_index" "$ROOT_DIR/server/message" "$BUILD_DIR/message/message" "$message_config" "$WIMI_MESSAGE_LOG_LEVEL"
+  start_service "message-$message_index" "$ROOT_DIR/server/message" "$BUILD_DIR/message/message" "$message_config" --log_level "$WIMI_LOG_LEVEL"
   message_index=$((message_index + 1))
 done
 gateway_index=1
 for gateway_config in $WIMI_GATEWAY_CONFIGS; do
-  start_service "gateway-$gateway_index" "$ROOT_DIR/server/gateway" env WIMI_CONFIG="$gateway_config" "$BUILD_DIR/gateway/gateway"
+  start_service "gateway-$gateway_index" "$ROOT_DIR/server/gateway" env WIMI_CONFIG="$gateway_config" "$BUILD_DIR/gateway/gateway" --log_level "$WIMI_LOG_LEVEL"
   gateway_index=$((gateway_index + 1))
 done
-start_service gate "$ROOT_DIR/server/gate" env WIMI_CONFIG="$WIMI_GATE_CONFIG" "$BUILD_DIR/gate/gate"
+start_service gate "$ROOT_DIR/server/gate" env WIMI_CONFIG="$WIMI_GATE_CONFIG" "$BUILD_DIR/gate/gate" --log_level "$WIMI_LOG_LEVEL"
 
 echo "Local services are running. Gate: http://127.0.0.1:18080"
 wait

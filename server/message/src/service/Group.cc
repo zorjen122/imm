@@ -21,7 +21,7 @@ void GroupService::NotifyJoinRequest(int64_t masterUid, int64_t requestorUid, in
     push->set_request_message(requestMessage);
     const bool forwarded =
         clientForwardService.ForwardToGateway(masterUid, SerializeTcpPacket(notice), ID_GROUP_NOTIFY_JOIN_REQ);
-    LOG_DEBUG(businessLogger,
+    LOG_DEBUG(logger,
               "[message/group-join-notify] 入群申请通知处理完成, group_id: {}, requestor_uid: {}, master_uid: {}, "
               "forwarded: {}",
               groupId, requestorUid, masterUid, forwarded);
@@ -44,7 +44,7 @@ void GroupService::NotifyChange(const std::vector<int64_t>& recipients, int64_t 
         if (clientForwardService.ForwardToGateway(uid, SerializeTcpPacket(notice), ID_GROUP_REPLY_JOIN_REQ))
             ++forwarded;
     }
-    LOG_DEBUG(businessLogger,
+    LOG_DEBUG(logger,
               "[message/group-change-notify] 群变更通知处理完成, group_id: {}, target_uid: {}, recipients: {}, "
               "forwarded: {}",
               groupId, targetUid, recipients.size(), forwarded);
@@ -55,7 +55,7 @@ TcpPacket GroupService::Create(unsigned int, int64_t actorUid, TcpPacket& reques
     TcpPacket rsp;
     const auto& create = request.create_group_request();
     if (actorUid <= 0 || create.group_name().empty()) {
-        LOG_WARN(businessLogger, "[message/group-create] 拒绝无效请求, uid: {}", actorUid);
+        LOG_WARN(logger, "[message/group-create] 拒绝无效请求, uid: {}", actorUid);
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser);
         return rsp;
     }
@@ -68,10 +68,10 @@ TcpPacket GroupService::Create(unsigned int, int64_t actorUid, TcpPacket& reques
     response->set_conversation_id(conversationId);
     SetTcpPacketStatus(rsp, result.error, result.diagnostic);
     if (result.error == ErrorCodes::Success) {
-        LOG_INFO(businessLogger, "[message/group-create] 群聊创建成功, uid: {}, group_id: {}, conversation_id: {}",
-                 actorUid, groupId, conversationId);
+        LOG_INFO(logger, "[message/group-create] 群聊创建成功, uid: {}, group_id: {}, conversation_id: {}", actorUid,
+                 groupId, conversationId);
     } else {
-        LOG_WARN(businessLogger, "[message/group-create] 群聊创建失败, uid: {}, error: {}", actorUid, result.error);
+        LOG_WARN(logger, "[message/group-create] 群聊创建失败, uid: {}, error: {}", actorUid, result.error);
     }
     return rsp;
 }
@@ -81,7 +81,7 @@ TcpPacket GroupService::NotifyJoin(unsigned int, int64_t actorUid, TcpPacket& re
     TcpPacket rsp;
     const auto& join = request.join_group_request();
     if (actorUid <= 0 || join.group_id() <= 0) {
-        LOG_WARN(businessLogger, "[message/group-join] 拒绝无效请求, uid: {}, group_id: {}", actorUid, join.group_id());
+        LOG_WARN(logger, "[message/group-join] 拒绝无效请求, uid: {}, group_id: {}", actorUid, join.group_id());
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser);
         return rsp;
     }
@@ -92,10 +92,9 @@ TcpPacket GroupService::NotifyJoin(unsigned int, int64_t actorUid, TcpPacket& re
     if (result.error == ErrorCodes::Success && !result.recipientUids.empty())
         NotifyJoinRequest(result.masterUid, actorUid, join.group_id(), join.request_message());
     if (result.error == ErrorCodes::Success) {
-        LOG_INFO(businessLogger, "[message/group-join] 入群申请已保存, uid: {}, group_id: {}", actorUid,
-                 join.group_id());
+        LOG_INFO(logger, "[message/group-join] 入群申请已保存, uid: {}, group_id: {}", actorUid, join.group_id());
     } else {
-        LOG_WARN(businessLogger, "[message/group-join] 入群申请失败, uid: {}, group_id: {}, error: {}", actorUid,
+        LOG_WARN(logger, "[message/group-join] 入群申请失败, uid: {}, group_id: {}, error: {}", actorUid,
                  join.group_id(), result.error);
     }
     return rsp;
@@ -106,7 +105,7 @@ TcpPacket GroupService::PullNotify(unsigned int, int64_t actorUid, TcpPacket& re
     TcpPacket rsp;
     const auto& pull = request.pull_group_members_request();
     if (actorUid <= 0 || pull.group_id() <= 0) {
-        LOG_WARN(businessLogger, "[message/group-pull] 拒绝无效请求, uid: {}, group_id: {}", actorUid, pull.group_id());
+        LOG_WARN(logger, "[message/group-pull] 拒绝无效请求, uid: {}, group_id: {}", actorUid, pull.group_id());
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser);
         return rsp;
     }
@@ -118,7 +117,7 @@ TcpPacket GroupService::PullNotify(unsigned int, int64_t actorUid, TcpPacket& re
     response->set_group_name(result.groupName);
     SetTcpPacketStatus(rsp, result.error, result.diagnostic);
     if (result.error != ErrorCodes::Success) {
-        LOG_WARN(businessLogger, "[message/group-pull] 群信息读取失败, uid: {}, group_id: {}, error: {}", actorUid,
+        LOG_WARN(logger, "[message/group-pull] 群信息读取失败, uid: {}, group_id: {}, error: {}", actorUid,
                  pull.group_id(), result.error);
         return rsp;
     }
@@ -134,9 +133,8 @@ TcpPacket GroupService::PullNotify(unsigned int, int64_t actorUid, TcpPacket& re
         item->set_request_message(apply.message);
         item->set_create_time(apply.createTime);
     }
-    LOG_DEBUG(businessLogger,
-              "[message/group-pull] 群信息读取成功, uid: {}, group_id: {}, members: {}, applications: {}", actorUid,
-              pull.group_id(), result.members.size(), result.applies.size());
+    LOG_DEBUG(logger, "[message/group-pull] 群信息读取成功, uid: {}, group_id: {}, members: {}, applications: {}",
+              actorUid, pull.group_id(), result.members.size(), result.applies.size());
     return rsp;
 }
 
@@ -145,8 +143,8 @@ TcpPacket GroupService::ReplyJoin(unsigned int, int64_t actorUid, TcpPacket& req
     TcpPacket rsp;
     const auto& reply = request.reply_join_group_request();
     if (actorUid <= 0 || reply.group_id() <= 0 || reply.requestor_uid() <= 0 || !reply.has_accept()) {
-        LOG_WARN(businessLogger, "[message/group-join-reply] 拒绝无效请求, uid: {}, group_id: {}, requestor_uid: {}",
-                 actorUid, reply.group_id(), reply.requestor_uid());
+        LOG_WARN(logger, "[message/group-join-reply] 拒绝无效请求, uid: {}, group_id: {}, requestor_uid: {}", actorUid,
+                 reply.group_id(), reply.requestor_uid());
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser);
         return rsp;
     }
@@ -155,7 +153,7 @@ TcpPacket GroupService::ReplyJoin(unsigned int, int64_t actorUid, TcpPacket& req
     rsp.mutable_reply_join_group_response();
     SetTcpPacketStatus(rsp, result.error, result.diagnostic);
     if (result.error != ErrorCodes::Success) {
-        LOG_WARN(businessLogger,
+        LOG_WARN(logger,
                  "[message/group-join-reply] 入群申请处理失败, uid: {}, group_id: {}, requestor_uid: {}, "
                  "error: {}",
                  actorUid, reply.group_id(), reply.requestor_uid(), result.error);
@@ -164,7 +162,7 @@ TcpPacket GroupService::ReplyJoin(unsigned int, int64_t actorUid, TcpPacket& req
     NotifyChange(result.recipientUids, result.groupId, result.targetUid, result.actorUid,
                  reply.accept() ? protocol::GROUP_CHANGE_KIND_JOINED : protocol::GROUP_CHANGE_KIND_UNSPECIFIED,
                  result.groupName, reply.accept());
-    LOG_INFO(businessLogger,
+    LOG_INFO(logger,
              "[message/group-join-reply] 入群申请已处理, uid: {}, group_id: {}, requestor_uid: {}, accepted: {}",
              actorUid, reply.group_id(), reply.requestor_uid(), reply.accept());
     return rsp;
@@ -175,7 +173,7 @@ TcpPacket GroupService::Quit(unsigned int, int64_t actorUid, TcpPacket& request)
     TcpPacket rsp;
     const auto groupId = request.quit_group_request().group_id();
     if (actorUid <= 0 || groupId <= 0) {
-        LOG_WARN(businessLogger, "[message/group-quit] 拒绝无效请求, uid: {}, group_id: {}", actorUid, groupId);
+        LOG_WARN(logger, "[message/group-quit] 拒绝无效请求, uid: {}, group_id: {}", actorUid, groupId);
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser);
         return rsp;
     }
@@ -188,10 +186,10 @@ TcpPacket GroupService::Quit(unsigned int, int64_t actorUid, TcpPacket& request)
                                                           : protocol::GROUP_CHANGE_KIND_LEFT,
                      result.groupName);
     if (result.error == ErrorCodes::Success) {
-        LOG_INFO(businessLogger, "[message/group-quit] 用户已退出群聊, uid: {}, group_id: {}", actorUid, groupId);
+        LOG_INFO(logger, "[message/group-quit] 用户已退出群聊, uid: {}, group_id: {}", actorUid, groupId);
     } else {
-        LOG_WARN(businessLogger, "[message/group-quit] 退出群聊失败, uid: {}, group_id: {}, error: {}", actorUid,
-                 groupId, result.error);
+        LOG_WARN(logger, "[message/group-quit] 退出群聊失败, uid: {}, group_id: {}, error: {}", actorUid, groupId,
+                 result.error);
     }
     return rsp;
 }
@@ -201,14 +199,13 @@ TcpPacket GroupService::Kick(unsigned int, int64_t actorUid, TcpPacket& request)
     TcpPacket rsp;
     const auto& kick = request.kick_group_member_request();
     if (actorUid <= 0 || kick.group_id() <= 0 || kick.member_uid() <= 0) {
-        LOG_WARN(businessLogger, "[message/group-kick] 拒绝无效请求, uid: {}, group_id: {}, member_uid: {}", actorUid,
+        LOG_WARN(logger, "[message/group-kick] 拒绝无效请求, uid: {}, group_id: {}, member_uid: {}", actorUid,
                  kick.group_id(), kick.member_uid());
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser);
         return rsp;
     }
     if (actorUid == kick.member_uid()) {
-        LOG_WARN(businessLogger, "[message/group-kick] 群主不能移除自己, uid: {}, group_id: {}", actorUid,
-                 kick.group_id());
+        LOG_WARN(logger, "[message/group-kick] 群主不能移除自己, uid: {}, group_id: {}", actorUid, kick.group_id());
         SetTcpPacketStatus(rsp, ErrorCodes::MessageOwnershipInvalid, "master cannot kick itself");
         return rsp;
     }
@@ -220,12 +217,11 @@ TcpPacket GroupService::Kick(unsigned int, int64_t actorUid, TcpPacket& request)
         NotifyChange(result.recipientUids, result.groupId, result.targetUid, result.actorUid,
                      protocol::GROUP_CHANGE_KIND_KICKED, result.groupName);
     if (result.error == ErrorCodes::Success) {
-        LOG_INFO(businessLogger, "[message/group-kick] 群成员已移除, uid: {}, group_id: {}, member_uid: {}", actorUid,
+        LOG_INFO(logger, "[message/group-kick] 群成员已移除, uid: {}, group_id: {}, member_uid: {}", actorUid,
                  kick.group_id(), kick.member_uid());
     } else {
-        LOG_WARN(businessLogger,
-                 "[message/group-kick] 移除群成员失败, uid: {}, group_id: {}, member_uid: {}, error: {}", actorUid,
-                 kick.group_id(), kick.member_uid(), result.error);
+        LOG_WARN(logger, "[message/group-kick] 移除群成员失败, uid: {}, group_id: {}, member_uid: {}, error: {}",
+                 actorUid, kick.group_id(), kick.member_uid(), result.error);
     }
     return rsp;
 }

@@ -22,14 +22,14 @@ void GateServer::Start()
         try {
             if (ec) {
                 self->Start();
-                netLogger->info("accept-restart: connect is wrong, ec as {}", ec.what());
+                logger->info("accept-restart: connect is wrong, ec as {}", ec.what());
                 return;
             }
 
             connection->Start();
             self->Start();
         } catch (std::exception& err) {
-            netLogger->warn("exception is {}", err.what());
+            logger->warn("exception is {}", err.what());
 
             self->Start();
         }

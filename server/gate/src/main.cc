@@ -12,10 +12,33 @@
 #include <jsoncpp/json/json.h>
 #include <jsoncpp/json/reader.h>
 #include <jsoncpp/json/value.h>
+#include <string_view>
+
+using wimi::Logger;
 
 int main(int argc, char* argv[])
 {
-    wimi::initializeLoggers(argv[0]);
+    Logger::instance().initialize(argv[0], Logger::Service::Gate);
+    const char* logLevel = std::getenv("WIMI_SERVER_LOG_LEVEL");
+    if (argc == 3 && std::string_view(argv[1]) == "--log_level") {
+        if (logLevel == nullptr)
+            logLevel = argv[2];
+    } else if (argc != 1) {
+        std::cerr << "Usage: " << argv[0] << " [--log_level <debug|info|trace>]\n";
+        return EXIT_FAILURE;
+    }
+    if (logLevel != nullptr) {
+        if (std::string_view(logLevel) == "debug")
+            Logger::instance().setLevel(spdlog::level::debug);
+        else if (std::string_view(logLevel) == "info")
+            Logger::instance().setLevel(spdlog::level::info);
+        else if (std::string_view(logLevel) == "trace")
+            Logger::instance().setLevel(spdlog::level::trace);
+        else {
+            std::cerr << "Invalid log level: " << logLevel << '\n';
+            return EXIT_FAILURE;
+        }
+    }
     try {
         const char* configPath = std::getenv("WIMI_CONFIG");
         auto existConfig = Configer::loadConfig(configPath ? configPath : "../conf/gate.yaml");

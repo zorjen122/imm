@@ -21,8 +21,7 @@ bool ClientForwardService::ForwardToGateway(int64_t uid, const std::string& pack
 {
     auto* service = gatewayStreamService.load(std::memory_order_acquire);
     if (!service) {
-        LOG_WARN(businessLogger, "[message/client-forward] Gateway 流服务不可用, uid: {}, protocol_id: {}", uid,
-                 protocolId);
+        LOG_WARN(logger, "[message/client-forward] Gateway 流服务不可用, uid: {}, protocol_id: {}", uid, protocolId);
         return false;
     }
     if (forwardId <= 0)
@@ -36,8 +35,8 @@ bool ClientForwardService::ForwardToGateway(int64_t uid, const std::string& pack
     forward.set_conversation_seq(conversationSeq);
     forward.set_packet(packet);
     const bool forwarded = service->ForwardToUser(uid, std::move(forward));
-    LOG_DEBUG(businessLogger, "[message/client-forward] 客户端推送处理完成, uid: {}, protocol_id: {}, forwarded: {}",
-              uid, protocolId, forwarded);
+    LOG_DEBUG(logger, "[message/client-forward] 客户端推送处理完成, uid: {}, protocol_id: {}, forwarded: {}", uid,
+              protocolId, forwarded);
     return forwarded;
 }
 

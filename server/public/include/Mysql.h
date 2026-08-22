@@ -146,13 +146,13 @@ class MysqlPool
                 pool.push(std::make_unique<SqlConnection>(sqlSession, leaseTime));
 
             } catch (mysqlx::Error& e) {
-                LOG_WARN(wimi::dbLogger, "Mysql-client init(number-{}) error: {}", i, e.what());
+                LOG_WARN(logger, "Mysql-client init(number-{}) error: {}", i, e.what());
                 continue;
             }
         }
 
         if (pool.empty()) {
-            LOG_DEBUG(wimi::dbLogger, "Mysql-client pool init error! | poolSize: {}", maxSize);
+            LOG_DEBUG(logger, "Mysql-client pool init error! | poolSize: {}", maxSize);
             return;
         }
 
@@ -185,7 +185,7 @@ class MysqlPool
         });
         if (!ready) {
             Metrics::Increment(Metric::MysqlAcquireTimeout);
-            LOG_WARN(wimi::dbLogger, "MySQL连接池获取超时, available: {}", pool.size());
+            LOG_WARN(logger, "MySQL连接池获取超时, available: {}", pool.size());
             return nullptr;
         }
         if (stopEnable || pool.empty()) {
@@ -232,7 +232,7 @@ class MysqlPool
         std::unique_lock<std::mutex> lock(sqlMutex);
         while (!pool.empty()) {
             pool.pop();
-            LOG_INFO(wimi::dbLogger, "Mysql-client pool destroy! | poolSize: {}", pool.size());
+            LOG_INFO(logger, "Mysql-client pool destroy! | poolSize: {}", pool.size());
         }
         if (keepThread.joinable()) {
             keepThread.join();
@@ -280,14 +280,14 @@ class MysqlPool
                 con->leaseTime = leaseTime;
                 pool.push(std::move(con));
             } catch (mysqlx::Error& e) {
-                LOG_INFO(wimi::dbLogger, "Error keeping connection alive: {}, reconnect now...", e.what());
+                LOG_INFO(logger, "Error keeping connection alive: {}, reconnect now...", e.what());
                 try {
                     mysqlx::Session* newSession(CreateSession());
                     con->leaseTime = leaseTime;
                     con.reset();
                     pool.push(std::make_unique<SqlConnection>(newSession, leaseTime));
                 } catch (mysqlx::Error& e) {
-                    LOG_INFO(wimi::dbLogger, "Error reconnecting: {}", e.what());
+                    LOG_INFO(logger, "Error reconnecting: {}", e.what());
                     return;
                 }
             }
@@ -330,18 +330,18 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
             mysqlPool.reset(new MysqlPool(host, port, user, password, schema, clientCount));
 
             if (!mysqlPool->Empty()) {
-                LOG_INFO(wimi::dbLogger,
+                LOG_INFO(logger,
                          "Mysql-Client pool init success! | host: {}, port: {}, "
                          "user: {}, schema: {}, poolSize: {}",
                          host, port, user, schema, mysqlPool->Size());
             } else {
-                LOG_WARN(wimi::dbLogger,
+                LOG_WARN(logger,
                          "Mysql-Client pool init failed! | host: {}, port: {}, "
                          "user: {}, schema: {}, poolSize: {}",
                          host, port, user, schema, mysqlPool->Size());
             }
         } catch (std::exception& e) {
-            LOG_ERROR(wimi::dbLogger, "MysqlDao init error: {}", e.what());
+            LOG_ERROR(logger, "MysqlDao init error: {}", e.what());
         }
     }
     ~MysqlDao() {}
@@ -359,7 +359,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
     {
         auto con = mysqlPool->GetConnection();
         if (con == nullptr) {
-            LOG_INFO(dbLogger, "Mysql connection pool is empty!");
+            LOG_INFO(logger, "Mysql connection pool is empty!");
             return defaultForType<decltype(processor(con->session))>();
         }
         Defer defer([&con, this]() { mysqlPool->ReturnConnection(std::move(con)); });
@@ -367,7 +367,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
         try {
             return processor(con->session); // 完全由processor处理SQL执行
         } catch (mysqlx::Error& e) {
-            LOG_ERROR(dbLogger, "MySQL error: {}", e.what());
+            LOG_ERROR(logger, "MySQL error: {}", e.what());
             HandleError(e);
             return defaultForType<decltype(processor(con->session))>();
         }
@@ -395,7 +395,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
         return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> User::Ptr {
             auto result = session->sql("SELECT * FROM users WHERE username = ?").bind(username).execute();
             if (!(result.count() > 0)) {
-                LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
+                LOG_DEBUG(logger, "Mysql指令调用的结果集为空");
                 return nullptr;
             }
 
@@ -417,7 +417,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
         return executeTemplate([&](std::unique_ptr<mysqlx::Session>& session) -> UserInfo::Ptr {
             auto result = session->sql("SELECT * FROM userInfo WHERE uid = ?").bind(uid).execute();
             if (!(result.count() > 0)) {
-                LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
+                LOG_DEBUG(logger, "Mysql指令调用的结果集为空");
                 return nullptr;
             }
             auto row = result.fetchOne();
@@ -473,7 +473,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
                     .execute();
 
             if (!(result.count() > 0)) {
-                LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
+                LOG_DEBUG(logger, "Mysql指令调用的结果集为空");
                 return nullptr;
             }
 
@@ -500,7 +500,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
                                    .execute();
 
             if (!(checkResult.count() > 0)) {
-                LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
+                LOG_DEBUG(logger, "Mysql指令调用的结果集为空");
                 return 1; // 用户不存在
             }
 
@@ -526,7 +526,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
 
             auto row = result.fetchOne();
             if (row && row[0].get<int64_t>() > 0) {
-                LOG_INFO(dbLogger, "User already exists");
+                LOG_INFO(logger, "User already exists");
                 return 1;
             }
 
@@ -1267,7 +1267,7 @@ class MysqlDao : public Singleton<MysqlDao>, public std::enable_shared_from_this
             auto result = session->sql(f).bind(STATUS).bind(from).execute();
             if (!(result.count() > 0)) {
                 // log...
-                LOG_DEBUG(dbLogger, "Mysql指令调用的结果集为空");
+                LOG_DEBUG(logger, "Mysql指令调用的结果集为空");
                 return nullptr;
             }
             FriendApply::FriendApplyGroup friendApplyGroup(new std::vector<FriendApply::Ptr>());

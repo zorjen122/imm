@@ -15,9 +15,9 @@ IocPool::IocPool(std::size_t size)
     }
 
     if (iocGroup.size() >= 1)
-        LOG_INFO(wimi::netLogger, "IocPool created with {} threads", iocGroup.size());
+        LOG_INFO(logger, "IocPool created with {} threads", iocGroup.size());
     else
-        LOG_WARN(wimi::netLogger, "IocPool created is failed, size {} ", iocGroup.size());
+        LOG_WARN(logger, "IocPool created is failed, size {} ", iocGroup.size());
 }
 
 IocPool::~IocPool()

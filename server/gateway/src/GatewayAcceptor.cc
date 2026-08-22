@@ -28,8 +28,7 @@ asio::awaitable<void> GatewayAcceptor::Run()
         readinessTimer.expires_after(std::chrono::milliseconds(100));
         co_await readinessTimer.async_wait(asio::use_awaitable);
     }
-    LOG_INFO(netLogger, "[gateway/accept] 开始接收客户端连接, healthy_message_links: {}",
-             messageLinks.HealthyLinkCount());
+    LOG_INFO(logger, "[gateway/accept] 开始接收客户端连接, healthy_message_links: {}", messageLinks.HealthyLinkCount());
 
     while (acceptor.is_open()) {
         boost::system::error_code ec;
@@ -37,7 +36,7 @@ asio::awaitable<void> GatewayAcceptor::Run()
         if (ec) {
             if (ec == asio::error::operation_aborted)
                 co_return;
-            LOG_WARN(netLogger, "[gateway/accept] 接收客户端连接失败, error: {}", ec.message());
+            LOG_WARN(logger, "[gateway/accept] 接收客户端连接失败, error: {}", ec.message());
             continue;
         }
         std::make_shared<GatewaySession>(std::move(socket), manager, messageLinks, businessPool)->Start();

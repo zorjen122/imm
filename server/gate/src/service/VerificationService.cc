@@ -126,8 +126,8 @@ VerificationCodeIssue VerificationService::RequestEmailCode(const std::string& r
         return result;
     }
     if (!emailEnabled_ && !exposeCodeInResponse_) {
-        businessLogger->error("[verification] neither SMTP delivery nor development response is "
-                              "enabled");
+        logger->error("[verification] neither SMTP delivery nor development response is "
+                      "enabled");
         result.error = ErrorCodes::DependencyUnavailable;
         return result;
     }
@@ -166,8 +166,8 @@ bool VerificationService::VerifyAndConsume(const std::string& rawEmail, const st
 bool VerificationService::SendEmail(const std::string& recipient, const std::string& code) const
 {
     if (smtpUrl_.empty() || emailUser_.empty() || emailPassword_.empty()) {
-        businessLogger->error("[verification] SMTP is enabled but its URL or credentials are "
-                              "missing");
+        logger->error("[verification] SMTP is enabled but its URL or credentials are "
+                      "missing");
         return false;
     }
 
@@ -208,7 +208,7 @@ bool VerificationService::SendEmail(const std::string& recipient, const std::str
     curl_slist_free_all(recipients);
     curl_easy_cleanup(curl);
     if (status != CURLE_OK) {
-        businessLogger->error("[verification] SMTP delivery failed: {}", curl_easy_strerror(status));
+        logger->error("[verification] SMTP delivery failed: {}", curl_easy_strerror(status));
         return false;
     }
     return true;
