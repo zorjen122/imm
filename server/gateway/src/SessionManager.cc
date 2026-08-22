@@ -24,8 +24,11 @@ db::SessionLease SessionManager::Bind(int64_t uid, const std::string& deviceId,
     lease.connectionId = session->ConnectionId();
     lease.generation = db::RedisDao::GetInstance()->bindSessionLease(uid, deviceId, gatewayId, instanceId,
                                                                      lease.connectionId, leaseTtlSeconds);
-    if (lease.generation <= 0)
+    if (lease.generation <= 0) {
+        LOG_ERROR(businessLogger, "[gateway/session-bind] 发布会话失败, uid: {}, connection_id: {}", uid,
+                  lease.connectionId);
         return {};
+    }
 
     // rebind 会话，如果旧的会话存在，目前的规则是直接关闭旧的会话（没有明确通知）
     std::shared_ptr<GatewaySession> oldSession;
@@ -37,8 +40,16 @@ db::SessionLease SessionManager::Bind(int64_t uid, const std::string& deviceId,
             oldSession = found->second.session.lock();
         userSessions[deviceId] = LocalSession{session, lease};
     }
-    if (oldSession && oldSession != session)
+    if (oldSession && oldSession != session) {
+        LOG_INFO(businessLogger,
+                 "[gateway/session-bind] 新连接替换同设备旧连接, uid: {}, old_connection_id: {}, "
+                 "connection_id: {}, generation: {}",
+                 uid, oldSession->ConnectionId(), lease.connectionId, lease.generation);
         oldSession->Close();
+    } else {
+        LOG_INFO(businessLogger, "[gateway/session-bind] 会话已绑定, uid: {}, connection_id: {}, generation: {}", uid,
+                 lease.connectionId, lease.generation);
+    }
     return lease;
 }
 
@@ -66,6 +77,8 @@ void SessionManager::Remove(int64_t uid, const std::string& deviceId, const std:
             sessions.erase(found);
     }
     db::RedisDao::GetInstance()->clearSessionLease(uid, deviceId, lease);
+    LOG_INFO(businessLogger, "[gateway/session-remove] 会话已移除, uid: {}, connection_id: {}, generation: {}", uid,
+             lease.connectionId, lease.generation);
 }
 
 gateway::ClientForwardStatus SessionManager::Forward(const gateway::ClientForwardEnvelope& forward)
@@ -75,17 +88,26 @@ gateway::ClientForwardStatus SessionManager::Forward(const gateway::ClientForwar
     {
         std::lock_guard<std::mutex> lock(mutex);
         auto user = sessions.find(forward.recipient_uid());
-        if (user == sessions.end())
+        if (user == sessions.end()) {
+            LOG_DEBUG(businessLogger, "[gateway/client-forward] 接收用户不在线, uid: {}, forward_id: {}",
+                      forward.recipient_uid(), forward.forward_id());
             return gateway::CLIENT_FORWARD_STATUS_OFFLINE;
+        }
         auto found = user->second.find(forward.recipient_device_id());
-        if (found == user->second.end())
+        if (found == user->second.end()) {
+            LOG_DEBUG(businessLogger, "[gateway/client-forward] 接收设备不在线, uid: {}, forward_id: {}",
+                      forward.recipient_uid(), forward.forward_id());
             return gateway::CLIENT_FORWARD_STATUS_OFFLINE;
+        }
         session = found->second.session.lock();
         lease = found->second.lease;
     }
 
-    if (!session)
+    if (!session) {
+        LOG_DEBUG(businessLogger, "[gateway/client-forward] 本地会话已失效, uid: {}, forward_id: {}",
+                  forward.recipient_uid(), forward.forward_id());
         return gateway::CLIENT_FORWARD_STATUS_OFFLINE;
+    }
 
     /*
       Message Core 查询在线 lease 后，把它当时看到的连接身份写入
@@ -95,16 +117,26 @@ gateway::ClientForwardStatus SessionManager::Forward(const gateway::ClientForwar
       目前一般来说，对于可持久化消息是不会丢的，它存放在 Mysql 存储表中。
     */
     if (lease.connectionId != forward.expected_connection_id() ||
-        lease.generation != forward.expected_connection_generation())
+        lease.generation != forward.expected_connection_generation()) {
+        LOG_DEBUG(
+            businessLogger,
+            "[gateway/client-forward] 路由已过期, uid: {}, forward_id: {}, generation: {}, expected_generation: {}",
+            forward.recipient_uid(), forward.forward_id(), lease.generation, forward.expected_connection_generation());
         return gateway::CLIENT_FORWARD_STATUS_STALE_ROUTE;
+    }
     TcpPacket packet;
     const int64_t transportSequence =
         ParseTcpPacket(forward.packet(), packet) ? TcpPacketReliableSequence(forward.protocol_id(), packet) : 0;
     const bool queued = transportSequence > 0
                             ? session->SendReliable(forward.packet(), forward.protocol_id(), transportSequence)
                             : session->SendRaw(forward.packet(), forward.protocol_id());
-    if (!queued)
+    if (!queued) {
+        LOG_WARN(netLogger, "[gateway/client-forward] 客户端写队列繁忙, uid: {}, forward_id: {}, protocol_id: {}",
+                 forward.recipient_uid(), forward.forward_id(), forward.protocol_id());
         return gateway::CLIENT_FORWARD_STATUS_BACKPRESSURED;
+    }
+    LOG_TRACE(businessLogger, "[gateway/client-forward] 消息已进入客户端写队列, uid: {}, forward_id: {}",
+              forward.recipient_uid(), forward.forward_id());
     return gateway::CLIENT_FORWARD_STATUS_QUEUED;
 }
 

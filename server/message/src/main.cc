@@ -15,8 +15,10 @@ int main(int argc, char* argv[])
 
     auto loadSuccess = Configer::loadConfig(argv[1]);
     auto node = Configer::getNode("server");
-    if (!loadSuccess || node.IsNull())
+    if (!loadSuccess || node.IsNull()) {
+        LOG_ERROR(wimi::businessLogger, "[message/startup] 配置加载失败或缺少 server 配置");
         return -1;
+    }
 
     if (argc == 3) {
         auto level = std::string(argv[2]);
@@ -32,7 +34,8 @@ int main(int argc, char* argv[])
         }
     }
 
-    LOG_INFO(wimi::businessLogger, "ImServiceRunner 启动, 日志等级: {}", wimi::getLogLevelStr());
+    LOG_INFO(wimi::businessLogger, "[message/startup] 正在启动服务, log_level: {}",
+             spdlog::level::to_string_view(wimi::businessLogger->level()));
     wimi::ImServiceRunner::GetInstance()->Activate();
 
     return 0;

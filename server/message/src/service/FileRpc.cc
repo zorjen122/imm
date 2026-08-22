@@ -17,13 +17,13 @@ FileRpc::FileRpc()
         unsigned short rpcPort = conf["file"]["rpcPort"].as<int>();
         int rpcCount = conf["file"]["rpcCount"].as<int>();
         pool.reset(new RpcPool<FileService>(rpcCount, host, std::to_string(rpcPort)));
-        LOG_INFO(netLogger, "FileRpc::FileRpc() | host: {}, rpcPort: {}, rpcCount: {}", host, rpcPort,
-                 pool->getPoolSize());
+        LOG_INFO(netLogger, "[message/file-rpc-start] 文件 RPC 连接池已创建, host: {}, port: {}, connections: {}", host,
+                 rpcPort, pool->getPoolSize());
     } catch (std::exception& e) {
-        LOG_ERROR(netLogger, "FileRpc::FileRpc() is wrong | what: {}", e.what());
+        LOG_ERROR(netLogger, "[message/file-rpc-start] 文件 RPC 连接池创建失败, error: {}", e.what());
     }
 }
-FileRpc::~FileRpc() { LOG_INFO(netLogger, "FileRpc::~FileRpc()"); }
+FileRpc::~FileRpc() { LOG_INFO(netLogger, "[message/file-rpc-stop] 文件 RPC 连接池已销毁"); }
 grpc::Status FileRpc::forwardUpload(const UploadRequest& req, UploadResponse& resp)
 {
     ClientContext context;
@@ -34,7 +34,7 @@ grpc::Status FileRpc::forwardUpload(const UploadRequest& req, UploadResponse& re
     }
     auto rpc = pool->getConnection();
     if (rpc == nullptr) {
-        LOG_INFO(netLogger, "FileRpc::forwardUpload() | No available connection");
+        LOG_WARN(netLogger, "[message/file-rpc-upload] 没有可用的文件 RPC 连接");
         return grpc::Status(grpc::StatusCode::INTERNAL, "No available connection");
     }
     Defer defer([&]() { pool->returnConnection(std::move(rpc)); });
@@ -43,8 +43,11 @@ grpc::Status FileRpc::forwardUpload(const UploadRequest& req, UploadResponse& re
     if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
         Metrics::Increment(Metric::RpcDeadlineExceeded);
         auto* requestContext = RequestContextScope::Current();
-        LOG_WARN(netLogger, "文件上传RPC超过请求截止时间, requestId: {}",
+        LOG_WARN(netLogger, "[message/file-rpc-upload] 文件上传请求超时, request_id: {}",
                  requestContext == nullptr ? "" : requestContext->requestId);
+    } else if (!status.ok()) {
+        LOG_WARN(netLogger, "[message/file-rpc-upload] 文件上传请求失败, status: {}, error: {}",
+                 static_cast<int>(status.error_code()), status.error_message());
     }
     return status;
 }
@@ -56,10 +59,16 @@ grpc::Status FileRpc::forwardDownload(const DownloadRequest& req, DownloadRespon
         requestContext != nullptr && requestContext->deadline != RequestContext::Deadline::max())
         context.set_deadline(requestContext->SystemDeadline());
     auto rpc = pool->getConnection();
-    if (rpc == nullptr)
+    if (rpc == nullptr) {
+        LOG_WARN(netLogger, "[message/file-rpc-download] 没有可用的文件 RPC 连接");
         return grpc::Status(grpc::StatusCode::INTERNAL, "No available connection");
+    }
     Defer defer([&]() { pool->returnConnection(std::move(rpc)); });
-    return rpc->Download(&context, req, &resp);
+    const auto status = rpc->Download(&context, req, &resp);
+    if (!status.ok())
+        LOG_WARN(netLogger, "[message/file-rpc-download] 文件下载请求失败, status: {}, error: {}",
+                 static_cast<int>(status.error_code()), status.error_message());
+    return status;
 }
 
 auto FileRpc::getPoolSize() const { return pool->getPoolSize(); }

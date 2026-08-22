@@ -67,13 +67,15 @@ GatewaySession::GatewaySession(asio::ip::tcp::socket socket, SessionManager& reg
 
 void GatewaySession::Start()
 {
+    LOG_DEBUG(netLogger, "[gateway/session] 客户端连接已建立, connection_id: {}", connectionId);
     auto self = shared_from_this();
     asio::co_spawn(strand, Run(), [self](std::exception_ptr error) {
         if (error) {
             try {
                 std::rethrow_exception(error);
             } catch (const std::exception& exception) {
-                LOG_ERROR(netLogger, "Gateway session coroutine failed: {}", exception.what());
+                LOG_ERROR(netLogger, "[gateway/session] 会话协程异常, connection_id: {}, error: {}", self->connectionId,
+                          exception.what());
             }
         }
         self->CloseInContext();
@@ -93,6 +95,8 @@ bool GatewaySession::SendRaw(std::string packet, uint32_t protocolId)
     const auto queued = queuedWrites.fetch_add(1, std::memory_order_acq_rel) + 1;
     if (queued > kMaxQueuedWrites) {
         queuedWrites.fetch_sub(1, std::memory_order_acq_rel);
+        LOG_WARN(netLogger, "[gateway/client-write] 客户端写队列已满, connection_id: {}, protocol_id: {}, queued: {}",
+                 connectionId, protocolId, queued);
         Close();
         return false;
     }
@@ -138,20 +142,30 @@ asio::awaitable<void> GatewaySession::Run()
     while (!closed.load(std::memory_order_acquire)) {
         std::array<uint32_t, 2> header{};
         co_await asio::async_read(socket, asio::buffer(header), asio::redirect_error(asio::use_awaitable, ec));
-        if (ec)
+        if (ec) {
+            if (ec != asio::error::eof && ec != asio::error::operation_aborted)
+                LOG_WARN(netLogger, "[gateway/client-read] 读取协议头失败, connection_id: {}, error: {}", connectionId,
+                         ec.message());
             break;
+        }
 
         const uint32_t protocolId = ntohl(header[0]);
         const uint32_t bodySize = ntohl(header[1]);
         if (bodySize > PROTOCOL_RECV_MSS) {
-            LOG_WARN(netLogger, "Gateway rejected oversized frame: {}", bodySize);
+            LOG_WARN(netLogger,
+                     "[gateway/client-read] 拒绝超大数据帧, connection_id: {}, protocol_id: {}, bytes: {}, limit: {}",
+                     connectionId, protocolId, bodySize, PROTOCOL_RECV_MSS);
             break;
         }
 
         std::string payload(bodySize, '\0');
         co_await asio::async_read(socket, asio::buffer(payload), asio::redirect_error(asio::use_awaitable, ec));
-        if (ec)
+        if (ec) {
+            if (ec != asio::error::eof && ec != asio::error::operation_aborted)
+                LOG_WARN(netLogger, "[gateway/client-read] 读取数据帧失败, connection_id: {}, error: {}", connectionId,
+                         ec.message());
             break;
+        }
         co_await HandlePacket(protocolId, std::move(payload));
     }
 
@@ -175,8 +189,8 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     TcpPacket request;
     if (!ParseTcpPacket(payload, request)) {
         LOG_WARN(netLogger,
-                 "Gateway rejected malformed packet, connection_id: {}, "
-                 "protocol_id: {}, service: {}, payload_bytes: {}",
+                 "[gateway/client-read] 拒绝无法解析的数据包, connection_id: {}, "
+                 "protocol_id: {}, service: {}, bytes: {}",
                  connectionId, protocolId, ServiceName(protocolId), payload.size());
         SendError(protocolId, ErrorCodes::JsonParser, "invalid protobuf packet");
         co_return;
@@ -184,8 +198,8 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
 
     if (!TcpRequestMatchesService(protocolId, request) || TcpPacketRequestId(request).empty()) {
         LOG_WARN(netLogger,
-                 "Gateway rejected malformed packet, connection_id: {}, "
-                 "protocol_id: {}, service: {}, payload_bytes: {}",
+                 "[gateway/client-read] 拒绝协议不匹配的数据包, connection_id: {}, "
+                 "protocol_id: {}, service: {}, bytes: {}",
                  connectionId, protocolId, ServiceName(protocolId), payload.size());
         SendError(protocolId, ErrorCodes::ProtobufPacket, "invalid protobuf packet");
         co_return;
@@ -197,9 +211,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
         const auto& login = request.login_request();
         const int64_t claimedUid = login.uid();
         const bool initProfile = login.init_profile();
-        LOG_DEBUG(businessLogger,
-                  "Gateway handling login, connection_id: {}, claimed_uid: {}, "
-                  "init_profile: {}",
+        LOG_DEBUG(businessLogger, "[gateway/login] 开始校验登录, connection_id: {}, uid: {}, init_profile: {}",
                   connectionId, claimedUid, initProfile);
         auto result = co_await asio::co_spawn(
             businessPool,
@@ -210,18 +222,14 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
             lease = result.lease;
             userId.store(result.response.login_response().uid(), std::memory_order_release);
             lastLeaseRefresh = std::chrono::steady_clock::now();
-            LOG_INFO(businessLogger,
-                     "Gateway login accepted, uid: {}, connection_id: {}, "
-                     "generation: {}",
+            LOG_INFO(businessLogger, "[gateway/login] 登录成功, uid: {}, connection_id: {}, generation: {}",
                      result.response.login_response().uid(), connectionId, lease.generation);
         } else {
-            LOG_WARN(businessLogger,
-                     "Gateway login rejected, connection_id: {}, claimed_uid: {}, "
-                     "error: {}",
-                     connectionId, claimedUid, result.error);
+            LOG_WARN(businessLogger, "[gateway/login] 登录失败, connection_id: {}, uid: {}, error: {}", connectionId,
+                     claimedUid, result.error);
         }
         if (!SendRaw(SerializeTcpPacket(result.response), ID_LOGIN_INIT_RSP))
-            LOG_WARN(netLogger, "Gateway failed to queue login response, connection_id: {}", connectionId);
+            LOG_WARN(netLogger, "[gateway/login] 登录响应未进入写队列, connection_id: {}", connectionId);
         co_return;
     }
 
@@ -229,7 +237,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     const int64_t actor = userId.load(std::memory_order_acquire);
     if (actor <= 0) {
         LOG_WARN(businessLogger,
-                 "Gateway rejected unauthenticated command, connection_id: {}, "
+                 "[gateway/command] 拒绝未登录请求, connection_id: {}, "
                  "protocol_id: {}, service: {}",
                  connectionId, protocolId, ServiceName(protocolId));
         SendError(protocolId, ErrorCodes::AuthenticationRequired, "gateway session is not authenticated");
@@ -247,7 +255,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
 
     // PING 只维持客户端物理连接，Gateway 本地立即回复，不占用 Message 流。
     if (protocolId == ID_PING_REQ) {
-        LOG_TRACE(netLogger, "Gateway handling ping, uid: {}, connection_id: {}", actor, connectionId);
+        LOG_TRACE(netLogger, "[gateway/ping] 收到心跳, uid: {}, connection_id: {}", actor, connectionId);
         TcpPacket pong;
         pong.mutable_ping_response();
         SetTcpPacketStatus(pong, ErrorCodes::Success);
@@ -257,7 +265,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
 
     // QUIT 先排队成功响应，再由 WriteLoop 在队列排空后关闭 socket。
     if (protocolId == ID_USER_QUIT_REQ) {
-        LOG_INFO(businessLogger, "Gateway handling quit, uid: {}, connection_id: {}", actor, connectionId);
+        LOG_INFO(businessLogger, "[gateway/quit] 用户主动退出, uid: {}, connection_id: {}", actor, connectionId);
         TcpPacket response;
         response.mutable_quit_response();
         SetTcpPacketStatus(response, ErrorCodes::Success);
@@ -273,7 +281,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
         if (receipt.seq() > 0) {
             AcknowledgeDelivery(receipt.seq());
             LOG_TRACE(netLogger,
-                      "Gateway handled delivery ACK, uid: {}, connection_id: {}, "
+                      "[gateway/delivery-ack] 已确认客户端投递, uid: {}, connection_id: {}, "
                       "seq: {}, receipt_type: {}",
                       actor, connectionId, receipt.seq(), static_cast<int>(receipt.receipt_type()));
         }
@@ -290,7 +298,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     }
     if (++commandsInRateWindow > 100) {
         LOG_WARN(businessLogger,
-                 "Gateway rate limit exceeded, uid: {}, connection_id: {}, "
+                 "[gateway/rate-limit] 请求频率超过限制, uid: {}, connection_id: {}, "
                  "protocol_id: {}, service: {}, commands_in_window: {}",
                  actor, connectionId, protocolId, ServiceName(protocolId), commandsInRateWindow);
         SendError(protocolId, ErrorCodes::ResourceExhausted, "connection command rate exceeded");
@@ -318,7 +326,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     const std::string requestId = command.request_id();
     const int64_t conversationId = command.conversation_id();
     LOG_DEBUG(businessLogger,
-              "Gateway forwarding command, request_id: {}, uid: {}, "
+              "[gateway/command-forward] 正在转发请求, request_id: {}, uid: {}, "
               "connection_id: {}, generation: {}, protocol_id: {}, service: {}, "
               "conversation_id: {}, timeout_ms: {}, expect_response: {}",
               requestId, actor, connectionId, lease.generation, protocolId, ServiceName(protocolId), conversationId,
@@ -331,7 +339,7 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
             }
         }))) {
         LOG_WARN(netLogger,
-                 "Gateway failed to forward command, request_id: {}, uid: {}, "
+                 "[gateway/command-forward] 请求转发失败, request_id: {}, uid: {}, "
                  "protocol_id: {}, service: {}, healthy_message_streams: {}",
                  requestId, actor, protocolId, ServiceName(protocolId), messageLinks.HealthyLinkCount());
         if (expectResponse)
@@ -352,7 +360,7 @@ asio::awaitable<bool> GatewaySession::RefreshLeaseIfNeeded(int64_t actor)
         asio::use_awaitable);
     if (!refreshed) {
         LOG_WARN(businessLogger,
-                 "Gateway lease refresh fenced stale connection, uid: {}, "
+                 "[gateway/lease-refresh] 连接租约已失效, uid: {}, "
                  "connection_id: {}, generation: {}",
                  actor, connectionId, lease.generation);
         CloseInContext();
@@ -361,7 +369,7 @@ asio::awaitable<bool> GatewaySession::RefreshLeaseIfNeeded(int64_t actor)
 
     lastLeaseRefresh = std::chrono::steady_clock::now();
     LOG_DEBUG(businessLogger,
-              "Gateway lease refreshed, uid: {}, connection_id: {}, "
+              "[gateway/lease-refresh] 连接租约已续期, uid: {}, connection_id: {}, "
               "generation: {}",
               actor, connectionId, lease.generation);
     co_return true;
@@ -372,7 +380,7 @@ void GatewaySession::HandleForwardResult(const gateway::CommandResult& result, b
 {
     if (result.error() == ErrorCodes::AuthenticationRequired) {
         LOG_WARN(businessLogger,
-                 "Message node fenced Gateway command, request_id: {}, uid: {}, "
+                 "[gateway/command-result] Message 节点拒绝了过期连接, request_id: {}, uid: {}, "
                  "protocol_id: {}, service: {}",
                  requestId, actor, protocolId, ServiceName(protocolId));
         Close();
@@ -380,19 +388,19 @@ void GatewaySession::HandleForwardResult(const gateway::CommandResult& result, b
     }
     if (!expectResponse) {
         LOG_DEBUG(businessLogger,
-                  "Gateway command completed without client response, "
+                  "[gateway/command-result] 无需响应的请求已完成, "
                   "request_id: {}, uid: {}, protocol_id: {}, error: {}",
                   requestId, actor, protocolId, result.error());
         return;
     }
     LOG_DEBUG(businessLogger,
-              "Gateway received command result, request_id: {}, uid: {}, "
+              "[gateway/command-result] 收到 Message 处理结果, request_id: {}, uid: {}, "
               "protocol_id: {}, response_service_id: {}, error: {}, "
               "retryable: {}",
               requestId, actor, protocolId, result.response_service_id(), result.error(), result.retryable());
     if (!SendRaw(result.packet(), result.response_service_id()))
         LOG_WARN(netLogger,
-                 "Gateway failed to queue command response, request_id: {}, uid: "
+                 "[gateway/command-result] 响应未进入客户端写队列, request_id: {}, uid: "
                  "{}, response_service_id: {}",
                  requestId, actor, result.response_service_id());
 }
@@ -406,6 +414,8 @@ asio::awaitable<void> GatewaySession::WriteLoop()
         writeQueue.pop_front();
         queuedWrites.fetch_sub(1, std::memory_order_acq_rel);
         if (ec) {
+            LOG_WARN(netLogger, "[gateway/client-write] 写入客户端失败, connection_id: {}, error: {}", connectionId,
+                     ec.message());
             CloseInContext();
             break;
         }
@@ -484,6 +494,11 @@ void GatewaySession::CloseInContext()
 {
     if (closed.exchange(true))
         return;
+    LOG_DEBUG(netLogger,
+              "[gateway/session] 正在关闭客户端连接, uid: {}, connection_id: {}, queued_writes: {}, "
+              "pending_acks: {}",
+              userId.load(std::memory_order_acquire), connectionId, queuedWrites.load(std::memory_order_acquire),
+              reliableWrites.size());
     for (auto& [_, write] : reliableWrites) {
         if (write.timer)
             write.timer->cancel();
@@ -513,12 +528,14 @@ void GatewaySession::ArmReliableWrite(int64_t ackSeq)
         if (current == self->reliableWrites.end())
             return;
         if (current->second.attempts >= 3) {
-            LOG_WARN(netLogger, "Gateway client-forward delivery ACK timed out, uid: {}, seq: {}",
-                     self->userId.load(std::memory_order_acquire), ackSeq);
+            LOG_WARN(netLogger, "[gateway/delivery-ack] 客户端确认超时, uid: {}, seq: {}, attempts: {}",
+                     self->userId.load(std::memory_order_acquire), ackSeq, current->second.attempts);
             self->reliableWrites.erase(current);
             return;
         }
         ++current->second.attempts;
+        LOG_DEBUG(netLogger, "[gateway/delivery-retry] 重发客户端消息, uid: {}, seq: {}, attempt: {}",
+                  self->userId.load(std::memory_order_acquire), ackSeq, current->second.attempts);
         if (!self->SendRaw(current->second.packet, current->second.protocolId)) {
             self->reliableWrites.erase(current);
             return;

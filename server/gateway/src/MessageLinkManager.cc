@@ -58,9 +58,10 @@ MessageLinkManager::~MessageLinkManager() { Stop(); }
 void MessageLinkManager::Start()
 {
     if (stateAddress.empty()) {
-        LOG_ERROR(netLogger, "Gateway-Message topology requires stateRPC configuration");
+        LOG_ERROR(netLogger, "[gateway/topology] 缺少 stateRPC 配置, 无法发现 Message 节点");
         return;
     }
+    LOG_INFO(netLogger, "[gateway/topology] 开始同步 Message 节点, state_endpoint: {}", stateAddress);
     asio::co_spawn(ioContext, TopologyLoop(), asio::detached);
 }
 
@@ -100,6 +101,8 @@ void MessageLinkManager::Stop()
             SerializeTcpPacket(MakeErrorPacket(ErrorCodes::DependencyUnavailable, "message links are stopping")));
         command.callback(result);
     }
+    LOG_INFO(netLogger, "[gateway/message-links-stop] Message 链路已停止, links: {}, abandoned_commands: {}",
+             current.size(), abandoned.size());
 }
 
 bool MessageLinkManager::Ready() const { return HealthyLinkCount() > 0; }
@@ -112,16 +115,25 @@ std::size_t MessageLinkManager::HealthyLinkCount() const
 
 asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope command, CommandCallback callback)
 {
-    if (stopping.load(std::memory_order_acquire))
+    if (stopping.load(std::memory_order_acquire)) {
+        LOG_DEBUG(businessLogger, "[gateway/command-route] 链路正在停止, 拒绝新请求, request_id: {}",
+                  command.request_id());
         co_return false;
+    }
 
     const int64_t now = NowUnixMilliseconds();
-    if (command.deadline_unix_ms() <= now)
+    if (command.deadline_unix_ms() <= now) {
+        LOG_DEBUG(businessLogger, "[gateway/command-route] 请求到达时已超时, request_id: {}, service_id: {}",
+                  command.request_id(), command.service_id());
         co_return false;
+    }
 
     auto link = SelectLink(command.conversation_id());
-    if (!link)
+    if (!link) {
+        LOG_WARN(netLogger, "[gateway/command-route] 没有可用的 Message 链路, request_id: {}, service_id: {}",
+                 command.request_id(), command.service_id());
         co_return false;
+    }
 
     const std::string requestId = command.request_id();
     auto deadlineTimer = std::make_shared<asio::steady_timer>(ioContext);
@@ -130,8 +142,10 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
 
     {
         std::lock_guard<std::mutex> lock(pendingMutex);
-        if (pending.contains(requestId))
+        if (pending.contains(requestId)) {
+            LOG_WARN(businessLogger, "[gateway/command-route] 拒绝重复 request_id, request_id: {}", requestId);
             co_return false;
+        }
 
         PendingCommand pendingCommand;
         pendingCommand.command = command;
@@ -155,6 +169,9 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
     const auto enqueueResult = link->Enqueue(std::move(frame));
     if (enqueueResult == MessageLink::EnqueueResult::Accepted) {
         link->IncrementInflight();
+        LOG_DEBUG(businessLogger,
+                  "[gateway/command-route] 请求已进入 Message 链路, request_id: {}, node: {}, attempt: 1", requestId,
+                  link->Id());
 
         // 单次投递 deadline 仅在帧已进入链路写队列后开始计时。
         ArmAttemptTimer(requestId, 1);
@@ -212,8 +229,11 @@ asio::awaitable<void> MessageLinkManager::TopologyLoop()
         for (auto& link : current) {
             if (link->Healthy())
                 link->Heartbeat(++heartbeatSequence);
-            if (now - link->LastReadAt() > 30000)
+            if (now - link->LastReadAt() > 30000) {
+                LOG_WARN(netLogger, "[gateway/message-link] Message 链路响应超时, node: {}, idle_ms: {}", link->Id(),
+                         now - link->LastReadAt());
                 link->Stop();
+            }
         }
 
         timer.expires_after(std::chrono::seconds(__pollIntervalSeconds));
@@ -235,7 +255,7 @@ MessageLinkManager::TopologySnapshot MessageLinkManager::FetchTopology()
     context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
     auto status = stub->ListMessageNodes(&context, request, &response);
     if (!status.ok()) {
-        LOG_WARN(netLogger, "ListMessageNodes failed: {}", status.error_message());
+        LOG_WARN(netLogger, "[gateway/topology] 获取 Message 节点失败, error: {}", status.error_message());
         return snapshot;
     }
     snapshot.received = true;
@@ -244,6 +264,7 @@ MessageLinkManager::TopologySnapshot MessageLinkManager::FetchTopology()
             continue;
         snapshot.nodes.push_back(Node{source.node_id(), source.host(), static_cast<unsigned short>(source.port())});
     }
+    LOG_DEBUG(netLogger, "[gateway/topology] Message 节点快照已更新, active_nodes: {}", snapshot.nodes.size());
     return snapshot;
 }
 
@@ -284,6 +305,8 @@ void MessageLinkManager::SyncTopologyLink(const TopologySnapshot& snapshot)
         if (start)
             StartLink(node);
     }
+    if (!removed.empty())
+        LOG_INFO(netLogger, "[gateway/topology] 已移除失效 Message 链路, removed: {}", removed.size());
 }
 
 void MessageLinkManager::StartLink(const Node& node)
@@ -335,7 +358,7 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
 
         if (found && command.callback) {
             LOG_DEBUG(businessLogger,
-                      "Gateway received Message command result, node: {}, "
+                      "[gateway/command-result] 收到 Message 处理结果, node: {}, "
                       "request_id: {}, response_service_id: {}, error: {}, "
                       "retryable: {}",
                       nodeId, frame.command_result().request_id(), frame.command_result().response_service_id(),
@@ -343,7 +366,7 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
             command.callback(frame.command_result());
         } else {
             LOG_WARN(businessLogger,
-                     "Gateway ignored unmatched Message command result, node: {}, "
+                     "[gateway/command-result] 忽略无法匹配的处理结果, node: {}, "
                      "request_id: {}, response_service_id: {}",
                      nodeId, frame.command_result().request_id(), frame.command_result().response_service_id());
         }
@@ -354,13 +377,13 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
     if (frame.has_register_result()) {
         if (frame.register_result().accepted()) {
             LOG_INFO(netLogger,
-                     "Gateway-Message registration accepted, node: {}, "
+                     "[gateway/message-link-register] Message 链路注册成功, node: {}, "
                      "message_node_id: {}, stream_epoch: {}",
                      nodeId, frame.register_result().message_node_id(), frame.register_result().stream_epoch());
             RetryPending();
         } else {
             LOG_ERROR(netLogger,
-                      "Gateway-Message registration rejected, node: {}, "
+                      "[gateway/message-link-register] Message 链路注册失败, node: {}, "
                       "message_node_id: {}, stream_epoch: {}, reason: {}",
                       nodeId, frame.register_result().message_node_id(), frame.register_result().stream_epoch(),
                       frame.register_result().reason());
@@ -371,7 +394,7 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
     // HeartbeatAck 的到达时间已在 OnReadDone 更新；这里只记录序号和往返延迟。
     if (frame.has_heartbeat_ack()) {
         LOG_TRACE(netLogger,
-                  "Gateway received Message heartbeat ACK, node: {}, sequence: {}, "
+                  "[gateway/message-heartbeat] 收到 Message 心跳响应, node: {}, sequence: {}, "
                   "round_trip_ms: {}",
                   nodeId, frame.heartbeat_ack().sequence(),
                   std::max<int64_t>(0, NowUnixMilliseconds() - frame.heartbeat_ack().sent_at_unix_ms()));
@@ -381,7 +404,7 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
     // DrainNotice 立即把节点移出健康集合，禁止新命令继续路由到正在下线的流。
     if (frame.has_drain_notice()) {
         LOG_WARN(netLogger,
-                 "Gateway received Message drain notice, node: {}, "
+                 "[gateway/message-drain] Message 节点准备下线, node: {}, "
                  "message_node_id: {}, reason: {}",
                  nodeId, frame.drain_notice().message_node_id(), frame.drain_notice().reason());
         std::shared_ptr<MessageLink> link;
@@ -401,7 +424,7 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
     // ACCEPTED。
     if (frame.has_client_forward()) {
         LOG_DEBUG(businessLogger,
-                  "Gateway handling Message client forward, node: {}, forward_id: {}, "
+                  "[gateway/client-forward] 收到客户端推送, node: {}, forward_id: {}, "
                   "recipient_uid: {}, message_id: {}, conversation_id: {}, "
                   "conversation_seq: {}",
                   nodeId, frame.client_forward().forward_id(), frame.client_forward().recipient_uid(),
@@ -412,7 +435,7 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
             status = clientForwardHandler(frame.client_forward());
         } else {
             LOG_ERROR(businessLogger,
-                      "Gateway client-forward handler is not installed, node: {}, "
+                      "[gateway/client-forward] 客户端推送处理器未设置, node: {}, "
                       "forward_id: {}",
                       nodeId, frame.client_forward().forward_id());
         }
@@ -433,18 +456,18 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
             ack->set_recipient_device_id(frame.client_forward().recipient_device_id());
             if (link->Enqueue(std::move(ackFrame)) != MessageLink::EnqueueResult::Accepted) {
                 LOG_WARN(netLogger,
-                         "Gateway failed to enqueue client-forward ACK, node: {}, "
+                         "[gateway/client-forward-ack] 推送确认未进入 Message 写队列, node: {}, "
                          "forward_id: {}, status: {}",
                          nodeId, frame.client_forward().forward_id(), static_cast<int>(status));
             } else {
                 LOG_DEBUG(businessLogger,
-                          "Gateway enqueued client-forward ACK, node: {}, forward_id: {}, "
+                          "[gateway/client-forward-ack] 推送确认已进入 Message 写队列, node: {}, forward_id: {}, "
                           "status: {}",
                           nodeId, frame.client_forward().forward_id(), static_cast<int>(status));
             }
         } else {
             LOG_WARN(netLogger,
-                     "Gateway cannot return client-forward ACK because link is absent, "
+                     "[gateway/client-forward-ack] Message 链路不存在, 无法返回推送确认, "
                      "node: {}, forward_id: {}, status: {}",
                      nodeId, frame.client_forward().forward_id(), static_cast<int>(status));
         }
@@ -452,7 +475,7 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
     }
 
     // oneof 理论上只会命中上述分支；空 frame 作为协议异常保留可观测性。
-    LOG_WARN(netLogger, "Gateway received empty Message frame, node: {}", nodeId);
+    LOG_WARN(netLogger, "[gateway/message-frame] 收到空 Message 数据帧, node: {}", nodeId);
 }
 
 void MessageLinkManager::OnLinkDone(const std::string& nodeId, MessageLink* source)
@@ -484,7 +507,6 @@ void MessageLinkManager::OnLinkDone(const std::string& nodeId, MessageLink* sour
     });
 }
 
-
 void MessageLinkManager::OnLinkWritable()
 {
     asio::post(ioContext, [this]() {
@@ -494,7 +516,6 @@ void MessageLinkManager::OnLinkWritable()
         RetryPending();
     });
 }
-
 
 /*
 RetryPending 的实现是以状态节点作为消息链路唯一拓扑来源，不会打破这个约定，关于重传有三个状态区分：
@@ -581,6 +602,10 @@ void MessageLinkManager::RetryPending(const std::string& failedLinkToken)
         }
 
         if (attempt != 0)
+            LOG_DEBUG(businessLogger,
+                      "[gateway/command-retry] 请求已切换 Message 链路, request_id: {}, node: {}, attempt: {}",
+                      retry.requestId, link->Id(), attempt);
+        if (attempt != 0)
             ArmAttemptTimer(retry.requestId, attempt);
     }
 
@@ -603,6 +628,8 @@ void MessageLinkManager::OnAttemptTimeout(const std::string& requestId, std::uin
         found->second.retryPending = true;
     }
 
+    LOG_WARN(netLogger, "[gateway/command-retry] Message 节点单次处理超时, request_id: {}, attempt: {}", requestId,
+             attempt);
     RetryPending();
 }
 
@@ -660,6 +687,9 @@ void MessageLinkManager::ExpirePending(const std::string& requestId)
     result.set_retryable(true);
     result.set_packet(
         SerializeTcpPacket(MakeErrorPacket(ErrorCodes::DeadlineExceeded, "message command deadline exceeded")));
+    LOG_WARN(businessLogger,
+             "[gateway/command-timeout] 请求超过总截止时间, request_id: {}, service_id: {}, attempts: {}", requestId,
+             expired.command.service_id(), expired.attempt);
     expired.callback(result);
 }
 

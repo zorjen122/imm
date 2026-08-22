@@ -44,8 +44,13 @@ class GatewayStreamReactor final
         bool startWrite = false;
         {
             std::lock_guard<std::mutex> lock(writeMutex);
-            if (finishing || writeQueue.size() >= kMaxStreamQueue)
+            if (finishing)
                 return false;
+            if (writeQueue.size() >= kMaxStreamQueue) {
+                LOG_WARN(netLogger, "[message/gateway-stream] 写队列已满, gateway: {}, queued: {}", gatewayId,
+                         writeQueue.size());
+                return false;
+            }
             writeQueue.push_back(std::move(frame));
             if (!writeInFlight) {
                 writeInFlight = true;
@@ -62,6 +67,8 @@ class GatewayStreamReactor final
     void OnReadDone(bool ok) override
     {
         if (!ok) {
+            LOG_INFO(netLogger, "[message/gateway-stream] Gateway 读取通道已关闭, gateway: {}, instance: {}", gatewayId,
+                     instanceId);
             FinishOnce();
             return;
         }
@@ -76,6 +83,14 @@ class GatewayStreamReactor final
             heartbeat->set_sent_at_unix_ms(readFrame.heartbeat().sent_at_unix_ms());
             heartbeat->set_sequence(readFrame.heartbeat().sequence());
             Enqueue(std::move(response));
+        } else if (readFrame.has_client_forward_ack()) {
+            LOG_DEBUG(businessLogger,
+                      "[message/client-forward-ack] 收到 Gateway 推送确认, gateway: {}, forward_id: {}, status: {}",
+                      gatewayId, readFrame.client_forward_ack().forward_id(),
+                      static_cast<int>(readFrame.client_forward_ack().status()));
+        } else {
+            LOG_WARN(netLogger, "[message/gateway-stream] 收到空或未知数据帧, gateway: {}, instance: {}", gatewayId,
+                     instanceId);
         }
 
         readFrame.Clear();
@@ -85,6 +100,8 @@ class GatewayStreamReactor final
     void OnWriteDone(bool ok) override
     {
         if (!ok) {
+            LOG_WARN(netLogger, "[message/gateway-stream] Gateway 写入通道已关闭, gateway: {}, instance: {}", gatewayId,
+                     instanceId);
             FinishOnce();
             return;
         }
@@ -105,6 +122,8 @@ class GatewayStreamReactor final
 
     void OnDone() override
     {
+        LOG_DEBUG(netLogger, "[message/gateway-stream] Gateway 流已结束, gateway: {}, instance: {}", gatewayId,
+                  instanceId);
         service.Unregister(gatewayId, instanceId, this);
         delete this;
     }
@@ -122,6 +141,12 @@ class GatewayStreamReactor final
         if (valid) {
             service.Register(gatewayId, instanceId, this);
             registered = true;
+        } else {
+            LOG_WARN(netLogger,
+                     "[message/gateway-register] 拒绝 Gateway 注册, gateway: {}, instance: {}, "
+                     "protocol_version: {}, draining: {}, peer_identity_required: {}",
+                     gatewayId, instanceId, request.protocol_version(), service.Draining(),
+                     service.RequirePeerIdentity());
         }
 
         gateway::MessageToGatewayFrame response;
@@ -139,6 +164,10 @@ class GatewayStreamReactor final
         const std::string requestId = command.request_id();
         const uint32_t serviceId = command.service_id();
         if (!registered || requestId.empty()) {
+            LOG_WARN(businessLogger,
+                     "[message/command] 拒绝未注册或缺少 request_id 的请求, gateway: {}, service_id: {}, "
+                     "registered: {}",
+                     gatewayId, serviceId, registered);
             gateway::MessageToGatewayFrame responseFrame;
             auto* response = responseFrame.mutable_command_result();
             response->set_request_id(requestId);
@@ -151,6 +180,8 @@ class GatewayStreamReactor final
             return;
         }
         if (command.deadline_unix_ms() <= NowUnixMilliseconds()) {
+            LOG_WARN(businessLogger, "[message/command] 请求到达时已超时, gateway: {}, request_id: {}, service_id: {}",
+                     gatewayId, requestId, serviceId);
             gateway::MessageToGatewayFrame responseFrame;
             auto* response = responseFrame.mutable_command_result();
             response->set_request_id(requestId);
@@ -168,12 +199,18 @@ class GatewayStreamReactor final
         // gRPC 流线程只负责收发和轻量分发，真正消息服务逻辑在线程池里跑。
         const std::string originGatewayId = gatewayId;
         const std::string originInstanceId = instanceId;
+        LOG_DEBUG(businessLogger,
+                  "[message/command] 请求已进入业务队列, gateway: {}, request_id: {}, uid: {}, service_id: {}",
+                  gatewayId, requestId, command.actor_uid(), serviceId);
         auto accepted = Service::GetInstance()->PostBackgroundTask(
             [this, originGatewayId, originInstanceId, command = std::move(command)]() mutable {
                 HandleBackgroundCommand(originGatewayId, originInstanceId, std::move(command));
             });
 
         if (!accepted) {
+            LOG_WARN(businessLogger,
+                     "[message/command] 业务队列已满, 请求被拒绝, gateway: {}, request_id: {}, service_id: {}",
+                     gatewayId, requestId, serviceId);
             gateway::MessageToGatewayFrame responseFrame;
             auto* response = responseFrame.mutable_command_result();
             response->set_request_id(requestId);
@@ -209,10 +246,25 @@ class GatewayStreamReactor final
             response->set_error(error);
             response->set_retryable(retryable);
             response->set_packet(SerializeTcpPacket(*replyPacket));
-            streamService->Reply(originGatewayId, originInstanceId, originReactor, std::move(responseFrame));
+            const bool replied =
+                streamService->Reply(originGatewayId, originInstanceId, originReactor, std::move(responseFrame));
+            if (!replied) {
+                LOG_WARN(netLogger,
+                         "[message/command-result] 处理结果未进入 Gateway 写队列, gateway: {}, request_id: {}, "
+                         "service_id: {}, error: {}",
+                         originGatewayId, command.request_id(), command.service_id(), error);
+            } else {
+                LOG_DEBUG(businessLogger,
+                          "[message/command-result] 处理结果已返回 Gateway, gateway: {}, request_id: {}, "
+                          "service_id: {}, error: {}, retryable: {}",
+                          originGatewayId, command.request_id(), command.service_id(), error, retryable);
+            }
         };
 
         if (context.Expired()) {
+            LOG_WARN(businessLogger,
+                     "[message/command] 请求在业务队列中超时, gateway: {}, request_id: {}, service_id: {}",
+                     originGatewayId, command.request_id(), command.service_id());
             reply(ErrorCodes::DeadlineExceeded, true, "command expired while waiting for a message worker");
             return;
         }
@@ -225,6 +277,9 @@ class GatewayStreamReactor final
         if (actorLease.empty() || actorLease.gatewayId != originGatewayId ||
             actorLease.instanceId != originInstanceId || actorLease.connectionId != command.connection_id() ||
             actorLease.generation != command.connection_generation()) {
+            LOG_WARN(businessLogger,
+                     "[message/command] 连接租约校验失败, gateway: {}, request_id: {}, uid: {}, service_id: {}",
+                     originGatewayId, command.request_id(), command.actor_uid(), command.service_id());
             reply(ErrorCodes::AuthenticationRequired, false, "connection generation is no longer current");
             return;
         }
@@ -232,6 +287,11 @@ class GatewayStreamReactor final
         // 接着解析原始 TCP 业务包并进入业务层
         // Gateway 传来的 command.packet() 是 TCP packet 序列化结果。
         if (!ParseTcpPacket(command.packet(), packet) || !TcpRequestMatchesService(command.service_id(), packet)) {
+            LOG_WARN(businessLogger,
+                     "[message/command] 请求包解析或协议校验失败, gateway: {}, request_id: {}, uid: {}, "
+                     "service_id: {}, bytes: {}",
+                     originGatewayId, command.request_id(), command.actor_uid(), command.service_id(),
+                     command.packet().size());
             reply(ErrorCodes::JsonParser, false);
             return;
         }
@@ -419,7 +479,8 @@ void GatewayStreamService::Register(const std::string& gatewayId, const std::str
 {
     std::lock_guard<std::mutex> lock(streamsMutex);
     streams[gatewayId] = RegisteredStream{instanceId, reactor};
-    LOG_INFO(netLogger, "Gateway stream registered, gateway: {}, instance: {}", gatewayId, instanceId);
+    LOG_INFO(netLogger, "[message/gateway-register] Gateway 流已注册, gateway: {}, instance: {}", gatewayId,
+             instanceId);
 }
 
 void GatewayStreamService::Unregister(const std::string& gatewayId, const std::string& instanceId,
@@ -430,15 +491,19 @@ void GatewayStreamService::Unregister(const std::string& gatewayId, const std::s
     if (found == streams.end() || found->second.instanceId != instanceId || found->second.reactor != reactor)
         return;
     streams.erase(found);
-    LOG_INFO(netLogger, "Gateway stream unregistered, gateway: {}, instance: {}", gatewayId, instanceId);
+    LOG_INFO(netLogger, "[message/gateway-unregister] Gateway 流已注销, gateway: {}, instance: {}", gatewayId,
+             instanceId);
 }
 
 bool GatewayStreamService::Forward(const db::SessionLease& lease, gateway::ClientForwardEnvelope envelope)
 {
     std::lock_guard<std::mutex> lock(streamsMutex);
     auto found = streams.find(lease.gatewayId);
-    if (found == streams.end() || found->second.instanceId != lease.instanceId)
+    if (found == streams.end() || found->second.instanceId != lease.instanceId) {
+        LOG_DEBUG(businessLogger, "[message/client-forward] Gateway 流不可用, gateway: {}, uid: {}", lease.gatewayId,
+                  envelope.recipient_uid());
         return false;
+    }
     gateway::MessageToGatewayFrame frame;
     *frame.mutable_client_forward() = std::move(envelope);
     return found->second.reactor->Enqueue(std::move(frame));
@@ -449,6 +514,7 @@ bool GatewayStreamService::ForwardToUser(int64_t recipientUid, gateway::ClientFo
 {
     bool forwarded = false;
     auto leases = db::RedisDao::GetInstance()->getSessionLeases(recipientUid);
+    std::size_t forwardedCount = 0;
     for (const auto& lease : leases) {
         if (lease.deviceId == excludedDeviceId)
             continue;
@@ -460,6 +526,7 @@ bool GatewayStreamService::ForwardToUser(int64_t recipientUid, gateway::ClientFo
         target.set_expected_connection_generation(lease.generation);
         if (Forward(lease, target)) {
             forwarded = true;
+            ++forwardedCount;
             continue;
         }
 
@@ -470,9 +537,14 @@ bool GatewayStreamService::ForwardToUser(int64_t recipientUid, gateway::ClientFo
             continue;
         target.set_expected_connection_id(refreshed.connectionId);
         target.set_expected_connection_generation(refreshed.generation);
-        if (Forward(refreshed, std::move(target)))
+        if (Forward(refreshed, std::move(target))) {
             forwarded = true;
+            ++forwardedCount;
+        }
     }
+    LOG_DEBUG(businessLogger,
+              "[message/client-forward] 用户推送处理完成, uid: {}, protocol_id: {}, leases: {}, forwarded: {}",
+              recipientUid, envelope.protocol_id(), leases.size(), forwardedCount);
     return forwarded;
 }
 
@@ -481,8 +553,10 @@ bool GatewayStreamService::Reply(const std::string& gatewayId, const std::string
 {
     std::lock_guard<std::mutex> lock(streamsMutex);
     auto found = streams.find(gatewayId);
-    if (found == streams.end() || found->second.instanceId != instanceId || found->second.reactor != reactor)
+    if (found == streams.end() || found->second.instanceId != instanceId || found->second.reactor != reactor) {
+        LOG_DEBUG(netLogger, "[message/command-result] Gateway 流已变化, 无法返回结果, gateway: {}", gatewayId);
         return false;
+    }
     return reactor->Enqueue(std::move(frame));
 }
 
@@ -490,6 +564,8 @@ void GatewayStreamService::DrainAll(const std::string& reason)
 {
     draining.store(true, std::memory_order_release);
     std::lock_guard<std::mutex> lock(streamsMutex);
+    LOG_INFO(netLogger, "[message/gateway-drain] 正在通知 Gateway 节点下线, streams: {}, reason: {}", streams.size(),
+             reason);
     for (const auto& [_, stream] : streams) {
         gateway::MessageToGatewayFrame frame;
         auto* notice = frame.mutable_drain_notice();

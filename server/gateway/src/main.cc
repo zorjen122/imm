@@ -22,13 +22,13 @@ int main(int argc, char** argv)
     if (!configPath && argc > 1)
         configPath = argv[1];
     if (!Configer::loadConfig(configPath ? configPath : "../conf/gateway-hunan.yaml")) {
-        spdlog::error("Connection Gateway config load failed");
+        LOG_ERROR(wimi::businessLogger, "[gateway/startup] 配置加载失败");
         return EXIT_FAILURE;
     }
 
     auto config = Configer::getNode("server");
     if (!config || !config["self"] || !config["self"]["name"] || !config["self"]["port"]) {
-        spdlog::error("Connection Gateway self config is missing");
+        LOG_ERROR(wimi::businessLogger, "[gateway/startup] 缺少服务名称或监听端口配置");
         return EXIT_FAILURE;
     }
 
@@ -51,9 +51,10 @@ int main(int argc, char** argv)
     boost::asio::co_spawn(ioContext, server.Run(), boost::asio::detached);
 
     boost::asio::signal_set signals(ioContext, SIGINT, SIGTERM);
-    signals.async_wait([&](const boost::system::error_code& error, int) {
+    signals.async_wait([&](const boost::system::error_code& error, int signalNumber) {
         if (error)
             return;
+        LOG_INFO(wimi::businessLogger, "[gateway/shutdown] 收到退出信号, signal: {}", signalNumber);
         messageLinks.Stop();
         ioContext.stop();
     });
@@ -63,8 +64,8 @@ int main(int argc, char** argv)
     workers.reserve(workerCount - 1);
     for (std::size_t i = 1; i < workerCount; ++i)
         workers.emplace_back([&]() { ioContext.run(); });
-    LOG_INFO(wimi::businessLogger, "Connection Gateway started, id: {}, instance: {}, port: {}", gatewayId, instanceId,
-             port);
+    LOG_INFO(wimi::businessLogger, "[gateway/startup] 服务已启动, gateway: {}, instance: {}, port: {}", gatewayId,
+             instanceId, port);
     ioContext.run();
     for (auto& worker : workers)
         worker.join();
@@ -74,5 +75,6 @@ int main(int argc, char** argv)
     businessPool.join();
     wimi::db::MysqlDao::GetInstance()->Close();
     wimi::db::RedisDao::GetInstance()->Close();
+    LOG_INFO(wimi::businessLogger, "[gateway/shutdown] 服务已停止, gateway: {}, instance: {}", gatewayId, instanceId);
     return EXIT_SUCCESS;
 }

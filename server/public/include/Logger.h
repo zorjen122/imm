@@ -8,6 +8,7 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <string>
+#include <string_view>
 
 namespace wimi
 {
@@ -21,35 +22,42 @@ inline std::filesystem::path logDirectoryForExecutable(const std::filesystem::pa
     return std::filesystem::weakly_canonical(executable).parent_path();
 }
 
+inline std::string_view logSourceFileName(std::string_view path)
+{
+    const auto separator = path.find_last_of("/\\");
+    return separator == std::string_view::npos ? path : path.substr(separator + 1);
+}
+
 // 日志级别
 #define LOG_DEBUG(logger, ...)                                                                                         \
     do {                                                                                                               \
         ::wimi::ensureLoggersInitialized();                                                                            \
-        logger->debug("[{}:{}({})] \n{}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__));              \
+        logger->debug("{}:{}({})\n{}", ::wimi::logSourceFileName(__FILE__), __LINE__, __FUNCTION__,                    \
+                      fmt::format(__VA_ARGS__));                                                                       \
     } while (false)
 
 #define LOG_TRACE(logger, ...)                                                                                         \
     do {                                                                                                               \
         ::wimi::ensureLoggersInitialized();                                                                            \
-        logger->trace("[{}:{}({})] \n{}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__));              \
+        logger->trace("{}", fmt::format(__VA_ARGS__));                                                                 \
     } while (false)
 
 #define LOG_INFO(logger, ...)                                                                                          \
     do {                                                                                                               \
         ::wimi::ensureLoggersInitialized();                                                                            \
-        logger->info("[{}:{}({})] \n{}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__));                \
+        logger->info("{}", fmt::format(__VA_ARGS__));                                                                  \
     } while (false)
 
 #define LOG_WARN(logger, ...)                                                                                          \
     do {                                                                                                               \
         ::wimi::ensureLoggersInitialized();                                                                            \
-        logger->warn("[{}:{}({})] \n{}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__));                \
+        logger->warn("{}", fmt::format(__VA_ARGS__));                                                                  \
     } while (false)
 
 #define LOG_ERROR(logger, ...)                                                                                         \
     do {                                                                                                               \
         ::wimi::ensureLoggersInitialized();                                                                            \
-        logger->error("[{}:{}({})] \n{}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__));               \
+        logger->error("{}", fmt::format(__VA_ARGS__));                                                                 \
     } while (false)
 
 inline std::shared_ptr<spdlog::logger> createDebugLogger(std::string name, const std::filesystem::path& path,
@@ -59,17 +67,14 @@ inline std::shared_ptr<spdlog::logger> createDebugLogger(std::string name, const
     // 控制台输出（带颜色）
     auto outSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     outSink->set_level(level);
-    // outSink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [thread %t] %v");
-    outSink->set_pattern("[%^%l%$] [thread %t] %v");
+    outSink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [thread %t] %v");
 
     std::filesystem::create_directories(path);
 
     // 文件输出（自动轮转）
     const auto logFile = path / (name + ".log");
-    auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        logFile.string(),
-        1024 * 1024 * 5,
-        files); // 5MB x 3 files
+    auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(logFile.string(), 1024 * 1024 * 5,
+                                                                           files); // 5MB x 3 files
     fileSink->set_level(level);
     fileSink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [thread %t] %v");
 
@@ -93,10 +98,7 @@ inline void initializeLoggers(const std::filesystem::path& executable = {})
     });
 }
 
-inline void ensureLoggersInitialized()
-{
-    initializeLoggers();
-}
+inline void ensureLoggersInitialized() { initializeLoggers(); }
 
 inline void setLoggerLevel(spdlog::level::level_enum level)
 {

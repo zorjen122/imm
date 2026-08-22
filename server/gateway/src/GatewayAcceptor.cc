@@ -14,7 +14,7 @@ namespace wimi::connection
 namespace asio = boost::asio;
 
 GatewayAcceptor::GatewayAcceptor(asio::io_context& ioContext, unsigned short port, SessionManager& sessionManager,
-                             MessageLinkManager& messageLinks, asio::thread_pool& businessPool)
+                                 MessageLinkManager& messageLinks, asio::thread_pool& businessPool)
     : ioContext(ioContext), acceptor(ioContext, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port)),
       manager(sessionManager), messageLinks(messageLinks), businessPool(businessPool)
 {
@@ -28,7 +28,8 @@ asio::awaitable<void> GatewayAcceptor::Run()
         readinessTimer.expires_after(std::chrono::milliseconds(100));
         co_await readinessTimer.async_wait(asio::use_awaitable);
     }
-    LOG_INFO(netLogger, "Connection Gateway is ready, message streams: {}", messageLinks.HealthyLinkCount());
+    LOG_INFO(netLogger, "[gateway/accept] 开始接收客户端连接, healthy_message_links: {}",
+             messageLinks.HealthyLinkCount());
 
     while (acceptor.is_open()) {
         boost::system::error_code ec;
@@ -36,7 +37,7 @@ asio::awaitable<void> GatewayAcceptor::Run()
         if (ec) {
             if (ec == asio::error::operation_aborted)
                 co_return;
-            LOG_WARN(netLogger, "Gateway accept failed: {}", ec.message());
+            LOG_WARN(netLogger, "[gateway/accept] 接收客户端连接失败, error: {}", ec.message());
             continue;
         }
         std::make_shared<GatewaySession>(std::move(socket), manager, messageLinks, businessPool)->Start();
