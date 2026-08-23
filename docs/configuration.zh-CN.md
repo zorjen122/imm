@@ -1,8 +1,6 @@
 # WIMI 服务配置
 
-本地服务使用的 YAML 配置统一放在 `server/conf/`。
-
-English: [Service configuration](configuration.md)。
+本地服务使用的 YAML 配置统一放在 `conf/`。
 
 | 文件 | 用途 |
 | --- | --- |
@@ -11,7 +9,7 @@ English: [Service configuration](configuration.md)。
 | `state-single.yaml` / `state-multi.yaml` | 单节点与 `G × N` 本地拓扑。 |
 | `message-*.yaml` | Message 服务节点配置。 |
 | `gateway-*.yaml` | Connection Gateway 节点配置。 |
-| `test-client.yaml` / `public-test.yaml` | 测试客户端和 DAO 测试配置。 |
+| `test-client.yaml` / `common-test.yaml` | 测试客户端和 DAO 测试配置。 |
 
 本地脚本默认读取这些文件。需要替换时，可设置 `WIMI_STATE_CONFIG`、
 `WIMI_GATE_CONFIG`、`WIMI_FILE_CONFIG`、`WIMI_MESSAGE_CONFIGS` 或

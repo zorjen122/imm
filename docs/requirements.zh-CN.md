@@ -2,8 +2,6 @@
 
 本文档以 Ubuntu 26.04 与 clang 为基线，说明本地构建和联调服务端所需的依赖。
 
-English: [Server requirements](requirements.md)。
-
 ## 系统依赖
 
 | 组件 | 用途 | 包或运行时 |
@@ -104,9 +102,9 @@ MySQL、Redis 和 File 使用命名卷，因此普通 `docker compose down` 不�
 以下命令启动两个 Gateway、两个 Message 节点的本地拓扑：
 
 ```bash
-WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
-WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
+WIMI_STATE_CONFIG="$PWD/conf/state-multi.yaml" \
+WIMI_MESSAGE_CONFIGS="$PWD/conf/message-hunan-im.yaml $PWD/conf/message-beijing-im.yaml" \
+WIMI_GATEWAY_CONFIGS="$PWD/conf/gateway-hunan.yaml $PWD/conf/gateway-beijing.yaml" \
 ./scripts/run-local-services.sh
 ```
 

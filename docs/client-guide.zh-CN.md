@@ -3,8 +3,6 @@
 客户端是使用 Qt 6、QML 与 C++20 开发的桌面应用。它既可以使用 Fake 数据体验界面，也
 可以连接本地 WIMI 服务栈。
 
-English: [Client guide](client-guide.md)。
-
 ## 构建
 
 先安装[服务端依赖](requirements.zh-CN.md)中列出的 Qt、编译器和协议依赖，再在仓库根目录
