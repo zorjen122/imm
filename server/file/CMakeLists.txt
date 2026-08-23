@@ -12,19 +12,20 @@ find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
 find_package(OpenSSL REQUIRED)
 
-file(GLOB SOURCE src/**/*.cc)
+file(GLOB SOURCE CONFIGURE_DEPENDS src/*.cc)
+list(REMOVE_ITEM SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
 add_library(imFile ${SOURCE})
 add_executable(file src/main.cc)
 
-target_include_directories(imFile PUBLIC ./include ../public/include)
-target_link_directories(imFile PUBLIC ../public/build)
+target_include_directories(imFile PUBLIC ./include ../common/include)
+target_link_directories(imFile PUBLIC ../common/build)
 
 target_link_libraries(
   imFile
-  PUBLIC imPublic
+  PUBLIC imCommon
          Threads::Threads
          protobuf::libprotobuf
-         imPublic
+         imCommon
          gRPC::grpc++
          gRPC::grpc++_reflection
          OpenSSL::Crypto
@@ -38,7 +39,3 @@ target_compile_options(imFile PRIVATE -Wall -g)
 target_link_libraries(file PRIVATE imFile)
 
 target_compile_options(file PRIVATE -Wall)
-
-if(WIMI_BUILD_UNIT_TESTS)
-  add_subdirectory(test)
-endif()

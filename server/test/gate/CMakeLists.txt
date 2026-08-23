@@ -1,0 +1,3 @@
+add_executable(gateVerificationInputTest verificationInputTest.cc)
+target_link_libraries(gateVerificationInputTest PRIVATE imGate)
+add_test(NAME gate.verification_input COMMAND gateVerificationInputTest)

@@ -15,10 +15,10 @@ list(REMOVE_ITEM SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
 add_library(imConnectionGateway ${SOURCE})
 add_executable(gateway src/main.cc)
 
-target_include_directories(imConnectionGateway PUBLIC ./include ../public/include)
+target_include_directories(imConnectionGateway PUBLIC ./include ../common/include)
 target_link_libraries(
   imConnectionGateway
-  PUBLIC imPublic
+  PUBLIC imCommon
          Threads::Threads
          protobuf::libprotobuf
          Boost::filesystem

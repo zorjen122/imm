@@ -63,7 +63,7 @@ services:
 
 configs:
   sentinel-config:
-    file: ./server/conf/compose/sentinel.conf
+    file: ./conf/compose/sentinel.conf
 
 volumes:
   mysql-data:

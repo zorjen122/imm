@@ -20,7 +20,7 @@ set_target_properties(wimi-client-protocol PROPERTIES
 )
 qt_add_protobuf(wimi-client-protocol
     PROTO_FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../server/public/proto/tcp_message.proto
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/common/proto/tcp_message.proto
     OUTPUT_DIRECTORY
         ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
@@ -105,6 +105,8 @@ qt_add_qml_module(wimi-client
         qml/SettingsPage.qml
         qml/AuthPage.qml
     SOURCES
+        src/app/AgentBridge.cc
+        src/app/AgentBridge.h
         src/app/AppController.cc
         src/app/AppController.h
         src/domain/ClientSnapshot.h
@@ -182,6 +184,8 @@ if(BUILD_TESTING)
 
     add_executable(wimi-client-model-tests
         tests/unit/ClientModelsTest.cc
+        src/app/AgentBridge.cc
+        src/app/AgentBridge.h
         src/app/AppController.cc
         src/app/AppController.h
         src/domain/ClientSnapshot.h

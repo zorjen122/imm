@@ -5,7 +5,7 @@ set -euo pipefail
 # Sentinels. Every run replaces /tmp/wimi-redis.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEMPLATE_DIR="$ROOT_DIR/server/conf/redis"
+TEMPLATE_DIR="$ROOT_DIR/conf/redis"
 RUNTIME_ROOT=/tmp/wimi-redis
 VAR_DIR="$RUNTIME_ROOT/var"
 LOG_DIR="$RUNTIME_ROOT/log"

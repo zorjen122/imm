@@ -10,7 +10,7 @@ namespace wimi::db
 class MysqlDaoTest : public ::testing::Test
 {
   protected:
-    void SetUp() override { Configer::loadConfig("../../conf/public-test.yaml"); }
+    void SetUp() override { Configer::loadConfig("../../conf/common-test.yaml"); }
 
     void TearDown() override { cleanupTestData(); }
 
@@ -132,7 +132,7 @@ TEST_F(MysqlDaoTest, TestFriendOperations)
 int main(int argc, char** argv)
 {
     // ::testing::InitGoogleTest(&argc, argv);
-    Configer::loadConfig("../../conf/public-test.yaml");
+    Configer::loadConfig("../../conf/common-test.yaml");
     using namespace wimi;
     auto p = db::MysqlDao::GetInstance();
     // Group relation transitions are transactional service behavior; the

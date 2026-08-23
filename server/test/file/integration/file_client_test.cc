@@ -38,14 +38,12 @@ class FileClientTest : public ::testing::Test
   protected:
     void SetUp() override
     {
-        root = fs::temp_directory_path() / ("wimi-file-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        root = fs::temp_directory_path() /
+               ("wimi-file-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         service = std::make_unique<FileServiceImpl>(root);
     }
 
-    void TearDown() override
-    {
-        fs::remove_all(root);
-    }
+    void TearDown() override { fs::remove_all(root); }
 
     file::UploadResponse Upload(int64_t offset, std::string data, bool complete)
     {

@@ -59,8 +59,8 @@ services:
 
 configs:
   cluster-state-config:
-    file: ./server/conf/compose/cluster/state.yaml
+    file: ./conf/compose/cluster/state.yaml
   cluster-message-2-config:
-    file: ./server/conf/compose/cluster/message-2.yaml
+    file: ./conf/compose/cluster/message-2.yaml
   cluster-gateway-2-config:
-    file: ./server/conf/compose/cluster/gateway-2.yaml
+    file: ./conf/compose/cluster/gateway-2.yaml

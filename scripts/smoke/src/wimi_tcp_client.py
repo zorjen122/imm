@@ -11,7 +11,7 @@ import uuid
 
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[3]
-PROTO_DIR = ROOT_DIR / "server" / "public" / "proto"
+PROTO_DIR = ROOT_DIR / "server" / "common" / "proto"
 GEN_DIR = pathlib.Path(tempfile.gettempdir()) / "wimi_tcp_message_py"
 
 

@@ -9,7 +9,7 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
 PASSWORD=root
 MASTER_NAME=wimi-master
 KEY="wimi:sentinel:test:$$"
-CLIENT_TEST="$BUILD_DIR/public/redisSentinelFailoverTest"
+CLIENT_TEST="$BUILD_DIR/test/common/redisSentinelFailoverTest"
 
 if [[ ! -x "$CLIENT_TEST" ]]; then
   echo "Missing build output: $CLIENT_TEST" >&2

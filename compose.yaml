@@ -87,15 +87,15 @@ services:
 
 configs:
   state-config:
-    file: ./server/conf/compose/state.yaml
+    file: ./conf/compose/state.yaml
   file-config:
-    file: ./server/conf/compose/file.yaml
+    file: ./conf/compose/file.yaml
   message-config:
-    file: ./server/conf/compose/message.yaml
+    file: ./conf/compose/message.yaml
   gateway-config:
-    file: ./server/conf/compose/gateway.yaml
+    file: ./conf/compose/gateway.yaml
   gate-config:
-    file: ./server/conf/compose/gate.yaml
+    file: ./conf/compose/gate.yaml
 
 volumes:
   file-data:

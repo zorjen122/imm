@@ -66,7 +66,7 @@ RUN cmake \
     && install -D /tmp/wimi-build/message/message /opt/wimi/bin/message \
     && install -D /tmp/wimi-build/gateway/gateway /opt/wimi/bin/gateway \
     && install -D /tmp/wimi-build/gate/gate /opt/wimi/bin/gate \
-    && install -D /tmp/wimi-build/public/libimPublic.so /opt/wimi/lib/libimPublic.so \
+    && install -D /tmp/wimi-build/common/libimCommon.so /opt/wimi/lib/libimCommon.so \
     && rm -rf /src/server /tmp/wimi-build
 
 ENV LD_LIBRARY_PATH=/opt/wimi/lib:/usr/local/lib

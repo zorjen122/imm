@@ -10,16 +10,17 @@ find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(gRPC REQUIRED)
 
-file(GLOB SOURCE src/**/*.cc)
+file(GLOB SOURCE CONFIGURE_DEPENDS src/*.cc)
+list(REMOVE_ITEM SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
 add_library(imState ${SOURCE})
 add_executable(state src/main.cc)
 
-target_include_directories(imState PUBLIC ./include ../public/include)
-target_link_directories(imState PUBLIC ../public/build)
+target_include_directories(imState PUBLIC ./include ../common/include)
+target_link_directories(imState PUBLIC ../common/build)
 
 target_link_libraries(
   imState
-  PUBLIC imPublic
+  PUBLIC imCommon
          Threads::Threads
          protobuf::libprotobuf
          gRPC::grpc++

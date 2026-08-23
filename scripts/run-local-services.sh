@@ -9,20 +9,20 @@ set -euo pipefail
 # 停止当前用户从本仓库启动的旧 WIMI 服务，然后启动新服务：
 #   ./scripts/run-local-services.sh --stop-existing
 # G=2、N=2 方式：
-#   WIMI_STATE_CONFIG="$PWD/server/conf/state-multi.yaml" \
-#   WIMI_MESSAGE_CONFIGS="$PWD/server/conf/message-hunan-im.yaml $PWD/server/conf/message-beijing-im.yaml" \
-#   WIMI_GATEWAY_CONFIGS="$PWD/server/conf/gateway-hunan.yaml $PWD/server/conf/gateway-beijing.yaml" \
+#   WIMI_STATE_CONFIG="$PWD/conf/state-multi.yaml" \
+#   WIMI_MESSAGE_CONFIGS="$PWD/conf/message-hunan-im.yaml $PWD/conf/message-beijing-im.yaml" \
+#   WIMI_GATEWAY_CONFIGS="$PWD/conf/gateway-hunan.yaml $PWD/conf/gateway-beijing.yaml" \
 #     ./scripts/run-local-services.sh
 # 前置条件：
 #   先执行 ./scripts/build-server.sh；需要 MySQL 已可连接，通常也会先执行 ./scripts/init-mysql.sh。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
-: "${WIMI_STATE_CONFIG:=$ROOT_DIR/server/conf/state-multi.yaml}"
-: "${WIMI_GATE_CONFIG:=$ROOT_DIR/server/conf/gate.yaml}"
-: "${WIMI_FILE_CONFIG:=$ROOT_DIR/server/conf/file.yaml}"
-: "${WIMI_MESSAGE_CONFIGS:=$ROOT_DIR/server/conf/message-hunan-im.yaml $ROOT_DIR/server/conf/message-beijing-im.yaml}"
-: "${WIMI_GATEWAY_CONFIGS:=$ROOT_DIR/server/conf/gateway-hunan.yaml $ROOT_DIR/server/conf/gateway-beijing.yaml}"
+: "${WIMI_STATE_CONFIG:=$ROOT_DIR/conf/state-multi.yaml}"
+: "${WIMI_GATE_CONFIG:=$ROOT_DIR/conf/gate.yaml}"
+: "${WIMI_FILE_CONFIG:=$ROOT_DIR/conf/file.yaml}"
+: "${WIMI_MESSAGE_CONFIGS:=$ROOT_DIR/conf/message-hunan-im.yaml $ROOT_DIR/conf/message-beijing-im.yaml}"
+: "${WIMI_GATEWAY_CONFIGS:=$ROOT_DIR/conf/gateway-hunan.yaml $ROOT_DIR/conf/gateway-beijing.yaml}"
 : "${WIMI_LOG_LEVEL:=info}"
 
 usage() {
@@ -64,8 +64,8 @@ for exe in "$BUILD_DIR/state/state" "$BUILD_DIR/file/file" "$BUILD_DIR/message/m
   fi
 done
 
-if [[ "$ROOT_DIR/server/public/proto/tcp_message.proto" -nt "$BUILD_DIR/gateway/gateway" ||
-      "$ROOT_DIR/server/public/proto/tcp_message.proto" -nt "$BUILD_DIR/message/message" ]]; then
+if [[ "$ROOT_DIR/server/common/proto/tcp_message.proto" -nt "$BUILD_DIR/gateway/gateway" ||
+      "$ROOT_DIR/server/common/proto/tcp_message.proto" -nt "$BUILD_DIR/message/message" ]]; then
   echo "Build output is older than tcp_message.proto: $BUILD_DIR" >&2
   echo "Run ./scripts/build-server.sh, then restart with --stop-existing." >&2
   exit 1

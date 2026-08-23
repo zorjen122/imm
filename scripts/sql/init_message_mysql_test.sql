@@ -179,7 +179,7 @@ CREATE TABLE `conversationDeviceStates` (
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Minimal seed data for local smoke testing.
--- Matches public/test/mysqlDaoTest.cc: TEST_USERNAME = "zorjen".
+-- Matches test/common/mysqlDaoTest.cc: TEST_USERNAME = "zorjen".
 INSERT INTO `users` (`id`, `uid`, `username`, `password`, `email`, `createTime`) VALUES
   (NULL, 1001, 'zorjen', '123456', 'zorjen@example.com', '2026-05-19 00:00:00'),
   (NULL, 1002, 'alice', '123456', 'alice@example.com', '2026-05-19 00:00:00'),

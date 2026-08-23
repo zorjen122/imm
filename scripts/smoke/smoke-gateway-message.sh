@@ -14,9 +14,9 @@ Usage: ./scripts/smoke/smoke-gateway-message.sh
 
 Start the multi-node stack first:
   ./scripts/init-mysql.sh
-  WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \
-  WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \
-  WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \
+  WIMI_STATE_CONFIG="\$PWD/conf/state-multi.yaml" \
+  WIMI_MESSAGE_CONFIGS="\$PWD/conf/message-hunan-im.yaml \$PWD/conf/message-beijing-im.yaml" \
+  WIMI_GATEWAY_CONFIGS="\$PWD/conf/gateway-hunan.yaml \$PWD/conf/gateway-beijing.yaml" \
     ./scripts/run-local-services.sh
 
 Checks:

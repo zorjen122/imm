@@ -12,16 +12,17 @@ find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC REQUIRED)
 find_package(CURL REQUIRED)
 
-file(GLOB SOURCE src/**/*.cc)
+file(GLOB SOURCE CONFIGURE_DEPENDS src/*.cc)
+list(REMOVE_ITEM SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
 add_library(imGate ${SOURCE})
 add_executable(gate src/main.cc)
 
-target_include_directories(imGate PUBLIC ./include ../public/include)
-target_link_directories(imGate PUBLIC ../public/build)
+target_include_directories(imGate PUBLIC ./include ../common/include)
+target_link_directories(imGate PUBLIC ../common/build)
 
 target_link_libraries(
   imGate
-  PUBLIC imPublic
+  PUBLIC imCommon
          Threads::Threads
          protobuf::libprotobuf
          Boost::filesystem
@@ -41,9 +42,3 @@ target_compile_options(imGate PRIVATE -Wall -g)
 target_link_libraries(gate PRIVATE imGate)
 
 target_compile_options(gate PRIVATE -Wall)
-
-if(BUILD_TESTING)
-  add_executable(gateVerificationInputTest test/verificationInputTest.cc)
-  target_link_libraries(gateVerificationInputTest PRIVATE imGate)
-  add_test(NAME gate.verification_input COMMAND gateVerificationInputTest)
-endif()

@@ -6,7 +6,7 @@ set -euo pipefail
 #   用户 A 登录 gateway-1，用户 B 登录 gateway-2，脚本检查 Redis 会话路由、
 #   跨节点文本 ACCEPTED/投递/ACK 落库、跨节点好友申请/回复和好友拉取。
 # 前置条件：
-#   使用 server/conf/state-multi.yaml 和两个 message config 启动服务。
+#   使用 conf/state-multi.yaml 和两个 message config 启动服务。
 #   典型启动方式见 --help 输出。
 # 注意：
 #   该脚本会向测试库写入临时用户、好友申请、好友关系和消息数据。
@@ -19,9 +19,9 @@ Usage: ./scripts/smoke/smoke-multi-chat.sh
 
 Requires two gateway services, two message services, and shared dependencies to be running, for example:
   ./scripts/init-mysql.sh
-  WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
-  WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \\
-  WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \\
+  WIMI_STATE_CONFIG="\$PWD/conf/state-multi.yaml" \\
+  WIMI_MESSAGE_CONFIGS="\$PWD/conf/message-hunan-im.yaml \$PWD/conf/message-beijing-im.yaml" \\
+  WIMI_GATEWAY_CONFIGS="\$PWD/conf/gateway-hunan.yaml \$PWD/conf/gateway-beijing.yaml" \\
     ./scripts/run-local-services.sh
 
 Verifies the currently supported multi-message-node path:
@@ -66,9 +66,9 @@ if ! check_chat_port "gateway node A" "$CHAT_A_HOST" "$CHAT_A_PORT" ||
 smoke-multi-chat.sh requires two gateway nodes before it writes test data.
 
 Start the local stack in multi-chat mode:
-  WIMI_STATE_CONFIG="\$PWD/server/conf/state-multi.yaml" \\
-  WIMI_MESSAGE_CONFIGS="\$PWD/server/conf/message-hunan-im.yaml \$PWD/server/conf/message-beijing-im.yaml" \\
-  WIMI_GATEWAY_CONFIGS="\$PWD/server/conf/gateway-hunan.yaml \$PWD/server/conf/gateway-beijing.yaml" \\
+  WIMI_STATE_CONFIG="\$PWD/conf/state-multi.yaml" \\
+  WIMI_MESSAGE_CONFIGS="\$PWD/conf/message-hunan-im.yaml \$PWD/conf/message-beijing-im.yaml" \\
+  WIMI_GATEWAY_CONFIGS="\$PWD/conf/gateway-hunan.yaml \$PWD/conf/gateway-beijing.yaml" \\
     ./scripts/run-local-services.sh
 
 Current expected TCP endpoints:

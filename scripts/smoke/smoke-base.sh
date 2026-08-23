@@ -87,7 +87,7 @@ echo "state route ok: $gateway_host:$gateway_port"
 
 { printf 'textSend\n1002\n%s\n' "$text_payload"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
-    WIMI_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
+    WIMI_CONFIG="$ROOT_DIR/conf/test-client.yaml" \
     timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wimi-smoke-chat.log) || true
 
 for _ in {1..10}; do
@@ -108,7 +108,7 @@ fi
 printf 'file smoke %s\n' "$stamp" > "$upload_src"
 { printf 'uploadFile\n%s\n' "$upload_file"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
-    WIMI_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
+    WIMI_CONFIG="$ROOT_DIR/conf/test-client.yaml" \
     timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wimi-smoke-file.log) || true
 
 for _ in {1..10}; do
@@ -126,7 +126,7 @@ fi
 mkfifo "$receiver_fifo"
 (
   cd "$ROOT_DIR/server/test"
-  WIMI_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
+  WIMI_CONFIG="$ROOT_DIR/conf/test-client.yaml" \
     "$BUILD_DIR/test/imTest" alice 123456 1002 "$gateway_host" "$gateway_port" \
     < "$receiver_fifo" || true
 ) > "$receiver_log" 2>&1 &
@@ -147,7 +147,7 @@ fi
 online_payload="hello_online_$stamp"
 { printf 'textSend\n1002\n%s\n' "$online_payload"; sleep 1; printf 'q\n'; } | \
   (cd "$ROOT_DIR/server/test" && \
-    WIMI_CONFIG="$ROOT_DIR/server/conf/test-client.yaml" \
+    WIMI_CONFIG="$ROOT_DIR/conf/test-client.yaml" \
     timeout 15 "$BUILD_DIR/test/imTest" zorjen 123456 1001 "$gateway_host" "$gateway_port" >/tmp/wimi-smoke-online-sender.log) || true
 
 for _ in {1..10}; do
