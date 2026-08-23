@@ -14,3 +14,4 @@ compile_commands.json
 docs/.*
 design/
 TASKS.md
+node_modules/

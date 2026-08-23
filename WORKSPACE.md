@@ -63,7 +63,7 @@ docker compose -f compose.yaml -f compose.service-cluster.yaml config --quiet
 
 - `why`：为什么需要这次修改。
 - `how`：采用什么方式实现。
-- `result`：修改后得到什么效果。
+- `result`：修改后得到什么效果。没有显著效果省略。
 - `use`：功能性增加时说明怎么使用；不适用时省略。
 
 示例：
