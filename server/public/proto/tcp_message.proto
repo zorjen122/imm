@@ -5,7 +5,6 @@ package wimi.protocol;
 // 每个客户端请求都要携带的通用信息。
 message RequestContext {
   string request_id = 1; // 用于匹配请求和响应，不能为空
-  uint32 timeout_ms = 2; // 希望服务端在多少毫秒内处理完；0 表示使用服务端默认值
 }
 
 // 服务端返回的通用处理结果。

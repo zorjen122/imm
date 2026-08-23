@@ -70,7 +70,7 @@ class ClientNetworkTest final : public QObject
 void ClientNetworkTest::qtProtobufMatchesCanonicalWireFormat()
 {
     const QByteArray canonicalWire =
-        QByteArray::fromHex("0a0e0a09726571756573742d3110c13e12020800aa010b0a09082b1205416c696365");
+        QByteArray::fromHex("0a0b0a09726571756573742d3112020800aa010b0a09082b1205416c696365");
 
     wimi::protocol::UserInfo friendInfo;
     friendInfo.setUid(43);
@@ -78,7 +78,6 @@ void ClientNetworkTest::qtProtobufMatchesCanonicalWireFormat()
     wimi::protocol::Packet packet;
     wimi::protocol::RequestContext request;
     request.setRequestId(QStringLiteral("request-1"));
-    request.setTimeoutMs(8001);
     packet.setRequest(std::move(request));
     SetSuccess(&packet);
     wimi::protocol::PullFriendListResponse friends;
@@ -90,7 +89,6 @@ void ClientNetworkTest::qtProtobufMatchesCanonicalWireFormat()
     const auto parsed = ParsePacket(canonicalWire);
     QVERIFY(parsed.hasRequest());
     QCOMPARE(parsed.request().requestId(), QStringLiteral("request-1"));
-    QCOMPARE(parsed.request().timeoutMs(), 8001U);
     QVERIFY(parsed.hasStatus());
     QVERIFY(parsed.status().hasError());
     QCOMPARE(parsed.status().error(), 0);
@@ -339,7 +337,6 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
     for (const quint32 service : expectedServices) {
         QVERIFY(packets[service].hasRequest());
         QVERIFY(!packets[service].request().requestId().isEmpty());
-        QCOMPARE(packets[service].request().timeoutMs(), 10'000U);
     }
 
     wimi::protocol::Packet push;

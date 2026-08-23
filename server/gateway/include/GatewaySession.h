@@ -43,6 +43,8 @@ class GatewaySession : public std::enable_shared_from_this<GatewaySession>
 
     boost::asio::awaitable<void> Run();
     boost::asio::awaitable<void> HandlePacket(uint32_t protocolId, std::string payload);
+    boost::asio::awaitable<bool> DirectProcess(uint32_t protocolId, const TcpPacket& request, int64_t actor);
+    boost::asio::awaitable<void> ForwardProcess(uint32_t protocolId, const TcpPacket& request, int64_t actor);
     boost::asio::awaitable<void> WriteLoop();
     boost::asio::awaitable<bool> RefreshLeaseIfNeeded(int64_t actor);
     ResultConnecctionRoute RequestConnectionRoute(TcpPacket request);

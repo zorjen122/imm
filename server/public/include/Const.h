@@ -79,8 +79,7 @@ enum ErrorCodes {
     GroupReplyFailed,
     AuthenticationRequired,
     MessageOwnershipInvalid,
-    DeadlineExceeded,
-    ResourceExhausted,
+    ResourceExhausted = 1028,
     DependencyUnavailable,
     IdempotencyConflict
 };
@@ -196,7 +195,6 @@ static std::unordered_map<int, std::string> errorCodesMap = {{Success, "Success"
                                                              {GroupNotExists, "GroupNotExists"},
                                                              {AuthenticationRequired, "AuthenticationRequired"},
                                                              {MessageOwnershipInvalid, "MessageOwnershipInvalid"},
-                                                             {DeadlineExceeded, "DeadlineExceeded"},
                                                              {ResourceExhausted, "ResourceExhausted"},
                                                              {DependencyUnavailable, "DependencyUnavailable"},
                                                              {IdempotencyConflict, "IdempotencyConflict"}};
@@ -209,7 +207,6 @@ inline bool isRetryableError(int code)
     case RPCFailed:
     case MysqlFailed:
     case InternalError:
-    case DeadlineExceeded:
     case ResourceExhausted:
     case DependencyUnavailable:
         return true;

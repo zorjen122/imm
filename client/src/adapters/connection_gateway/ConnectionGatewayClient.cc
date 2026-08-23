@@ -19,7 +19,6 @@ namespace
 constexpr int kHeartbeatIntervalMilliseconds = 20'000;
 constexpr int kReconnectBaseMilliseconds = 200;
 constexpr int kReconnectMaximumMilliseconds = 10'000;
-constexpr int kServerRequestBudgetMilliseconds = 10'000;
 
 QString NewRequestId() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 
@@ -401,7 +400,6 @@ QString ConnectionGatewayClient::QueueRequest(quint32 serviceId, wimi::protocol:
 
     wimi::protocol::RequestContext context;
     context.setRequestId(requestId);
-    context.setTimeoutMs(kServerRequestBudgetMilliseconds);
     packet.setRequest(std::move(context));
     QByteArray payload;
     if (!SerializeProtobufPacket(packet, &payload)) {

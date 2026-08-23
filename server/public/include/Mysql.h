@@ -28,8 +28,6 @@
 #include "Const.h"
 #include "DbGlobal.h"
 #include "Logger.h"
-#include "Metrics.h"
-#include "RequestContext.h"
 
 namespace wimi::db
 {
@@ -172,22 +170,12 @@ class MysqlPool
   public:
     std::unique_ptr<SqlConnection> GetConnection()
     {
-        return GetConnectionUntil(RequestContextScope::CurrentDeadlineOr(std::chrono::milliseconds(1000)));
-    }
-
-    std::unique_ptr<SqlConnection> GetConnectionUntil(RequestContext::Deadline deadline)
-    {
         std::unique_lock<std::mutex> lock(sqlMutex);
-        bool ready = condVar.wait_until(lock, deadline, [this] {
+        condVar.wait(lock, [this] {
             if (stopEnable)
                 return true;
             return !pool.empty();
         });
-        if (!ready) {
-            Metrics::Increment(Metric::MysqlAcquireTimeout);
-            LOG_WARN(logger, "MySQL连接池获取超时, available: {}", pool.size());
-            return nullptr;
-        }
         if (stopEnable || pool.empty()) {
             return nullptr;
         }

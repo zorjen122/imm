@@ -68,7 +68,6 @@ FIELD_MAP = {
     "authToken": "auth_token",
     "messageId": "message_id",
     "receiptType": "receipt_type",
-    "requestTimeoutMs": "timeout_ms",
     "requestId": "request_id",
     "conversationId": "conversation_id",
     "conversationSeq": "conversation_seq",
@@ -173,7 +172,6 @@ def _set_scalar(payload, key, value):
 def encode_packet(service_id, body):
     packet = Packet()
     packet.request.request_id = body.get("requestId", "")
-    packet.request.timeout_ms = body.get("requestTimeoutMs", 0)
     payload_name = REQUEST_PAYLOADS.get(service_id)
     if payload_name is None:
         raise ValueError(f"unsupported request service id: {service_id}")

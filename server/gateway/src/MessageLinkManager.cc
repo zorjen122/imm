@@ -86,8 +86,6 @@ void MessageLinkManager::Stop()
         pending.clear();
     }
     for (auto& command : abandoned) {
-        if (command.deadlineTimer)
-            command.deadlineTimer->cancel();
         if (command.attemptTimer)
             command.attemptTimer->cancel();
         if (!command.callback)
@@ -120,13 +118,6 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
         co_return false;
     }
 
-    const int64_t now = NowUnixMilliseconds();
-    if (command.deadline_unix_ms() <= now) {
-        LOG_DEBUG(logger, "[gateway/command-route] 请求到达时已超时, request_id: {}, service_id: {}",
-                  command.request_id(), command.service_id());
-        co_return false;
-    }
-
     auto link = SelectLink(command.conversation_id());
     if (!link) {
         LOG_WARN(logger, "[gateway/command-route] 没有可用的 Message 链路, request_id: {}, service_id: {}",
@@ -135,9 +126,7 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
     }
 
     const std::string requestId = command.request_id();
-    auto deadlineTimer = std::make_shared<asio::steady_timer>(ioContext);
     auto attemptTimer = std::make_shared<asio::steady_timer>(ioContext);
-    deadlineTimer->expires_after(std::chrono::milliseconds(command.deadline_unix_ms() - now));
 
     {
         std::lock_guard<std::mutex> lock(pendingMutex);
@@ -149,18 +138,11 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
         PendingCommand pendingCommand;
         pendingCommand.command = command;
         pendingCommand.callback = std::move(callback);
-        pendingCommand.deadlineTimer = deadlineTimer;
         pendingCommand.attemptTimer = attemptTimer;
         pendingCommand.currentLinkToken = link->Token();
         pendingCommand.attempt = 1;
         pending.emplace(requestId, std::move(pendingCommand));
     }
-
-    // 总 deadline 覆盖首次入队失败后等待链路恢复或切换的时间。
-    deadlineTimer->async_wait([this, requestId](const boost::system::error_code& error) {
-        if (!error)
-            ExpirePending(requestId);
-    });
 
     gateway::GatewayToMessageFrame frame;
     *frame.mutable_command() = std::move(command);
@@ -326,8 +308,7 @@ void MessageLinkManager::StartLink(const Node& node)
 
 void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::MessageToGatewayFrame& frame)
 {
-    // CommandResult 通过 request_id 与在途命令配对，只完成一次回调并取消
-    // deadline。
+    // CommandResult 通过 request_id 与在途命令配对，只完成一次回调。
     if (frame.has_command_result()) {
         PendingCommand command;
         bool found = false;
@@ -341,8 +322,6 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
             }
         }
         if (found) {
-            if (command.deadlineTimer)
-                command.deadlineTimer->cancel();
             if (command.attemptTimer)
                 command.attemptTimer->cancel();
         }
@@ -566,7 +545,7 @@ void MessageLinkManager::RetryPending(const std::string& failedLinkToken)
         auto enqueueResult = MessageLink::EnqueueResult::Stopped;
         bool enqueueAttempted = false;
 
-        if (link && retry.command.deadline_unix_ms() > NowUnixMilliseconds()) {
+        if (link) {
             gateway::GatewayToMessageFrame frame;
             *frame.mutable_command() = retry.command;
 
@@ -616,7 +595,6 @@ void MessageLinkManager::OnAttemptTimeout(const std::string& requestId, std::uin
         std::lock_guard<std::mutex> lock(pendingMutex);
         auto found = pending.find(requestId);
         if (found == pending.end() || found->second.attempt != attempt ||
-            found->second.command.deadline_unix_ms() <= NowUnixMilliseconds() ||
             !CanReplayCommand(found->second.command.service_id())) {
             return;
         }
@@ -633,7 +611,6 @@ void MessageLinkManager::OnAttemptTimeout(const std::string& requestId, std::uin
 void MessageLinkManager::ArmAttemptTimer(const std::string& requestId, std::uint64_t attempt)
 {
     std::shared_ptr<asio::steady_timer> timer;
-    int64_t deadline = 0;
     {
         std::lock_guard<std::mutex> lock(pendingMutex);
         auto found = pending.find(requestId);
@@ -641,52 +618,13 @@ void MessageLinkManager::ArmAttemptTimer(const std::string& requestId, std::uint
             return;
 
         timer = found->second.attemptTimer;
-        deadline = found->second.command.deadline_unix_ms();
     }
 
-    const int64_t remaining = deadline - NowUnixMilliseconds();
-    if (remaining <= 0)
-        return;
-
-    timer->expires_after(std::min(kForwardAttemptTimeout, std::chrono::milliseconds(remaining)));
+    timer->expires_after(kForwardAttemptTimeout);
     timer->async_wait([this, requestId, attempt](const boost::system::error_code& error) {
         if (!error)
             OnAttemptTimeout(requestId, attempt);
     });
-}
-
-void MessageLinkManager::ExpirePending(const std::string& requestId)
-{
-    PendingCommand expired;
-    {
-        std::lock_guard<std::mutex> lock(pendingMutex);
-        auto found = pending.find(requestId);
-        if (found == pending.end())
-            return;
-
-        expired = std::move(found->second);
-        pending.erase(found);
-    }
-
-    if (expired.deadlineTimer)
-        expired.deadlineTimer->cancel();
-
-    if (expired.attemptTimer)
-        expired.attemptTimer->cancel();
-
-    if (!expired.callback)
-        return;
-
-    gateway::CommandResult result;
-    result.set_request_id(requestId);
-    result.set_response_service_id(__getServiceResponseId(ServiceID(expired.command.service_id())));
-    result.set_error(ErrorCodes::DeadlineExceeded);
-    result.set_retryable(true);
-    result.set_packet(
-        SerializeTcpPacket(MakeErrorPacket(ErrorCodes::DeadlineExceeded, "message command deadline exceeded")));
-    LOG_WARN(logger, "[gateway/command-timeout] 请求超过总截止时间, request_id: {}, service_id: {}, attempts: {}",
-             requestId, expired.command.service_id(), expired.attempt);
-    expired.callback(result);
 }
 
 void MessageLinkManager::AppendPendingDone(std::shared_ptr<MessageLink> link)

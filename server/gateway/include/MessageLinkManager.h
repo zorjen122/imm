@@ -45,8 +45,6 @@ class MessageLinkManager
     struct PendingCommand {
         gateway::CommandEnvelope command;
         CommandCallback callback;
-        // 请求总 deadline：到期后结束请求并向客户端返回超时。
-        std::shared_ptr<boost::asio::steady_timer> deadlineTimer;
         // 单次投递 deadline：到期后忽略当前链路实例并尝试其他 State 链路。
         std::shared_ptr<boost::asio::steady_timer> attemptTimer;
         std::unordered_set<std::string> ignoredLinkTokens;
@@ -70,7 +68,6 @@ class MessageLinkManager
     void RetryPending(const std::string& failedLinkToken = {});
     void OnAttemptTimeout(const std::string& requestId, std::uint64_t attempt);
     void ArmAttemptTimer(const std::string& requestId, std::uint64_t attempt);
-    void ExpirePending(const std::string& requestId);
     void AppendPendingDone(std::shared_ptr<MessageLink> link);
     std::shared_ptr<MessageLink> SelectLink(int64_t conversationId,
                                             const std::unordered_set<std::string>& ignoredLinkTokens = {});

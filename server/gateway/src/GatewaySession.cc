@@ -28,14 +28,6 @@ namespace
 {
 
 constexpr std::size_t kMaxQueuedWrites = PROTOCOL_QUEUE_MAX_SIZE;
-constexpr std::chrono::milliseconds kDefaultRequestTimeout{10'000};
-
-int64_t NowUnixMilliseconds()
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
-
 std::string NewUuid() { return boost::uuids::to_string(boost::uuids::random_generator{}()); }
 
 std::string ServiceName(uint32_t protocolId)
@@ -205,37 +197,8 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
         co_return;
     }
 
-    // 登录包由 Gateway 本地处理：校验短期 token、加载资料并发布 generation
-    // lease。
-    if (protocolId == ID_LOGIN_INIT_REQ) {
-        const auto& login = request.login_request();
-        const int64_t claimedUid = login.uid();
-        const bool initProfile = login.init_profile();
-        LOG_DEBUG(logger, "[gateway/login] 开始校验登录, connection_id: {}, uid: {}, init_profile: {}", connectionId,
-                  claimedUid, initProfile);
-        auto result = co_await asio::co_spawn(
-            businessPool,
-            [this, self = shared_from_this(), request = std::move(request)]() mutable
-                -> asio::awaitable<ResultConnecctionRoute> { co_return RequestConnectionRoute(std::move(request)); },
-            asio::use_awaitable);
-        if (result.error == ErrorCodes::Success) {
-            lease = result.lease;
-            userId.store(result.response.login_response().uid(), std::memory_order_release);
-            lastLeaseRefresh = std::chrono::steady_clock::now();
-            LOG_INFO(logger, "[gateway/login] 登录成功, uid: {}, connection_id: {}, generation: {}",
-                     result.response.login_response().uid(), connectionId, lease.generation);
-        } else {
-            LOG_WARN(logger, "[gateway/login] 登录失败, connection_id: {}, uid: {}, error: {}", connectionId,
-                     claimedUid, result.error);
-        }
-        if (!SendRaw(SerializeTcpPacket(result.response), ID_LOGIN_INIT_RSP))
-            LOG_WARN(logger, "[gateway/login] 登录响应未进入写队列, connection_id: {}", connectionId);
-        co_return;
-    }
-
-    // 登录以外的包都必须使用已经绑定到物理连接的 uid，不能信任包内自报身份。
     const int64_t actor = userId.load(std::memory_order_acquire);
-    if (actor <= 0) {
+    if (actor <= 0 && protocolId != ID_LOGIN_INIT_REQ) {
         LOG_WARN(logger,
                  "[gateway/command] 拒绝未登录请求, connection_id: {}, "
                  "protocol_id: {}, service: {}",
@@ -250,44 +213,14 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
       所以后续 gateway 与 client
       没有双向心跳机制，只有单向，因为目前实现覆盖了这点。
     */
-    if (!(co_await RefreshLeaseIfNeeded(actor)))
-        co_return;
-
-    // PING 只维持客户端物理连接，Gateway 本地立即回复，不占用 Message 流。
-    if (protocolId == ID_PING_REQ) {
-        LOG_TRACE(logger, "[gateway/ping] 收到心跳, uid: {}, connection_id: {}", actor, connectionId);
-        TcpPacket pong;
-        pong.mutable_ping_response();
-        SetTcpPacketStatus(pong, ErrorCodes::Success);
-        SendRaw(SerializeTcpPacket(pong), ID_PING_RSP);
-        co_return;
-    }
-
-    // QUIT 先排队成功响应，再由 WriteLoop 在队列排空后关闭 socket。
-    if (protocolId == ID_USER_QUIT_REQ) {
-        LOG_INFO(logger, "[gateway/quit] 用户主动退出, uid: {}, connection_id: {}", actor, connectionId);
-        TcpPacket response;
-        response.mutable_quit_response();
-        SetTcpPacketStatus(response, ErrorCodes::Success);
-        SendRaw(SerializeTcpPacket(response), ID_USER_QUIT_RSP);
-        closeAfterWrite = true;
-        co_return;
-    }
-
-    // DELIVERED/READ ACK 都会取消 Gateway 本地重传；没有会话游标的通知 ACK
-    // 到此结束，有会话游标的消息 ACK 再转发给 Message Core 更新状态。
-    if (protocolId == ID_ACK) {
-        const auto& receipt = request.receipt();
-        if (receipt.seq() > 0) {
-            AcknowledgeDelivery(receipt.seq());
-            LOG_TRACE(logger,
-                      "[gateway/delivery-ack] 已确认客户端投递, uid: {}, connection_id: {}, "
-                      "seq: {}, receipt_type: {}",
-                      actor, connectionId, receipt.seq(), static_cast<int>(receipt.receipt_type()));
-        }
-        if (receipt.conversation_id() <= 0 || receipt.conversation_seq() <= 0)
+    if (protocolId != ID_LOGIN_INIT_REQ) {
+        const auto refreshed = co_await RefreshLeaseIfNeeded(actor);
+        if (!refreshed)
             co_return;
     }
+
+    if (co_await DirectProcess(protocolId, request, actor))
+        co_return;
 
     // 对所有需要进入 Message Core 的命令执行连接级固定窗口限流。
     // 目前这种超过一秒则重置窗口的局部策略仅作为一个功能点的示例
@@ -305,6 +238,79 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
         co_return;
     }
 
+    co_await ForwardProcess(protocolId, request, actor);
+}
+
+asio::awaitable<bool> GatewaySession::DirectProcess(uint32_t protocolId, const TcpPacket& request, int64_t actor)
+{
+    if (protocolId == ID_LOGIN_INIT_REQ) {
+        const auto& login = request.login_request();
+        const int64_t claimedUid = login.uid();
+        const bool initProfile = login.init_profile();
+        LOG_DEBUG(logger, "[gateway/login] 开始校验登录, connection_id: {}, uid: {}, init_profile: {}", connectionId,
+                  claimedUid, initProfile);
+        auto result = co_await asio::co_spawn(
+            businessPool,
+            [this, self = shared_from_this(), request]() mutable -> asio::awaitable<ResultConnecctionRoute> {
+                co_return RequestConnectionRoute(std::move(request));
+            },
+            asio::use_awaitable);
+        if (result.error == ErrorCodes::Success) {
+            lease = result.lease;
+            userId.store(result.response.login_response().uid(), std::memory_order_release);
+            lastLeaseRefresh = std::chrono::steady_clock::now();
+            LOG_INFO(logger, "[gateway/login] 登录成功, uid: {}, connection_id: {}, generation: {}",
+                     result.response.login_response().uid(), connectionId, lease.generation);
+        } else {
+            LOG_WARN(logger, "[gateway/login] 登录失败, connection_id: {}, uid: {}, error: {}", connectionId,
+                     claimedUid, result.error);
+        }
+        if (!SendRaw(SerializeTcpPacket(result.response), ID_LOGIN_INIT_RSP))
+            LOG_WARN(logger, "[gateway/login] 登录响应未进入写队列, connection_id: {}", connectionId);
+        co_return true;
+    }
+
+    // PING 只维持客户端物理连接，Gateway 本地立即回复，不占用 Message 流。
+    if (protocolId == ID_PING_REQ) {
+        LOG_TRACE(logger, "[gateway/ping] 收到心跳, uid: {}, connection_id: {}", actor, connectionId);
+        TcpPacket pong;
+        pong.mutable_ping_response();
+        SetTcpPacketStatus(pong, ErrorCodes::Success);
+        SendRaw(SerializeTcpPacket(pong), ID_PING_RSP);
+        co_return true;
+    }
+
+    // QUIT 先排队成功响应，再由 WriteLoop 在队列排空后关闭 socket。
+    if (protocolId == ID_USER_QUIT_REQ) {
+        LOG_INFO(logger, "[gateway/quit] 用户主动退出, uid: {}, connection_id: {}", actor, connectionId);
+        TcpPacket response;
+        response.mutable_quit_response();
+        SetTcpPacketStatus(response, ErrorCodes::Success);
+        SendRaw(SerializeTcpPacket(response), ID_USER_QUIT_RSP);
+        closeAfterWrite = true;
+        co_return true;
+    }
+
+    // DELIVERED/READ ACK 都会取消 Gateway 本地重传；没有会话游标的通知 ACK
+    // 到此结束，有会话游标的消息 ACK 再转发给 Message Core 更新状态。
+    if (protocolId == ID_ACK) {
+        const auto& receipt = request.receipt();
+        if (receipt.seq() > 0) {
+            AcknowledgeDelivery(receipt.seq());
+            LOG_TRACE(logger,
+                      "[gateway/delivery-ack] 已确认客户端投递, uid: {}, connection_id: {}, "
+                      "seq: {}, receipt_type: {}",
+                      actor, connectionId, receipt.seq(), static_cast<int>(receipt.receipt_type()));
+        }
+        if (receipt.conversation_id() <= 0 || receipt.conversation_seq() <= 0)
+            co_return true;
+    }
+
+    co_return false;
+}
+
+asio::awaitable<void> GatewaySession::ForwardProcess(uint32_t protocolId, const TcpPacket& request, int64_t actor)
+{
     // 通用业务包统一封装 CommandEnvelope；request_id 负责跨流关联，连接
     // generation 负责在 Message 节点拒绝已经被新登录替代的旧连接命令。
     gateway::CommandEnvelope command;
@@ -315,11 +321,6 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     command.set_actor_device_id(lease.deviceId);
     command.set_service_id(protocolId);
     command.set_conversation_id(TcpPacketConversationId(request));
-    const auto requestTimeoutMs = TcpPacketRequestTimeoutMs(request);
-    const auto timeout = requestTimeoutMs > 0
-                             ? std::min(kDefaultRequestTimeout, std::chrono::milliseconds(requestTimeoutMs))
-                             : kDefaultRequestTimeout;
-    command.set_deadline_unix_ms(NowUnixMilliseconds() + timeout.count());
     command.set_packet(SerializeTcpPacket(request));
 
     const bool expectResponse = protocolId != ID_ACK;
@@ -328,9 +329,9 @@ asio::awaitable<void> GatewaySession::HandlePacket(uint32_t protocolId, std::str
     LOG_DEBUG(logger,
               "[gateway/command-forward] 正在转发请求, request_id: {}, uid: {}, "
               "connection_id: {}, generation: {}, protocol_id: {}, service: {}, "
-              "conversation_id: {}, timeout_ms: {}, expect_response: {}",
+              "conversation_id: {}, expect_response: {}",
               requestId, actor, connectionId, lease.generation, protocolId, ServiceName(protocolId), conversationId,
-              timeout.count(), expectResponse);
+              expectResponse);
     auto weak = weak_from_this();
     if (!(co_await messageLinks.Forward(std::move(command), [weak, expectResponse, actor, protocolId,
                                                              requestId](const gateway::CommandResult& result) {

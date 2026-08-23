@@ -3,7 +3,6 @@
 #include "Const.h"
 #include "Logger.h"
 #include "Redis.h"
-#include "RequestContext.h"
 #include "Service.h"
 #include "TcpMessageCodec.h"
 
@@ -20,12 +19,6 @@ namespace
 {
 
 constexpr std::size_t kMaxStreamQueue = 4096;
-
-int64_t NowUnixMilliseconds()
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
 
 } // namespace
 
@@ -179,21 +172,6 @@ class GatewayStreamReactor final
             Enqueue(std::move(responseFrame));
             return;
         }
-        if (command.deadline_unix_ms() <= NowUnixMilliseconds()) {
-            LOG_WARN(logger, "[message/command] 请求到达时已超时, gateway: {}, request_id: {}, service_id: {}",
-                     gatewayId, requestId, serviceId);
-            gateway::MessageToGatewayFrame responseFrame;
-            auto* response = responseFrame.mutable_command_result();
-            response->set_request_id(requestId);
-            response->set_response_service_id(__getServiceResponseId(ServiceID(serviceId)));
-            response->set_error(ErrorCodes::DeadlineExceeded);
-            response->set_retryable(true);
-            response->set_packet(
-                SerializeTcpPacket(MakeErrorPacket(ErrorCodes::DeadlineExceeded, "command deadline already elapsed")));
-            Enqueue(std::move(responseFrame));
-            return;
-        }
-
         // 通过后，不在 gRPC reactor 回调线程里直接跑业务，
         // 而是投递到 message 的后台线程池。
         // gRPC 流线程只负责收发和轻量分发，真正消息服务逻辑在线程池里跑。
@@ -226,12 +204,6 @@ class GatewayStreamReactor final
     {
         auto* originReactor = this;
         auto* streamService = &service;
-        const auto remaining = std::chrono::milliseconds(command.deadline_unix_ms() - NowUnixMilliseconds());
-        RequestContext context = RequestContext::WithTimeout(
-            command.request_id().empty() ? RequestContext::NextRequestId() : command.request_id(),
-            getServiceIdString(command.service_id()), RequestSource::Rpc, command.actor_uid(), remaining);
-        RequestContextScope contextScope(context);
-
         TcpPacket packet;
         gateway::MessageToGatewayFrame responseFrame;
         auto* response = responseFrame.mutable_command_result();
@@ -258,13 +230,6 @@ class GatewayStreamReactor final
                           originGatewayId, command.request_id(), command.service_id(), error, retryable);
             }
         };
-
-        if (context.Expired()) {
-            LOG_WARN(logger, "[message/command] 请求在业务队列中超时, gateway: {}, request_id: {}, service_id: {}",
-                     originGatewayId, command.request_id(), command.service_id());
-            reply(ErrorCodes::DeadlineExceeded, true, "command expired while waiting for a message worker");
-            return;
-        }
 
         // 接着查 Redis 里的在线 lease：目的是验证/对齐它和 Gateway
         // 传来的身份完全一致

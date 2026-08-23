@@ -12,8 +12,6 @@
 #include "Const.h"
 #include "DbGlobal.h"
 #include "Logger.h"
-#include "Metrics.h"
-#include "RequestContext.h"
 #include <condition_variable>
 #include <jsoncpp/json/json.h>
 #include <iterator>
@@ -103,23 +101,13 @@ class RedisPool
 
     std::unique_ptr<sw::redis::Redis> GetConnection()
     {
-        return GetConnectionUntil(RequestContextScope::CurrentDeadlineOr(std::chrono::milliseconds(1000)));
-    }
-
-    std::unique_ptr<sw::redis::Redis> GetConnectionUntil(RequestContext::Deadline deadline)
-    {
         std::unique_lock<std::mutex> lock(poolMutex);
-        bool ready = condVar.wait_until(lock, deadline, [this] {
+        condVar.wait(lock, [this] {
             if (stopEnable) {
                 return true;
             }
             return !connections.empty();
         });
-        if (!ready) {
-            Metrics::Increment(Metric::RedisAcquireTimeout);
-            LOG_WARN(logger, "Redis连接池获取超时, available: {}", connections.size());
-            return nullptr;
-        }
         if (stopEnable || connections.empty()) {
             return nullptr;
         }

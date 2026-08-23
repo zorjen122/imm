@@ -46,11 +46,6 @@ inline std::string TcpPacketRequestId(const TcpPacket& packet)
     return packet.has_request() ? packet.request().request_id() : std::string{};
 }
 
-inline uint32_t TcpPacketRequestTimeoutMs(const TcpPacket& packet)
-{
-    return packet.has_request() ? packet.request().timeout_ms() : 0;
-}
-
 // 客户端请求的 service_id 与 oneof 载荷必须一一对应。服务端推送虽然复用
 // 部分奇数 service_id，但只会出现在出站方向，不参与此入口校验。
 inline bool TcpRequestMatchesService(uint32_t serviceId, const TcpPacket& packet)

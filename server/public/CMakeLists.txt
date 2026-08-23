@@ -57,10 +57,6 @@ target_link_libraries(
          mysqlcppconnx)
 
 if(BUILD_TESTING)
-  add_executable(resourceDeadlineTest test/resourceDeadlineTest.cc)
-  target_include_directories(resourceDeadlineTest PRIVATE ./include)
-  target_link_libraries(resourceDeadlineTest PRIVATE imPublic imProto)
-  add_test(NAME public.resource_deadline COMMAND resourceDeadlineTest)
   add_executable(redisSentinelFailoverTest test/redisSentinelFailoverTest.cc)
   target_include_directories(redisSentinelFailoverTest PRIVATE ./include)
   target_link_libraries(redisSentinelFailoverTest PRIVATE imPublic imProto)

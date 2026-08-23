@@ -20,6 +20,15 @@
 using wimi::Logger;
 using wimi::logger;
 
+namespace
+{
+
+constexpr std::size_t kBusinessWorkerCount = 4;
+constexpr std::size_t kMinIoWorkerCount = 2;
+constexpr std::size_t kMaxIoWorkerCount = 8;
+
+} // namespace
+
 int main(int argc, char** argv)
 {
     Logger::instance().initialize(argv[0], Logger::Service::Gateway);
@@ -50,8 +59,11 @@ int main(int argc, char** argv)
         }
     }
 
-    // []
-    if (!Configer::loadConfig(configPath ? configPath : "../conf/gateway-hunan.yaml")) {
+    if (configPath == nullptr) {
+        std::cerr << "Gateway config path is required.\n";
+        return EXIT_FAILURE;
+    }
+    if (!Configer::loadConfig(configPath)) {
         LOG_ERROR(logger, "[gateway/startup] 配置加载失败");
         return EXIT_FAILURE;
     }
@@ -70,7 +82,7 @@ int main(int argc, char** argv)
     wimi::db::RedisDao::GetInstance();
 
     boost::asio::io_context ioContext;
-    boost::asio::thread_pool businessPool(4);
+    boost::asio::thread_pool businessPool(kBusinessWorkerCount);
     wimi::connection::SessionManager sessions(gatewayId, instanceId);
     wimi::connection::MessageLinkManager messageLinks(ioContext, businessPool, gatewayId, instanceId);
     messageLinks.SetClientForwardHandler(
@@ -89,7 +101,8 @@ int main(int argc, char** argv)
         ioContext.stop();
     });
 
-    const auto workerCount = std::clamp<std::size_t>(std::thread::hardware_concurrency(), 2, 8);
+    const auto workerCount =
+        std::clamp<std::size_t>(std::thread::hardware_concurrency(), kMinIoWorkerCount, kMaxIoWorkerCount);
     std::vector<std::thread> workers;
     workers.reserve(workerCount - 1);
     for (std::size_t i = 1; i < workerCount; ++i)

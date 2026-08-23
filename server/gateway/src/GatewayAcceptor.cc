@@ -28,7 +28,8 @@ asio::awaitable<void> GatewayAcceptor::Run()
         readinessTimer.expires_after(std::chrono::milliseconds(100));
         co_await readinessTimer.async_wait(asio::use_awaitable);
     }
-    LOG_INFO(logger, "[gateway/accept] 开始接收客户端连接, healthy_message_links: {}", messageLinks.HealthyLinkCount());
+
+    LOG_INFO(logger, "[gateway/accept] 开始接收客户端连接");
 
     while (acceptor.is_open()) {
         boost::system::error_code ec;

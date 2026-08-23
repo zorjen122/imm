@@ -4,8 +4,6 @@
 #include "DbGlobal.h"
 #include "Logger.h"
 #include "Mysql.h"
-#include "RequestContext.h"
-
 #include <string>
 
 namespace wimi

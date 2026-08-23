@@ -2,8 +2,6 @@
 
 #include "Const.h"
 #include "Logger.h"
-#include "Metrics.h"
-
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
@@ -48,14 +46,9 @@ Service::~Service()
     if (threadPool) {
         auto stats = threadPool->GetStats();
         LOG_INFO(logger,
-                 "[message/dispatcher-stop] 业务调度器已停止, workers: {}, queued: {}, thread_pool "
-                 "submitted/completed/rejected/acquire-timeout/expired: "
-                 "{}/{}/{}/{}/{}, requests started/succeeded/failed/expired: "
-                 "{}/{}/{}/{}",
-                 stats.workerCount, stats.queueSize, stats.submitted, stats.completed, stats.rejected,
-                 stats.acquireTimeouts, stats.expired, Metrics::Get(Metric::RequestsStarted),
-                 Metrics::Get(Metric::RequestsSucceeded), Metrics::Get(Metric::RequestsFailed),
-                 Metrics::Get(Metric::RequestsExpired));
+                 "[message/dispatcher-stop] 业务调度器已停止, workers: {}, queued: {}, "
+                 "submitted/completed/rejected: {}/{}/{}",
+                 stats.workerCount, stats.queueSize, stats.submitted, stats.completed, stats.rejected);
         threadPool->Stop();
     }
 }

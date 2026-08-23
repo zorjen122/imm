@@ -27,7 +27,6 @@ message CommandEnvelope {
   uint64 connection_generation = 4; // 用户在线 lease 的连接代次
   uint32 service_id = 5;             // 客户端 TCP/TLV 业务协议 ID
   int64 conversation_id = 6;         // 会话 ID；无会话命令为 0
-  int64 deadline_unix_ms = 7;        // 命令绝对截止时间，Unix 毫秒
   bytes packet = 8;                  // 序列化后的 protocol.Packet
   string actor_device_id = 9;        // 已由 Gateway 鉴权的设备 ID
 }

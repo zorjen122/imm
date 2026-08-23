@@ -42,7 +42,7 @@ int main(int argc, char** argv)
     auto sentinel = std::make_shared<sw::redis::Sentinel>(sentinelOptions);
 
     wimi::db::RedisPool pool(std::move(sentinel), "wimi-master", "root", 1);
-    auto redis = pool.GetConnectionUntil(wimi::RequestContext::Clock::now() + 1s);
+    auto redis = pool.GetConnection();
     if (!redis) {
         std::cerr << "Cannot connect to the Redis master through Sentinel.\n";
         return 1;
