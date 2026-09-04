@@ -7,103 +7,103 @@
 int main()
 {
     using wimi::TcpPacket;
+    using wimi::protocol::Operation;
 
-    std::vector<std::pair<uint32_t, TcpPacket>> requests;
-    auto add = [&requests](uint32_t serviceId, TcpPacket packet) {
-        packet.mutable_request()->set_request_id("protocol-test");
-        requests.emplace_back(serviceId, std::move(packet));
+    std::vector<std::pair<Operation, TcpPacket>> requests;
+    auto add = [&requests](Operation operation, TcpPacket packet) {
+        requests.emplace_back(operation, std::move(packet));
     };
 
     TcpPacket packet;
     packet.mutable_login_request();
-    add(ID_LOGIN_INIT_REQ, std::move(packet));
+    add(Operation::OP_LOGIN, std::move(packet));
     packet.Clear();
     packet.mutable_pull_friend_list_request();
-    add(ID_PULL_FRIEND_LIST_REQ, std::move(packet));
+    add(Operation::OP_PULL_FRIEND_LIST, std::move(packet));
     packet.Clear();
     packet.mutable_pull_friend_apply_list_request();
-    add(ID_PULL_FRIEND_APPLY_LIST_REQ, std::move(packet));
+    add(Operation::OP_PULL_FRIEND_APPLICATIONS, std::move(packet));
     packet.Clear();
     packet.mutable_pull_conversation_messages_request();
-    add(ID_PULL_SESSION_MESSAGE_LIST_REQ, std::move(packet));
+    add(Operation::OP_PULL_CONVERSATION_MESSAGES, std::move(packet));
     packet.Clear();
     packet.mutable_pull_group_members_request();
-    add(ID_GROUP_PULL_MEMBER_REQ, std::move(packet));
+    add(Operation::OP_PULL_GROUP_MEMBERS, std::move(packet));
     packet.Clear();
     packet.mutable_ping_request();
-    add(ID_PING_REQ, std::move(packet));
+    add(Operation::OP_PING, std::move(packet));
     packet.Clear();
     packet.mutable_quit_request();
-    add(ID_USER_QUIT_REQ, std::move(packet));
+    add(Operation::OP_QUIT, std::move(packet));
     packet.Clear();
     packet.mutable_update_user_info_request();
-    add(ID_INIT_USER_INFO_REQ, std::move(packet));
+    add(Operation::OP_UPDATE_USER_INFO, std::move(packet));
     packet.Clear();
     packet.mutable_search_user_request();
-    add(ID_SEARCH_USER_REQ, std::move(packet));
+    add(Operation::OP_SEARCH_USER, std::move(packet));
     packet.Clear();
     packet.mutable_add_friend_request();
-    add(ID_NOTIFY_ADD_FRIEND_REQ, std::move(packet));
+    add(Operation::OP_ADD_FRIEND, std::move(packet));
     packet.Clear();
     packet.mutable_reply_friend_request();
-    add(ID_REPLY_ADD_FRIEND_REQ, std::move(packet));
+    add(Operation::OP_REPLY_FRIEND, std::move(packet));
     packet.Clear();
     packet.mutable_remove_friend_request();
-    add(ID_REMOVE_FRIEND_REQ, std::move(packet));
+    add(Operation::OP_REMOVE_FRIEND, std::move(packet));
     packet.Clear();
     packet.mutable_send_text_request();
-    add(ID_TEXT_SEND_REQ, std::move(packet));
+    add(Operation::OP_SEND_TEXT, std::move(packet));
     packet.Clear();
     packet.mutable_send_file_request();
-    add(ID_FILE_SEND_REQ, std::move(packet));
+    add(Operation::OP_SEND_FILE, std::move(packet));
     packet.Clear();
     packet.mutable_receipt();
-    add(ID_ACK, std::move(packet));
+    add(Operation::OP_ACKNOWLEDGE, std::move(packet));
     packet.Clear();
     packet.mutable_create_group_request();
-    add(ID_GROUP_CREATE_REQ, std::move(packet));
+    add(Operation::OP_CREATE_GROUP, std::move(packet));
     packet.Clear();
     packet.mutable_join_group_request();
-    add(ID_GROUP_NOTIFY_JOIN_REQ, std::move(packet));
+    add(Operation::OP_JOIN_GROUP, std::move(packet));
     packet.Clear();
     packet.mutable_reply_join_group_request();
-    add(ID_GROUP_REPLY_JOIN_REQ, std::move(packet));
+    add(Operation::OP_REPLY_JOIN_GROUP, std::move(packet));
     packet.Clear();
     packet.mutable_quit_group_request();
-    add(ID_GROUP_QUIT_REQ, std::move(packet));
+    add(Operation::OP_QUIT_GROUP, std::move(packet));
     packet.Clear();
     packet.mutable_send_group_text_request();
-    add(ID_GROUP_TEXT_SEND_REQ, std::move(packet));
+    add(Operation::OP_SEND_GROUP_TEXT, std::move(packet));
     packet.Clear();
     packet.mutable_file_upload_request();
-    add(ID_FILE_UPLOAD_REQ, std::move(packet));
+    add(Operation::OP_UPLOAD_FILE, std::move(packet));
     packet.Clear();
     packet.mutable_file_upload_chunk_request();
-    add(ID_FILE_UPLOAD_CHUNK_REQ, std::move(packet));
+    add(Operation::OP_UPLOAD_FILE_CHUNK, std::move(packet));
     packet.Clear();
     packet.mutable_file_upload_complete_request();
-    add(ID_FILE_UPLOAD_COMPLETE_REQ, std::move(packet));
+    add(Operation::OP_COMPLETE_FILE_UPLOAD, std::move(packet));
     packet.Clear();
     packet.mutable_file_download_request();
-    add(ID_FILE_DOWNLOAD_REQ, std::move(packet));
+    add(Operation::OP_DOWNLOAD_FILE, std::move(packet));
     packet.Clear();
     packet.mutable_kick_group_member_request();
-    add(ID_GROUP_KICK_MEMBER_REQ, std::move(packet));
+    add(Operation::OP_KICK_GROUP_MEMBER, std::move(packet));
     packet.Clear();
     packet.mutable_send_group_file_request();
-    add(ID_GROUP_FILE_SEND_REQ, std::move(packet));
+    add(Operation::OP_SEND_GROUP_FILE, std::move(packet));
 
-    for (const auto& [serviceId, request] : requests) {
-        if (!wimi::TcpRequestMatchesService(serviceId, request)) {
-            std::cerr << "valid packet rejected for service " << serviceId << '\n';
+    for (const auto& [operation, request] : requests) {
+        if (!wimi::TcpRequestMatchesOperation(operation, request)) {
+            std::cerr << "valid packet rejected for operation " << static_cast<int>(operation) << '\n';
             return 1;
         }
-        if (wimi::TcpPacketRequestId(request) != "protocol-test") {
-            std::cerr << "request context lost for service " << serviceId << '\n';
+        if (wimi::TcpPacketRequestOperation(request) != operation) {
+            std::cerr << "request operation inference failed for operation " << static_cast<int>(operation) << '\n';
             return 1;
         }
     }
-    if (wimi::TcpRequestMatchesService(ID_TEXT_SEND_REQ, requests.front().second)) {
+    if (wimi::TcpRequestMatchesOperation(Operation::OP_SEND_TEXT, requests.front().second)) {
         std::cerr << "mismatched business payload accepted\n";
         return 1;
     }
@@ -117,9 +117,8 @@ int main()
 
     TcpPacket push;
     push.mutable_text_message_push()->set_message_id(42);
-    if (wimi::TcpPacketReliableSequence(ID_TEXT_SEND_REQ, push) != 42 ||
-        wimi::TcpPacketReliableSequence(ID_NOTIFY_ADD_FRIEND_REQ, push) != 0) {
-        std::cerr << "push sequence was read from the wrong business payload\n";
+    if (wimi::TcpPacketReliableSequence(push) != 42) {
+        std::cerr << "push sequence was not read from its payload\n";
         return 1;
     }
     return 0;

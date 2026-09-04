@@ -210,7 +210,7 @@ FileServer::FileServer(size_t workers, fs::path root) : storageRoot(std::move(ro
 
 FileServer::~FileServer() { Stop(); }
 
-void FileServer::Run(const std::string& host, unsigned short port)
+bool FileServer::Run(const std::string& host, unsigned short port)
 {
     grpc::ServerBuilder builder;
     builder.AddListeningPort(host + ":" + std::to_string(port), grpc::InsecureServerCredentials());
@@ -218,8 +218,13 @@ void FileServer::Run(const std::string& host, unsigned short port)
     service = std::make_unique<FileServiceImpl>(storageRoot);
     builder.RegisterService(service.get());
     server = builder.BuildAndStart();
+    if (!server) {
+        service.reset();
+        return false;
+    }
     stopEnable = false;
     server->Wait();
+    return true;
 }
 
 void FileServer::Stop()

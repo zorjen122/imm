@@ -124,14 +124,21 @@ gateway::ClientForwardStatus SessionManager::Forward(const gateway::ClientForwar
         return gateway::CLIENT_FORWARD_STATUS_STALE_ROUTE;
     }
     TcpPacket packet;
-    const int64_t transportSequence =
-        ParseTcpPacket(forward.packet(), packet) ? TcpPacketReliableSequence(forward.protocol_id(), packet) : 0;
-    const bool queued = transportSequence > 0
-                            ? session->SendReliable(forward.packet(), forward.protocol_id(), transportSequence)
-                            : session->SendRaw(forward.packet(), forward.protocol_id());
+    if (!ParseTcpPacket(forward.packet(), packet)) {
+        LOG_WARN(logger, "[gateway/client-forward] 推送包无法解析, uid: {}, forward_id: {}", forward.recipient_uid(),
+                 forward.forward_id());
+        return gateway::CLIENT_FORWARD_STATUS_BACKPRESSURED;
+    }
+    const int64_t transportSequence = TcpPacketReliableSequence(packet);
+    ClientEnvelope envelope;
+    envelope.mutable_push()->set_delivery_id(forward.message_id() > 0 ? forward.message_id() : transportSequence);
+    envelope.mutable_push()->set_type(TcpPacketPushType(packet));
+    *envelope.mutable_push()->mutable_packet() = std::move(packet);
+    const std::string wire = SerializeClientEnvelope(envelope);
+    const bool queued = transportSequence > 0 ? session->SendReliable(wire, transportSequence) : session->SendRaw(wire);
     if (!queued) {
-        LOG_WARN(logger, "[gateway/client-forward] 客户端写队列繁忙, uid: {}, forward_id: {}, protocol_id: {}",
-                 forward.recipient_uid(), forward.forward_id(), forward.protocol_id());
+        LOG_WARN(logger, "[gateway/client-forward] 客户端写队列繁忙, uid: {}, forward_id: {}", forward.recipient_uid(),
+                 forward.forward_id());
         return gateway::CLIENT_FORWARD_STATUS_BACKPRESSURED;
     }
     LOG_TRACE(logger, "[gateway/client-forward] 消息已进入客户端写队列, uid: {}, forward_id: {}",

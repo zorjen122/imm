@@ -1,5 +1,5 @@
 server:
   file:
     host: 0.0.0.0
-    rpcPort: 51000
+    rpcPort: 51100
     storageRoot: ./wimi-files

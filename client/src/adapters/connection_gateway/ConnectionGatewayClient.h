@@ -1,5 +1,6 @@
 #pragma once
 
+#include "adapters/connection_gateway/ClientProtocol.h"
 #include "adapters/connection_gateway/TcpFrameCodec.h"
 #include "adapters/gate/GateHttpClient.h"
 
@@ -15,6 +16,7 @@ namespace wimi::protocol
 {
 class Packet;
 class FileInfo;
+class ClientEnvelope;
 } // namespace wimi::protocol
 
 namespace wimi::client
@@ -78,30 +80,29 @@ class ConnectionGatewayClient final : public QObject
     void StateChanged(wimi::client::ConnectionGatewayClient::State state);
     void Authenticated();
     void CredentialsExpired();
-    void ResponseReceived(const QString& requestId, quint32 serviceId, const QByteArray& payload);
-    void PushReceived(quint32 serviceId, const QByteArray& payload);
-    void RequestFailed(const QString& requestId, quint32 requestServiceId, int errorCode, const QString& message,
+    void ResponseReceived(const QString& requestId, protocol::Operation operation, const QByteArray& payload);
+    void PushReceived(const QByteArray& payload);
+    void RequestFailed(const QString& requestId, protocol::Operation operation, int errorCode, const QString& message,
                        bool outcomeUnknown);
     void ProtocolError(const QString& message);
 
   private:
     struct PendingRequest {
         QString requestId;
-        quint32 requestServiceId{};
-        quint32 responseServiceId{};
+        protocol::Operation operation{protocol::Operation::OP_UNSPECIFIED};
         QByteArray payload;
         int timeoutMilliseconds{};
     };
 
-    QString QueueRequest(quint32 serviceId, wimi::protocol::Packet packet, int timeoutMilliseconds = 12'000);
-    void SendFront(quint32 responseServiceId);
-    void CompleteFront(quint32 responseServiceId, const QByteArray& payload);
+    QString QueueRequest(protocol::Operation operation, wimi::protocol::Packet packet,
+                         int timeoutMilliseconds = 12'000);
+    void CompleteRequest(const QString& requestId, const QByteArray& payload);
     void FailAllPending(int errorCode, const QString& message, bool outcomeUnknown);
     void SendReceipt(std::int64_t messageId, int receiptType, std::int64_t conversationId,
                      std::int64_t conversationSequence);
-    void SendPacket(quint32 serviceId, wimi::protocol::Packet packet);
+    void SendPacket(protocol::Operation operation, wimi::protocol::Packet packet);
     void HandleFrame(const TcpFrame& frame);
-    void HandleLoginResponse(const QByteArray& payload);
+    void HandleLoginResponse(const wimi::protocol::Packet& response);
     void ScheduleReconnect();
     void StartSocket();
     void SetState(State state);
@@ -110,8 +111,8 @@ class ConnectionGatewayClient final : public QObject
     TcpFrameCodec codec_;
     QTimer heartbeat_timer_;
     QTimer reconnect_timer_;
-    QHash<quint32, QQueue<PendingRequest>> pending_by_response_;
-    QHash<quint32, QTimer*> request_timers_;
+    QHash<QString, PendingRequest> pending_by_id_;
+    QHash<QString, QTimer*> request_timers_;
     GateSession session_;
     QString device_id_;
     State state_{State::Disconnected};

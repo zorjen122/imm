@@ -34,11 +34,6 @@ int64_t NowUnixMilliseconds()
         .count();
 }
 
-bool CanReplayCommand(uint32_t serviceId)
-{
-    return serviceId == ID_TEXT_SEND_REQ || serviceId == ID_GROUP_TEXT_SEND_REQ;
-}
-
 } // namespace
 
 MessageLinkManager::MessageLinkManager(asio::io_context& ioContext, asio::thread_pool& controlPool,
@@ -92,7 +87,6 @@ void MessageLinkManager::Stop()
             continue;
         gateway::CommandResult result;
         result.set_request_id(command.command.request_id());
-        result.set_response_service_id(__getServiceResponseId(ServiceID(command.command.service_id())));
         result.set_error(ErrorCodes::DependencyUnavailable);
         result.set_retryable(true);
         result.set_packet(
@@ -120,8 +114,8 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
 
     auto link = SelectLink(command.conversation_id());
     if (!link) {
-        LOG_WARN(logger, "[gateway/command-route] 没有可用的 Message 链路, request_id: {}, service_id: {}",
-                 command.request_id(), command.service_id());
+        LOG_WARN(logger, "[gateway/command-route] 没有可用的 Message 链路, request_id: {}, operation: {}",
+                 command.request_id(), static_cast<int>(command.operation()));
         co_return false;
     }
 
@@ -336,16 +330,14 @@ void MessageLinkManager::OnFrame(const std::string& nodeId, const gateway::Messa
         if (found && command.callback) {
             LOG_DEBUG(logger,
                       "[gateway/command-result] 收到 Message 处理结果, node: {}, "
-                      "request_id: {}, response_service_id: {}, error: {}, "
+                      "request_id: {}, error: {}, "
                       "retryable: {}",
-                      nodeId, frame.command_result().request_id(), frame.command_result().response_service_id(),
-                      frame.command_result().error(), frame.command_result().retryable());
+                      nodeId, frame.command_result().request_id(), frame.command_result().error(),
+                      frame.command_result().retryable());
             command.callback(frame.command_result());
         } else {
-            LOG_WARN(logger,
-                     "[gateway/command-result] 忽略无法匹配的处理结果, node: {}, "
-                     "request_id: {}, response_service_id: {}",
-                     nodeId, frame.command_result().request_id(), frame.command_result().response_service_id());
+            LOG_WARN(logger, "[gateway/command-result] 忽略无法匹配的处理结果, node: {}, request_id: {}", nodeId,
+                     frame.command_result().request_id());
         }
         return;
     }
@@ -517,8 +509,7 @@ void MessageLinkManager::RetryPending(const std::string& failedLinkToken)
         std::lock_guard<std::mutex> lock(pendingMutex);
         for (auto& [requestId, pendingCommand] : pending) {
             if (!failedLinkToken.empty()) {
-                const bool canReplaySentCommand = pendingCommand.currentLinkToken == failedLinkToken &&
-                                                  CanReplayCommand(pendingCommand.command.service_id());
+                const bool canReplaySentCommand = pendingCommand.currentLinkToken == failedLinkToken;
                 const bool wasRejectedBeforeEnqueue =
                     pendingCommand.currentLinkToken == failedLinkToken && pendingCommand.retryPending;
 
@@ -594,8 +585,7 @@ void MessageLinkManager::OnAttemptTimeout(const std::string& requestId, std::uin
     {
         std::lock_guard<std::mutex> lock(pendingMutex);
         auto found = pending.find(requestId);
-        if (found == pending.end() || found->second.attempt != attempt ||
-            !CanReplayCommand(found->second.command.service_id())) {
+        if (found == pending.end() || found->second.attempt != attempt) {
             return;
         }
 

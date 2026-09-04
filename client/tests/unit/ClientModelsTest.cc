@@ -844,18 +844,16 @@ void ClientModelsTest::platformNotificationPortUpdatesControllerState()
 
 void ClientModelsTest::tcpFrameCodecHandlesFragmentationAndCoalescing()
 {
-    const QByteArray first = TcpFrameCodec::Encode(1013, QByteArrayLiteral("login"));
-    const QByteArray second = TcpFrameCodec::Encode(1027, QByteArrayLiteral("message"));
+    const QByteArray first = TcpFrameCodec::Encode(QByteArrayLiteral("login"));
+    const QByteArray second = TcpFrameCodec::Encode(QByteArrayLiteral("message"));
 
-    QCOMPARE(first.left(8).toHex(), QByteArrayLiteral("000003f500000005"));
+    QCOMPARE(first.left(4).toHex(), QByteArrayLiteral("00000005"));
 
     TcpFrameCodec codec;
     QVERIFY(codec.Feed(first.left(3)).isEmpty());
     const auto frames = codec.Feed(first.mid(3) + second);
     QCOMPARE(frames.size(), 2);
-    QCOMPARE(frames[0].serviceId, 1013U);
     QCOMPARE(frames[0].payload, QByteArrayLiteral("login"));
-    QCOMPARE(frames[1].serviceId, 1027U);
     QCOMPARE(frames[1].payload, QByteArrayLiteral("message"));
     QVERIFY(!codec.HasError());
 }
@@ -865,7 +863,7 @@ void ClientModelsTest::tcpFrameCodecRejectsOversizedPayload()
     QByteArray header;
     QDataStream stream(&header, QIODevice::WriteOnly);
     stream.setByteOrder(QDataStream::BigEndian);
-    stream << quint32(1027) << quint32(TcpFrameCodec::kMaximumPayloadSize + 1);
+    stream << quint32(TcpFrameCodec::kMaximumPayloadSize + 1);
 
     TcpFrameCodec codec;
     QVERIFY(codec.Feed(header).isEmpty());

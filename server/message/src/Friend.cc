@@ -22,7 +22,7 @@ int FriendService::StoreNotifyAddFriend(int64_t actorUid, const protocol::AddFri
     return db::MysqlDao::GetInstance()->insertFriendApply(friendApply);
 }
 
-TcpPacket FriendService::NotifyAddFriend(unsigned int, int64_t actorUid, TcpPacket& request)
+TcpPacket FriendService::NotifyAddFriend(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto& addFriend = request.add_friend_request();
@@ -41,7 +41,7 @@ TcpPacket FriendService::NotifyAddFriend(unsigned int, int64_t actorUid, TcpPack
     notice->set_from(actorUid);
     notice->set_to(to);
     notice->set_request_message(addFriend.request_message());
-    if (!clientForwardService.ForwardToGateway(to, SerializeTcpPacket(push), ID_NOTIFY_ADD_FRIEND_REQ)) {
+    if (!clientForwardService.ForwardToGateway(to, SerializeTcpPacket(push))) {
         LOG_DEBUG(logger, "[message/friend-request] 好友申请已保存, 接收用户当前不在线, from_uid: {}, to_uid: {}",
                   actorUid, to);
     }
@@ -50,7 +50,7 @@ TcpPacket FriendService::NotifyAddFriend(unsigned int, int64_t actorUid, TcpPack
     return rsp;
 }
 
-TcpPacket FriendService::ReplyAddFriend(unsigned int, int64_t actorUid, TcpPacket& request)
+TcpPacket FriendService::ReplyAddFriend(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto& replyFriend = request.reply_friend_request();
@@ -75,7 +75,7 @@ TcpPacket FriendService::ReplyAddFriend(unsigned int, int64_t actorUid, TcpPacke
     notice->set_to(to);
     notice->set_accept(replyFriend.accept());
     notice->set_reply_message(replyFriend.reply_message());
-    if (!clientForwardService.ForwardToGateway(to, SerializeTcpPacket(push), ID_REPLY_ADD_FRIEND_REQ)) {
+    if (!clientForwardService.ForwardToGateway(to, SerializeTcpPacket(push))) {
         LOG_DEBUG(logger, "[message/friend-reply] 处理结果已保存, 接收用户当前不在线, from_uid: {}, to_uid: {}",
                   actorUid, to);
     }
@@ -112,7 +112,7 @@ int FriendService::StoreReplyAddFriend(int64_t actorUid, const protocol::ReplyFr
     return result;
 }
 
-TcpPacket FriendService::PullFriendApplyList(uint32_t, int64_t actorUid, TcpPacket&)
+TcpPacket FriendService::PullFriendApplyList(int64_t actorUid, TcpPacket&)
 {
     TcpPacket rsp;
     auto* payload = rsp.mutable_pull_friend_apply_list_response();
@@ -135,7 +135,7 @@ TcpPacket FriendService::PullFriendApplyList(uint32_t, int64_t actorUid, TcpPack
     return rsp;
 }
 
-TcpPacket FriendService::PullFriendList(uint32_t, int64_t actorUid, TcpPacket&)
+TcpPacket FriendService::PullFriendList(int64_t actorUid, TcpPacket&)
 {
     TcpPacket rsp;
     auto* payload = rsp.mutable_pull_friend_list_response();

@@ -33,12 +33,7 @@ def _ensure_proto_module():
 
 _ensure_proto_module()
 
-from tcp_message_pb2 import Packet  # noqa: E402
-
-
-ID_LOGIN_INIT_REQ = 1013
-ID_USER_QUIT_REQ = 1015
-ID_ACK = 1033
+from tcp_message_pb2 import ClientEnvelope, Operation, Packet, PushType  # noqa: E402
 
 RETRYABLE_ERRORS = {1002, 1018, 1020, 1027, 1028, 1029}
 
@@ -79,32 +74,32 @@ FIELD_MAP = {
 
 
 REQUEST_PAYLOADS = {
-    1001: "pull_friend_list_request",
-    1003: "pull_friend_apply_list_request",
-    1005: "pull_conversation_messages_request",
-    1009: "pull_group_members_request",
-    1011: "ping_request",
-    1013: "login_request",
-    1015: "quit_request",
-    1017: "update_user_info_request",
-    1019: "search_user_request",
-    1021: "add_friend_request",
-    1023: "reply_friend_request",
-    1025: "remove_friend_request",
-    1027: "send_text_request",
-    1029: "send_file_request",
-    1031: "file_upload_request",
-    1033: "receipt",
-    1035: "create_group_request",
-    1037: "join_group_request",
-    1039: "reply_join_group_request",
-    1041: "quit_group_request",
-    1043: "send_group_text_request",
-    1047: "file_upload_chunk_request",
-    1049: "file_upload_complete_request",
-    1051: "file_download_request",
-    1053: "kick_group_member_request",
-    1055: "send_group_file_request",
+    Operation.OP_PULL_FRIEND_LIST: "pull_friend_list_request",
+    Operation.OP_PULL_FRIEND_APPLICATIONS: "pull_friend_apply_list_request",
+    Operation.OP_PULL_CONVERSATION_MESSAGES: "pull_conversation_messages_request",
+    Operation.OP_PULL_GROUP_MEMBERS: "pull_group_members_request",
+    Operation.OP_PING: "ping_request",
+    Operation.OP_LOGIN: "login_request",
+    Operation.OP_QUIT: "quit_request",
+    Operation.OP_UPDATE_USER_INFO: "update_user_info_request",
+    Operation.OP_SEARCH_USER: "search_user_request",
+    Operation.OP_ADD_FRIEND: "add_friend_request",
+    Operation.OP_REPLY_FRIEND: "reply_friend_request",
+    Operation.OP_REMOVE_FRIEND: "remove_friend_request",
+    Operation.OP_SEND_TEXT: "send_text_request",
+    Operation.OP_SEND_FILE: "send_file_request",
+    Operation.OP_UPLOAD_FILE: "file_upload_request",
+    Operation.OP_ACKNOWLEDGE: "receipt",
+    Operation.OP_CREATE_GROUP: "create_group_request",
+    Operation.OP_JOIN_GROUP: "join_group_request",
+    Operation.OP_REPLY_JOIN_GROUP: "reply_join_group_request",
+    Operation.OP_QUIT_GROUP: "quit_group_request",
+    Operation.OP_SEND_GROUP_TEXT: "send_group_text_request",
+    Operation.OP_UPLOAD_FILE_CHUNK: "file_upload_chunk_request",
+    Operation.OP_COMPLETE_FILE_UPLOAD: "file_upload_complete_request",
+    Operation.OP_DOWNLOAD_FILE: "file_download_request",
+    Operation.OP_KICK_GROUP_MEMBER: "kick_group_member_request",
+    Operation.OP_SEND_GROUP_FILE: "send_group_file_request",
 }
 
 
@@ -169,18 +164,21 @@ def _set_scalar(payload, key, value):
     setattr(payload, field, value)
 
 
-def encode_packet(service_id, body):
+def encode_envelope(operation, request_id, body):
     packet = Packet()
-    packet.request.request_id = body.get("requestId", "")
-    payload_name = REQUEST_PAYLOADS.get(service_id)
+    payload_name = REQUEST_PAYLOADS.get(operation)
     if payload_name is None:
-        raise ValueError(f"unsupported request service id: {service_id}")
+        raise ValueError(f"unsupported request operation: {operation}")
     payload = getattr(packet, payload_name)
     payload.SetInParent()
     for key, value in body.items():
         if key not in ("requestId", "requestTimeoutMs"):
             _set_scalar(payload, key, value)
-    return packet.SerializeToString()
+    envelope = ClientEnvelope()
+    envelope.request.request_id = request_id
+    envelope.request.operation = operation
+    envelope.request.packet.CopyFrom(packet)
+    return envelope.SerializeToString()
 
 
 def _decode_bytes(value):
@@ -249,16 +247,13 @@ def request_chat_auth(username, password, gate_url="http://127.0.0.1:18080"):
 
 
 class WimClient:
-    def __init__(self, uid, host, port, timeout=5, async_ack_ids=None,
-                 auto_ack=False, auth_token=None, device_id=None):
+    def __init__(self, uid, host, port, timeout=5, auth_token=None, device_id=None):
         self.uid = uid
         self.device_id = device_id or str(uuid.uuid4())
         self.auth_token = auth_token
         self.sock = socket.create_connection((host, port), timeout=timeout)
         self.sock.settimeout(timeout)
         self.pending = []
-        self.async_ack_ids = set(async_ack_ids or [])
-        self.auto_ack = auto_ack
         self.next_request_id = 1
 
     def close(self):
@@ -267,11 +262,12 @@ class WimClient:
         except OSError:
             pass
 
-    def send_packet(self, service_id, body):
+    def send_packet(self, operation, body):
         body = dict(body)
-        body.setdefault("requestId", self._allocate_request_id())
-        data = encode_packet(service_id, body)
-        self.sock.sendall(struct.pack("!II", service_id, len(data)) + data)
+        request_id = body.setdefault("requestId", self._allocate_request_id())
+        data = encode_envelope(operation, request_id, body)
+        self.sock.sendall(struct.pack("!I", len(data)) + data)
+        return request_id
 
     def _allocate_request_id(self):
         request_id = f"smoke-{self.uid}-{self.next_request_id}"
@@ -293,11 +289,18 @@ class WimClient:
         old_timeout = self.sock.gettimeout()
         self.sock.settimeout(timeout)
         try:
-            header = self.recv_exact(8)
-            service_id, size = struct.unpack("!II", header)
+            header = self.recv_exact(4)
+            (size,) = struct.unpack("!I", header)
             body = self.recv_exact(size)
-            payload = decode_packet(body) if body else {}
-            return service_id, payload
+            envelope = ClientEnvelope()
+            envelope.ParseFromString(body)
+            if envelope.HasField("response"):
+                response = envelope.response
+                return "response", response.operation, response.request_id, decode_packet(response.packet.SerializeToString())
+            if envelope.HasField("push"):
+                push = envelope.push
+                return "push", push.type, "", decode_packet(push.packet.SerializeToString())
+            raise ValueError("Gateway sent a ClientEnvelope without response or push")
         finally:
             self.sock.settimeout(old_timeout)
 
@@ -308,48 +311,35 @@ class WimClient:
             body["conversationId"] = conversation_id
         if conversation_seq is not None:
             body["conversationSeq"] = conversation_seq
-        self.send_packet(ID_ACK, body)
+        self.send_packet(Operation.OP_ACKNOWLEDGE, body)
 
-    def ack_async(self, service_id, payload):
-        reliable_id = payload.get("seq", payload.get("messageId"))
-        if service_id in self.async_ack_ids and reliable_id is not None:
-            self.ack(reliable_id)
-            return True
-        return False
-
-    def request(self, service_id, body, expected_id=None, timeout=5, auto_ack=None):
-        if expected_id is None:
-            expected_id = service_id + 1
-        if auto_ack is None:
-            auto_ack = self.auto_ack
-
+    def request(self, operation, body, timeout=5):
         body = dict(body)
-        body.setdefault("requestId", self._allocate_request_id())
-        self.send_packet(service_id, body)
+        request_id = body.setdefault("requestId", self._allocate_request_id())
+        self.send_packet(operation, body)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             remaining = max(0.1, deadline - time.monotonic())
             try:
-                service, payload = self.recv_packet(remaining)
+                kind, received_type, received_request_id, payload = self.recv_packet(remaining)
             except socket.timeout:
                 continue
-            if service == expected_id:
+            if kind == "response" and received_request_id == request_id:
+                if received_type != operation:
+                    raise ValueError(f"response operation mismatch: expected {operation}, got {received_type}")
                 return payload
-            if auto_ack and self.ack_async(service, payload):
-                continue
-            self.pending.append((service, payload))
+            self.pending.append((kind, received_type, received_request_id, payload))
 
-        raise TimeoutError(f"uid {self.uid} did not receive service {expected_id}")
+        raise TimeoutError(f"uid {self.uid} did not receive response for operation {operation}")
 
-    def request_with_retry(self, service_id, body, attempts=3, timeout=5,
-                           base_delay=0.2, expected_id=None):
+    def request_with_retry(self, operation, body, attempts=3, timeout=5, base_delay=0.2):
         """Retry one logical command without changing its idempotency fields."""
         body = dict(body)
         body.setdefault("requestId", self._allocate_request_id())
         last_error = None
         for attempt in range(attempts):
             try:
-                response = self.request(service_id, body, expected_id, timeout)
+                response = self.request(operation, body, timeout)
                 if not is_retryable_error(response.get("error", 0)):
                     return response
                 last_error = RuntimeError(f"retryable response: {response}")
@@ -359,9 +349,9 @@ class WimClient:
                 time.sleep(base_delay * (2 ** attempt))
         raise last_error
 
-    def expect_async(self, service_id, predicate=lambda payload: True, timeout=5):
-        for idx, (service, payload) in enumerate(self.pending):
-            if service == service_id and predicate(payload):
+    def expect_push(self, push_type, predicate=lambda payload: True, timeout=5):
+        for idx, (kind, received_type, request_id, payload) in enumerate(self.pending):
+            if kind == "push" and received_type == push_type and predicate(payload):
                 self.pending.pop(idx)
                 return payload
 
@@ -369,14 +359,14 @@ class WimClient:
         while time.monotonic() < deadline:
             remaining = max(0.1, deadline - time.monotonic())
             try:
-                service, payload = self.recv_packet(remaining)
+                kind, received_type, request_id, payload = self.recv_packet(remaining)
             except socket.timeout:
                 continue
-            if service == service_id and predicate(payload):
+            if kind == "push" and received_type == push_type and predicate(payload):
                 return payload
-            self.pending.append((service, payload))
+            self.pending.append((kind, received_type, request_id, payload))
 
-        raise TimeoutError(f"uid {self.uid} did not receive async service {service_id}")
+        raise TimeoutError(f"uid {self.uid} did not receive push type {push_type}")
 
     def login(self, init=None):
         body = {
@@ -386,7 +376,7 @@ class WimClient:
         }
         if init is not None:
             body["init"] = init
-        rsp = self.request(ID_LOGIN_INIT_REQ, body)
+        rsp = self.request(Operation.OP_LOGIN, body)
         require(
             "error" in rsp,
             "login response has no ResponseStatus.error; rebuild with "
@@ -400,9 +390,9 @@ class WimClient:
     def quit(self, wait_response=False):
         try:
             if wait_response:
-                self.request(ID_USER_QUIT_REQ, {"uid": self.uid}, timeout=2)
+                self.request(Operation.OP_QUIT, {"uid": self.uid}, timeout=2)
             else:
-                self.send_packet(ID_USER_QUIT_REQ, {"uid": self.uid})
+                self.send_packet(Operation.OP_QUIT, {"uid": self.uid})
         except Exception:
             pass
         self.close()

@@ -19,8 +19,7 @@ void GroupService::NotifyJoinRequest(int64_t masterUid, int64_t requestorUid, in
     push->set_requestor_uid(requestorUid);
     push->set_group_id(groupId);
     push->set_request_message(requestMessage);
-    const bool forwarded =
-        clientForwardService.ForwardToGateway(masterUid, SerializeTcpPacket(notice), ID_GROUP_NOTIFY_JOIN_REQ);
+    const bool forwarded = clientForwardService.ForwardToGateway(masterUid, SerializeTcpPacket(notice));
     LOG_DEBUG(logger,
               "[message/group-join-notify] 入群申请通知处理完成, group_id: {}, requestor_uid: {}, master_uid: {}, "
               "forwarded: {}",
@@ -41,7 +40,7 @@ void GroupService::NotifyChange(const std::vector<int64_t>& recipients, int64_t 
         push->set_accept(accept);
         push->set_change(change);
         push->set_group_name(groupName);
-        if (clientForwardService.ForwardToGateway(uid, SerializeTcpPacket(notice), ID_GROUP_REPLY_JOIN_REQ))
+        if (clientForwardService.ForwardToGateway(uid, SerializeTcpPacket(notice)))
             ++forwarded;
     }
     LOG_DEBUG(logger,
@@ -50,7 +49,7 @@ void GroupService::NotifyChange(const std::vector<int64_t>& recipients, int64_t 
               groupId, targetUid, recipients.size(), forwarded);
 }
 
-TcpPacket GroupService::Create(unsigned int, int64_t actorUid, TcpPacket& request)
+TcpPacket GroupService::Create(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto& create = request.create_group_request();
@@ -76,7 +75,7 @@ TcpPacket GroupService::Create(unsigned int, int64_t actorUid, TcpPacket& reques
     return rsp;
 }
 
-TcpPacket GroupService::NotifyJoin(unsigned int, int64_t actorUid, TcpPacket& request)
+TcpPacket GroupService::NotifyJoin(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto& join = request.join_group_request();
@@ -100,7 +99,7 @@ TcpPacket GroupService::NotifyJoin(unsigned int, int64_t actorUid, TcpPacket& re
     return rsp;
 }
 
-TcpPacket GroupService::PullNotify(unsigned int, int64_t actorUid, TcpPacket& request)
+TcpPacket GroupService::PullNotify(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto& pull = request.pull_group_members_request();
@@ -138,7 +137,7 @@ TcpPacket GroupService::PullNotify(unsigned int, int64_t actorUid, TcpPacket& re
     return rsp;
 }
 
-TcpPacket GroupService::ReplyJoin(unsigned int, int64_t actorUid, TcpPacket& request)
+TcpPacket GroupService::ReplyJoin(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto& reply = request.reply_join_group_request();
@@ -168,7 +167,7 @@ TcpPacket GroupService::ReplyJoin(unsigned int, int64_t actorUid, TcpPacket& req
     return rsp;
 }
 
-TcpPacket GroupService::Quit(unsigned int, int64_t actorUid, TcpPacket& request)
+TcpPacket GroupService::Quit(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto groupId = request.quit_group_request().group_id();
@@ -194,7 +193,7 @@ TcpPacket GroupService::Quit(unsigned int, int64_t actorUid, TcpPacket& request)
     return rsp;
 }
 
-TcpPacket GroupService::Kick(unsigned int, int64_t actorUid, TcpPacket& request)
+TcpPacket GroupService::Kick(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto& kick = request.kick_group_member_request();

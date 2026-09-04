@@ -30,8 +30,8 @@ class GatewaySession : public std::enable_shared_from_this<GatewaySession>
 
     void Start();
     void Close();
-    bool SendRaw(std::string packet, uint32_t protocolId);
-    bool SendReliable(std::string packet, uint32_t protocolId, int64_t ackSeq);
+    bool SendRaw(std::string envelope);
+    bool SendReliable(std::string envelope, int64_t ackSeq);
     const std::string& ConnectionId() const;
 
   private:
@@ -42,16 +42,19 @@ class GatewaySession : public std::enable_shared_from_this<GatewaySession>
     };
 
     boost::asio::awaitable<void> Run();
-    boost::asio::awaitable<void> HandlePacket(uint32_t protocolId, std::string payload);
-    boost::asio::awaitable<bool> DirectProcess(uint32_t protocolId, const TcpPacket& request, int64_t actor);
-    boost::asio::awaitable<void> ForwardProcess(uint32_t protocolId, const TcpPacket& request, int64_t actor);
+    boost::asio::awaitable<void> HandlePacket(std::string payload);
+    boost::asio::awaitable<bool> DirectProcess(protocol::Operation operation, const std::string& requestId,
+                                               const TcpPacket& request, int64_t actor);
+    boost::asio::awaitable<void> ForwardProcess(protocol::Operation operation, const std::string& requestId,
+                                                const TcpPacket& request, int64_t actor);
     boost::asio::awaitable<void> WriteLoop();
     boost::asio::awaitable<bool> RefreshLeaseIfNeeded(int64_t actor);
-    ResultConnecctionRoute RequestConnectionRoute(TcpPacket request);
+    ResultConnecctionRoute HandleLoginConnection(TcpPacket request);
     void HandleForwardResult(const gateway::CommandResult& result, bool expectResponse, int64_t actor,
-                             uint32_t protocolId, const std::string& requestId);
+                             protocol::Operation operation, const std::string& requestId);
     void CloseInContext();
-    void SendError(uint32_t requestId, int error, const std::string& message);
+    void SendResponse(const std::string& requestId, protocol::Operation operation, TcpPacket packet);
+    void SendError(const std::string& requestId, protocol::Operation operation, int error, const std::string& message);
     void ArmReliableWrite(int64_t ackSeq);
     void AcknowledgeDelivery(int64_t ackSeq);
 
@@ -69,8 +72,7 @@ class GatewaySession : public std::enable_shared_from_this<GatewaySession>
     bool writeActive{false};
     bool closeAfterWrite{false};
     struct ReliableWrite {
-        std::string packet;
-        uint32_t protocolId{0};
+        std::string envelope;
         unsigned int attempts{1};
         std::shared_ptr<boost::asio::steady_timer> timer;
     };

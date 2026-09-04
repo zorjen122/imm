@@ -8,7 +8,7 @@ server:
     rpcPort: 50056
   file:
     host: 127.0.0.1
-    rpcPort: 51000
+    rpcPort: 51100
     rpcCount: 1
   gateway:
     host: 127.0.0.1

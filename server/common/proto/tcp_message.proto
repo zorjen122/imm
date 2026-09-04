@@ -2,11 +2,6 @@ syntax = "proto3";
 
 package wimi.protocol;
 
-// 每个客户端请求都要携带的通用信息。
-message RequestContext {
-  string request_id = 1; // 用于匹配请求和响应，不能为空
-}
-
 // 服务端返回的通用处理结果。
 message ResponseStatus {
   optional int32 error = 1;    // 错误码；0 表示成功
@@ -34,6 +29,49 @@ enum GroupChangeKind {
   GROUP_CHANGE_KIND_LEFT = 2;        // 成员主动退出
   GROUP_CHANGE_KIND_KICKED = 3;      // 成员被移出
   GROUP_CHANGE_KIND_DISSOLVED = 4;   // 群已解散
+}
+
+// 客户端请求与响应的业务操作。请求、响应和 Gateway-Message 内部命令均使用此枚举。
+enum Operation {
+  OP_UNSPECIFIED = 0;
+  OP_PULL_FRIEND_LIST = 1;
+  OP_PULL_FRIEND_APPLICATIONS = 2;
+  OP_PULL_CONVERSATION_MESSAGES = 3;
+  OP_PULL_GROUP_MEMBERS = 4;
+  OP_PING = 5;
+  OP_LOGIN = 6;
+  OP_QUIT = 7;
+  OP_UPDATE_USER_INFO = 8;
+  OP_SEARCH_USER = 9;
+  OP_ADD_FRIEND = 10;
+  OP_REPLY_FRIEND = 11;
+  OP_REMOVE_FRIEND = 12;
+  OP_SEND_TEXT = 13;
+  OP_SEND_FILE = 14;
+  OP_UPLOAD_FILE = 15;
+  OP_ACKNOWLEDGE = 16;
+  OP_CREATE_GROUP = 17;
+  OP_JOIN_GROUP = 18;
+  OP_REPLY_JOIN_GROUP = 19;
+  OP_QUIT_GROUP = 20;
+  OP_SEND_GROUP_TEXT = 21;
+  OP_UPLOAD_FILE_CHUNK = 22;
+  OP_COMPLETE_FILE_UPLOAD = 23;
+  OP_DOWNLOAD_FILE = 24;
+  OP_KICK_GROUP_MEMBER = 25;
+  OP_SEND_GROUP_FILE = 26;
+}
+
+// 服务端主动投递给客户端的事件类型。
+enum PushType {
+  PUSH_TYPE_UNSPECIFIED = 0;
+  PUSH_TYPE_TEXT_MESSAGE = 1;
+  PUSH_TYPE_FILE_MESSAGE = 2;
+  PUSH_TYPE_FRIEND_REQUEST = 3;
+  PUSH_TYPE_FRIEND_REPLY = 4;
+  PUSH_TYPE_GROUP_JOIN_REQUEST = 5;
+  PUSH_TYPE_GROUP_CHANGE = 6;
+  PUSH_TYPE_READ_RECEIPT = 7;
 }
 
 // 用户的公开资料。
@@ -438,11 +476,9 @@ message PullGroupMembersResponse {
   repeated GroupJoinApplication applications = 6; // 待处理的入群申请
 }
 
-// TCP 帧中的 Protobuf 数据。一个包只能携带一种业务内容，
-// 并且必须与 TCP 帧里的 service_id 对应。
+// 业务数据。一个包只能携带一种业务内容。
 message Packet {
-  optional RequestContext request = 1; // 请求时填写的通用信息
-  optional ResponseStatus status = 2;  // 响应时填写的处理结果
+  optional ResponseStatus status = 1; // 响应时填写的处理结果
 
   // 本包携带的唯一业务内容。
   oneof payload {
@@ -506,4 +542,31 @@ message Packet {
     PullGroupMembersRequest pull_group_members_request = 82;          // 拉取群资料请求
     PullGroupMembersResponse pull_group_members_response = 83;        // 拉取群资料响应
   }
+}
+
+// 客户端 TCP 帧中的顶层数据。TCP 头只负责分帧；请求、响应与推送的语义在这里明确表达。
+message ClientEnvelope {
+  oneof body {
+    ClientRequest request = 1;
+    ClientResponse response = 2;
+    ClientPush push = 3;
+  }
+}
+
+message ClientRequest {
+  string request_id = 1; // 客户端生成，用于关联响应，不能为空
+  Packet packet = 2;
+  Operation operation = 3;
+}
+
+message ClientResponse {
+  string request_id = 1; // 原样返回对应 ClientRequest.request_id
+  Packet packet = 2;
+  Operation operation = 3;
+}
+
+message ClientPush {
+  int64 delivery_id = 1; // 用于客户端 ACK 和 Gateway 重传；不可靠通知可为 0
+  Packet packet = 2;
+  PushType type = 3;
 }

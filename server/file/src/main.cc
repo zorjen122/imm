@@ -74,7 +74,10 @@ int main(int argc, char* argv[])
         const std::filesystem::path root = ResolveStorageRoot(configuredRoot, argv[0]);
         spdlog::info("File service storage root: {}", root.string());
         wimi::rpc::FileServer fileServer(2, root);
-        fileServer.Run(host, port);
+        if (!fileServer.Run(host, port)) {
+            spdlog::error("File service failed to start, listening on {}:{}", host, port);
+            return EXIT_FAILURE;
+        }
     } catch (const std::exception& error) {
         spdlog::error("File service config is invalid: {}", error.what());
         return EXIT_FAILURE;

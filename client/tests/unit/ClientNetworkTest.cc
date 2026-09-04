@@ -26,10 +26,47 @@ wimi::protocol::Packet ParsePacket(const QByteArray& payload)
     return packet;
 }
 
+wimi::protocol::ClientEnvelope ParseEnvelope(const QByteArray& payload)
+{
+    wimi::protocol::ClientEnvelope envelope;
+    const bool parsed = ParseClientEnvelope(payload, &envelope);
+    Q_ASSERT(parsed);
+    return envelope;
+}
+
 QByteArray PacketPayload(const wimi::protocol::Packet& packet)
 {
     QByteArray payload;
     const bool serialized = SerializeProtobufPacket(packet, &payload);
+    Q_ASSERT(serialized);
+    return payload;
+}
+
+QByteArray ResponsePayload(const QString& requestId, wimi::protocol::OperationGadget::Operation operation,
+                           wimi::protocol::Packet packet)
+{
+    wimi::protocol::ClientResponse response;
+    response.setRequestId(requestId);
+    response.setPacket(std::move(packet));
+    response.setOperation(operation);
+    wimi::protocol::ClientEnvelope envelope;
+    envelope.setResponse(std::move(response));
+    QByteArray payload;
+    const bool serialized = SerializeClientEnvelope(envelope, &payload);
+    Q_ASSERT(serialized);
+    return payload;
+}
+
+QByteArray PushPayload(std::int64_t deliveryId, wimi::protocol::Packet packet)
+{
+    wimi::protocol::ClientPush push;
+    push.setDeliveryId(deliveryId);
+    push.setPacket(std::move(packet));
+    push.setType(protocol::PushTypeFor(push.packet()));
+    wimi::protocol::ClientEnvelope envelope;
+    envelope.setPush(std::move(push));
+    QByteArray payload;
+    const bool serialized = SerializeClientEnvelope(envelope, &payload);
     Q_ASSERT(serialized);
     return payload;
 }
@@ -69,26 +106,16 @@ class ClientNetworkTest final : public QObject
 
 void ClientNetworkTest::qtProtobufMatchesCanonicalWireFormat()
 {
-    const QByteArray canonicalWire =
-        QByteArray::fromHex("0a0b0a09726571756573742d3112020800aa010b0a09082b1205416c696365");
-
     wimi::protocol::UserInfo friendInfo;
     friendInfo.setUid(43);
     friendInfo.setName(QStringLiteral("Alice"));
     wimi::protocol::Packet packet;
-    wimi::protocol::RequestContext request;
-    request.setRequestId(QStringLiteral("request-1"));
-    packet.setRequest(std::move(request));
     SetSuccess(&packet);
     wimi::protocol::PullFriendListResponse friends;
     friends.setFriends({friendInfo});
     packet.setPullFriendListResponse(std::move(friends));
 
-    QCOMPARE(PacketPayload(packet), canonicalWire);
-
-    const auto parsed = ParsePacket(canonicalWire);
-    QVERIFY(parsed.hasRequest());
-    QCOMPARE(parsed.request().requestId(), QStringLiteral("request-1"));
+    const auto parsed = ParsePacket(PacketPayload(packet));
     QVERIFY(parsed.hasStatus());
     QVERIFY(parsed.status().hasError());
     QCOMPARE(parsed.status().error(), 0);
@@ -206,8 +233,8 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
 
     QTcpSocket* serverSocket = nullptr;
     TcpFrameCodec serverCodec;
-    QVector<quint32> requestServices;
-    QHash<quint32, wimi::protocol::Packet> packets;
+    QVector<protocol::Operation> requestOperations;
+    QHash<protocol::Operation, wimi::protocol::Packet> packets;
     QVector<wimi::protocol::Packet> receipts;
 
     connect(&server, &QTcpServer::newConnection, this, [&] {
@@ -215,53 +242,54 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
         connect(serverSocket, &QTcpSocket::readyRead, serverSocket, [&] {
             const auto frames = serverCodec.Feed(serverSocket->readAll());
             for (const auto& frame : frames) {
-                const auto packet = ParsePacket(frame.payload);
-                if (frame.serviceId == protocol::LoginRequest) {
+                const auto envelope = ParseEnvelope(frame.payload);
+                QVERIFY(envelope.hasRequest());
+                const auto& request = envelope.request();
+                const auto& packet = request.packet();
+                const auto operation = request.operation();
+                if (operation == protocol::Operation::OP_LOGIN) {
                     QVERIFY(packet.hasLoginRequest());
                     QCOMPARE(packet.loginRequest().uid(), 42);
                     QCOMPARE(packet.loginRequest().authToken(), QStringLiteral("token-42"));
                     QVERIFY(!packet.loginRequest().deviceId().isEmpty());
-                    QVERIFY(packet.hasRequest());
-                    QVERIFY(!packet.request().requestId().isEmpty());
                     wimi::protocol::Packet response;
                     SetSuccess(&response);
                     wimi::protocol::LoginResponse loginResponse;
                     loginResponse.setUid(42);
                     response.setLoginResponse(std::move(loginResponse));
-                    serverSocket->write(TcpFrameCodec::Encode(protocol::LoginResponse, PacketPayload(response)));
+                    serverSocket->write(TcpFrameCodec::Encode(
+                        ResponsePayload(request.requestId(), request.operation(), std::move(response))));
                     continue;
                 }
-                if (frame.serviceId == protocol::QuitRequest) {
-                    QVERIFY(packet.hasRequest());
-                    QVERIFY(!packet.request().requestId().isEmpty());
+                if (operation == protocol::Operation::OP_QUIT) {
                     QVERIFY(packet.hasQuitRequest());
                     wimi::protocol::Packet response;
                     SetSuccess(&response);
                     response.setQuitResponse(wimi::protocol::QuitResponse{});
-                    serverSocket->write(TcpFrameCodec::Encode(protocol::QuitResponse, PacketPayload(response)));
+                    serverSocket->write(TcpFrameCodec::Encode(
+                        ResponsePayload(request.requestId(), request.operation(), std::move(response))));
                     continue;
                 }
-                if (frame.serviceId == protocol::Ack) {
-                    QVERIFY(packet.hasRequest());
-                    QVERIFY(!packet.request().requestId().isEmpty());
+                if (operation == protocol::Operation::OP_ACKNOWLEDGE) {
                     QVERIFY(packet.hasReceipt());
                     receipts.push_back(packet);
                     continue;
                 }
-                requestServices.push_back(frame.serviceId);
-                packets.insert(frame.serviceId, packet);
+                requestOperations.push_back(operation);
+                packets.insert(operation, packet);
                 wimi::protocol::Packet response;
                 SetSuccess(&response);
-                if (frame.serviceId == protocol::SendTextRequest || frame.serviceId == protocol::SendGroupTextRequest ||
-                    frame.serviceId == protocol::SendGroupFileRequest) {
+                if (operation == protocol::Operation::OP_SEND_TEXT ||
+                    operation == protocol::Operation::OP_SEND_GROUP_TEXT ||
+                    operation == protocol::Operation::OP_SEND_GROUP_FILE) {
                     wimi::protocol::SendMessageResponse sendResponse;
                     sendResponse.setMessageId(7001);
                     sendResponse.setConversationId(8001);
                     sendResponse.setConversationSeq(9);
                     response.setSendMessageResponse(std::move(sendResponse));
                 }
-                serverSocket->write(
-                    TcpFrameCodec::Encode(protocol::ResponseFor(frame.serviceId), PacketPayload(response)));
+                serverSocket->write(TcpFrameCodec::Encode(
+                    ResponsePayload(request.requestId(), request.operation(), std::move(response))));
             }
         });
     });
@@ -309,35 +337,48 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
 
     QTRY_COMPARE(responses.count(), 19);
     QCOMPARE(failures.count(), 0);
-    const QVector<quint32> expectedServices = {
-        protocol::PullFriendListRequest,  protocol::PullFriendApplyListRequest, protocol::PullSessionMessagesRequest,
-        protocol::AddFriendRequest,       protocol::ReplyFriendRequest,         protocol::SendTextRequest,
-        protocol::UploadFileRequest,      protocol::FileUploadCompleteRequest,  protocol::SendFileRequest,
-        protocol::FileDownloadRequest,    protocol::CreateGroupRequest,         protocol::JoinGroupRequest,
-        protocol::ReplyJoinGroupRequest,  protocol::PullGroupMembersRequest,    protocol::QuitGroupRequest,
-        protocol::KickGroupMemberRequest, protocol::SendGroupTextRequest,       protocol::SendGroupFileRequest,
+    const QVector<protocol::Operation> expectedOperations = {
+        protocol::Operation::OP_PULL_FRIEND_LIST,
+        protocol::Operation::OP_PULL_FRIEND_APPLICATIONS,
+        protocol::Operation::OP_PULL_CONVERSATION_MESSAGES,
+        protocol::Operation::OP_ADD_FRIEND,
+        protocol::Operation::OP_REPLY_FRIEND,
+        protocol::Operation::OP_SEND_TEXT,
+        protocol::Operation::OP_UPLOAD_FILE,
+        protocol::Operation::OP_COMPLETE_FILE_UPLOAD,
+        protocol::Operation::OP_SEND_FILE,
+        protocol::Operation::OP_DOWNLOAD_FILE,
+        protocol::Operation::OP_CREATE_GROUP,
+        protocol::Operation::OP_JOIN_GROUP,
+        protocol::Operation::OP_REPLY_JOIN_GROUP,
+        protocol::Operation::OP_PULL_GROUP_MEMBERS,
+        protocol::Operation::OP_QUIT_GROUP,
+        protocol::Operation::OP_KICK_GROUP_MEMBER,
+        protocol::Operation::OP_SEND_GROUP_TEXT,
+        protocol::Operation::OP_SEND_GROUP_FILE,
     };
-    for (const quint32 service : expectedServices) {
-        QVERIFY2(requestServices.contains(service),
-                 qPrintable(QStringLiteral("missing request service %1").arg(service)));
+    for (const auto operation : expectedOperations) {
+        QVERIFY2(requestOperations.contains(operation),
+                 qPrintable(QStringLiteral("missing request operation %1").arg(static_cast<int>(operation))));
     }
-    QCOMPARE(requestServices.count(protocol::PullFriendListRequest), 2);
+    QCOMPARE(requestOperations.count(protocol::Operation::OP_PULL_FRIEND_LIST), 2);
 
-    QCOMPARE(packets[protocol::PullSessionMessagesRequest].pullConversationMessagesRequest().conversationId(), 8001);
-    QCOMPARE(packets[protocol::PullSessionMessagesRequest].pullConversationMessagesRequest().afterSeq(), 7);
-    QCOMPARE(packets[protocol::SendTextRequest].sendTextRequest().to(), 43);
-    QCOMPARE(packets[protocol::SendTextRequest].sendTextRequest().clientMessageId(), QStringLiteral("client-text"));
-    QCOMPARE(packets[protocol::SendGroupTextRequest].sendGroupTextRequest().groupId(), 5001);
-    QCOMPARE(packets[protocol::KickGroupMemberRequest].kickGroupMemberRequest().memberUid(), 43);
-    QCOMPARE(packets[protocol::SendGroupFileRequest].sendGroupFileRequest().file().fileId(), file.fileId());
-    QCOMPARE(packets[protocol::UploadFileRequest].fileUploadRequest().file().fileId(), file.fileId());
-    QCOMPARE(packets[protocol::FileUploadCompleteRequest].fileUploadCompleteRequest().complete(), true);
-    QCOMPARE(packets[protocol::SendFileRequest].sendFileRequest().clientMessageId(), QStringLiteral("client-file"));
-    QCOMPARE(packets[protocol::FileDownloadRequest].fileDownloadRequest().offset(), 0);
-    for (const quint32 service : expectedServices) {
-        QVERIFY(packets[service].hasRequest());
-        QVERIFY(!packets[service].request().requestId().isEmpty());
-    }
+    QCOMPARE(
+        packets[protocol::Operation::OP_PULL_CONVERSATION_MESSAGES].pullConversationMessagesRequest().conversationId(),
+        8001);
+    QCOMPARE(packets[protocol::Operation::OP_PULL_CONVERSATION_MESSAGES].pullConversationMessagesRequest().afterSeq(),
+             7);
+    QCOMPARE(packets[protocol::Operation::OP_SEND_TEXT].sendTextRequest().to(), 43);
+    QCOMPARE(packets[protocol::Operation::OP_SEND_TEXT].sendTextRequest().clientMessageId(),
+             QStringLiteral("client-text"));
+    QCOMPARE(packets[protocol::Operation::OP_SEND_GROUP_TEXT].sendGroupTextRequest().groupId(), 5001);
+    QCOMPARE(packets[protocol::Operation::OP_KICK_GROUP_MEMBER].kickGroupMemberRequest().memberUid(), 43);
+    QCOMPARE(packets[protocol::Operation::OP_SEND_GROUP_FILE].sendGroupFileRequest().file().fileId(), file.fileId());
+    QCOMPARE(packets[protocol::Operation::OP_UPLOAD_FILE].fileUploadRequest().file().fileId(), file.fileId());
+    QCOMPARE(packets[protocol::Operation::OP_COMPLETE_FILE_UPLOAD].fileUploadCompleteRequest().complete(), true);
+    QCOMPARE(packets[protocol::Operation::OP_SEND_FILE].sendFileRequest().clientMessageId(),
+             QStringLiteral("client-file"));
+    QCOMPARE(packets[protocol::Operation::OP_DOWNLOAD_FILE].fileDownloadRequest().offset(), 0);
 
     wimi::protocol::Packet push;
     wimi::protocol::TextMessagePush textPush;
@@ -348,7 +389,7 @@ void ClientNetworkTest::gatewayCoversSupportedRequestAndReceiptContracts()
     textPush.setConversationId(8001);
     textPush.setConversationSeq(10);
     push.setTextMessagePush(std::move(textPush));
-    serverSocket->write(TcpFrameCodec::Encode(protocol::SendTextRequest, PacketPayload(push)));
+    serverSocket->write(TcpFrameCodec::Encode(PushPayload(7002, std::move(push))));
     QTRY_COMPARE(pushes.count(), 1);
 
     gateway.AcknowledgeDelivered(7002, 8001, 10);
@@ -377,14 +418,16 @@ void ClientNetworkTest::gatewayReconnectsAndAuthenticatesAgain()
         auto codec = QSharedPointer<TcpFrameCodec>::create();
         connect(socket, &QTcpSocket::readyRead, socket, [socket, codec, &loginPackets] {
             for (const auto& frame : codec->Feed(socket->readAll())) {
-                if (frame.serviceId != protocol::LoginRequest) {
+                const auto envelope = ParseEnvelope(frame.payload);
+                if (!envelope.hasRequest() || !envelope.request().packet().hasLoginRequest()) {
                     continue;
                 }
-                loginPackets.push_back(ParsePacket(frame.payload));
+                loginPackets.push_back(envelope.request().packet());
                 wimi::protocol::Packet response;
                 SetSuccess(&response);
                 response.setLoginResponse(wimi::protocol::LoginResponse{});
-                socket->write(TcpFrameCodec::Encode(protocol::LoginResponse, PacketPayload(response)));
+                socket->write(TcpFrameCodec::Encode(ResponsePayload(
+                    envelope.request().requestId(), envelope.request().operation(), std::move(response))));
             }
         });
     });

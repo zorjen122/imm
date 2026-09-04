@@ -155,16 +155,15 @@ class GatewayStreamReactor final
     void HandleCommand(gateway::CommandEnvelope command)
     {
         const std::string requestId = command.request_id();
-        const uint32_t serviceId = command.service_id();
+        const auto operation = command.operation();
         if (!registered || requestId.empty()) {
             LOG_WARN(logger,
-                     "[message/command] 拒绝未注册或缺少 request_id 的请求, gateway: {}, service_id: {}, "
+                     "[message/command] 拒绝未注册或缺少 request_id 的请求, gateway: {}, operation: {}, "
                      "registered: {}",
-                     gatewayId, serviceId, registered);
+                     gatewayId, static_cast<int>(operation), registered);
             gateway::MessageToGatewayFrame responseFrame;
             auto* response = responseFrame.mutable_command_result();
             response->set_request_id(requestId);
-            response->set_response_service_id(__getServiceResponseId(ServiceID(serviceId)));
             response->set_error(ErrorCodes::AuthenticationRequired);
             response->set_retryable(false);
             response->set_packet(SerializeTcpPacket(MakeErrorPacket(
@@ -177,20 +176,19 @@ class GatewayStreamReactor final
         // gRPC 流线程只负责收发和轻量分发，真正消息服务逻辑在线程池里跑。
         const std::string originGatewayId = gatewayId;
         const std::string originInstanceId = instanceId;
-        LOG_DEBUG(logger, "[message/command] 请求已进入业务队列, gateway: {}, request_id: {}, uid: {}, service_id: {}",
-                  gatewayId, requestId, command.actor_uid(), serviceId);
+        LOG_DEBUG(logger, "[message/command] 请求已进入业务队列, gateway: {}, request_id: {}, uid: {}, operation: {}",
+                  gatewayId, requestId, command.actor_uid(), static_cast<int>(operation));
         auto accepted = Service::GetInstance()->PostBackgroundTask(
             [this, originGatewayId, originInstanceId, command = std::move(command)]() mutable {
                 HandleBackgroundCommand(originGatewayId, originInstanceId, std::move(command));
             });
 
         if (!accepted) {
-            LOG_WARN(logger, "[message/command] 业务队列已满, 请求被拒绝, gateway: {}, request_id: {}, service_id: {}",
-                     gatewayId, requestId, serviceId);
+            LOG_WARN(logger, "[message/command] 业务队列已满, 请求被拒绝, gateway: {}, request_id: {}, operation: {}",
+                     gatewayId, requestId, static_cast<int>(operation));
             gateway::MessageToGatewayFrame responseFrame;
             auto* response = responseFrame.mutable_command_result();
             response->set_request_id(requestId);
-            response->set_response_service_id(__getServiceResponseId(ServiceID(serviceId)));
             response->set_error(ErrorCodes::ResourceExhausted);
             response->set_retryable(true);
             response->set_packet(
@@ -208,7 +206,6 @@ class GatewayStreamReactor final
         gateway::MessageToGatewayFrame responseFrame;
         auto* response = responseFrame.mutable_command_result();
         response->set_request_id(command.request_id());
-        response->set_response_service_id(__getServiceResponseId(ServiceID(command.service_id())));
         auto reply = [&](int error, bool retryable, std::string errorMessage = {},
                          std::optional<TcpPacket> replyPacket = std::nullopt) {
             if (!replyPacket)
@@ -221,13 +218,14 @@ class GatewayStreamReactor final
             if (!replied) {
                 LOG_WARN(logger,
                          "[message/command-result] 处理结果未进入 Gateway 写队列, gateway: {}, request_id: {}, "
-                         "service_id: {}, error: {}",
-                         originGatewayId, command.request_id(), command.service_id(), error);
+                         "operation: {}, error: {}",
+                         originGatewayId, command.request_id(), static_cast<int>(command.operation()), error);
             } else {
                 LOG_DEBUG(logger,
                           "[message/command-result] 处理结果已返回 Gateway, gateway: {}, request_id: {}, "
-                          "service_id: {}, error: {}, retryable: {}",
-                          originGatewayId, command.request_id(), command.service_id(), error, retryable);
+                          "operation: {}, error: {}, retryable: {}",
+                          originGatewayId, command.request_id(), static_cast<int>(command.operation()), error,
+                          retryable);
             }
         };
 
@@ -239,25 +237,25 @@ class GatewayStreamReactor final
         if (actorLease.empty() || actorLease.gatewayId != originGatewayId ||
             actorLease.instanceId != originInstanceId || actorLease.connectionId != command.connection_id() ||
             actorLease.generation != command.connection_generation()) {
-            LOG_WARN(logger, "[message/command] 连接租约校验失败, gateway: {}, request_id: {}, uid: {}, service_id: {}",
-                     originGatewayId, command.request_id(), command.actor_uid(), command.service_id());
+            LOG_WARN(logger, "[message/command] 连接租约校验失败, gateway: {}, request_id: {}, uid: {}, operation: {}",
+                     originGatewayId, command.request_id(), command.actor_uid(), static_cast<int>(command.operation()));
             reply(ErrorCodes::AuthenticationRequired, false, "connection generation is no longer current");
             return;
         }
 
         // 接着解析原始 TCP 业务包并进入业务层
         // Gateway 传来的 command.packet() 是 TCP packet 序列化结果。
-        if (!ParseTcpPacket(command.packet(), packet) || !TcpRequestMatchesService(command.service_id(), packet)) {
+        if (!ParseTcpPacket(command.packet(), packet) || !TcpRequestMatchesOperation(command.operation(), packet)) {
             LOG_WARN(logger,
                      "[message/command] 请求包解析或协议校验失败, gateway: {}, request_id: {}, uid: {}, "
-                     "service_id: {}, bytes: {}",
-                     originGatewayId, command.request_id(), command.actor_uid(), command.service_id(),
+                     "operation: {}, bytes: {}",
+                     originGatewayId, command.request_id(), command.actor_uid(), static_cast<int>(command.operation()),
                      command.packet().size());
             reply(ErrorCodes::JsonParser, false);
             return;
         }
 
-        if (command.service_id() == ID_ACK) {
+        if (command.operation() == protocol::Operation::OP_ACKNOWLEDGE) {
             auto ack = Service::GetInstance()->Messages().Ack(command.actor_uid(), packet, command.actor_device_id());
             const auto error = TcpPacketError(ack.response);
             reply(error, isRetryableError(error), {}, ack.response);
@@ -268,7 +266,6 @@ class GatewayStreamReactor final
                 gateway::ClientForwardEnvelope forward;
                 forward.set_forward_id("read:" + std::to_string(receipt.seq()) + ":" + std::to_string(ack.senderUid));
                 forward.set_recipient_uid(ack.senderUid);
-                forward.set_protocol_id(ID_TEXT_READ_RECEIPT_NOTIFY);
                 forward.set_message_id(receipt.seq());
                 forward.set_conversation_id(readReceipt.conversation_id());
                 forward.set_conversation_seq(readReceipt.conversation_seq());
@@ -278,7 +275,7 @@ class GatewayStreamReactor final
             return;
         }
 
-        if (command.service_id() == ID_TEXT_SEND_REQ) {
+        if (command.operation() == protocol::Operation::OP_SEND_TEXT) {
             auto acceptedText = Service::GetInstance()->Messages().AcceptText(command.actor_uid(), packet);
             const auto error = TcpPacketError(acceptedText.response);
             const bool retryable = isRetryableError(error);
@@ -291,7 +288,6 @@ class GatewayStreamReactor final
                 forward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                        std::to_string(acceptedText.recipientUid));
                 forward.set_recipient_uid(acceptedText.recipientUid);
-                forward.set_protocol_id(ID_TEXT_SEND_REQ);
                 forward.set_message_id(accepted.message_id());
                 forward.set_conversation_id(accepted.conversation_id());
                 forward.set_conversation_seq(accepted.conversation_seq());
@@ -304,7 +300,7 @@ class GatewayStreamReactor final
             return;
         }
 
-        if (command.service_id() == ID_FILE_SEND_REQ) {
+        if (command.operation() == protocol::Operation::OP_SEND_FILE) {
             auto acceptedFile = Service::GetInstance()->Messages().AcceptFile(command.actor_uid(), packet);
             const auto error = TcpPacketError(acceptedFile.response);
             reply(error, isRetryableError(error), {}, acceptedFile.response);
@@ -314,7 +310,6 @@ class GatewayStreamReactor final
                 forward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                        std::to_string(acceptedFile.recipientUid));
                 forward.set_recipient_uid(acceptedFile.recipientUid);
-                forward.set_protocol_id(ID_FILE_SEND_REQ);
                 forward.set_message_id(accepted.message_id());
                 forward.set_conversation_id(accepted.conversation_id());
                 forward.set_conversation_seq(accepted.conversation_seq());
@@ -327,7 +322,7 @@ class GatewayStreamReactor final
             return;
         }
 
-        if (command.service_id() == ID_GROUP_TEXT_SEND_REQ) {
+        if (command.operation() == protocol::Operation::OP_SEND_GROUP_TEXT) {
             auto acceptedText = Service::GetInstance()->Messages().AcceptGroupText(command.actor_uid(), packet);
             const auto error = TcpPacketError(acceptedText.response);
             const bool retryable = isRetryableError(error);
@@ -339,7 +334,6 @@ class GatewayStreamReactor final
                     gateway::ClientForwardEnvelope forward;
                     forward.set_forward_id(std::to_string(accepted.message_id()) + ":" + std::to_string(recipientUid));
                     forward.set_recipient_uid(recipientUid);
-                    forward.set_protocol_id(ID_GROUP_TEXT_SEND_REQ);
                     forward.set_message_id(accepted.message_id());
                     forward.set_conversation_id(accepted.conversation_id());
                     forward.set_conversation_seq(accepted.conversation_seq());
@@ -350,7 +344,6 @@ class GatewayStreamReactor final
                 senderForward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                              std::to_string(command.actor_uid()));
                 senderForward.set_recipient_uid(command.actor_uid());
-                senderForward.set_protocol_id(ID_GROUP_TEXT_SEND_REQ);
                 senderForward.set_message_id(accepted.message_id());
                 senderForward.set_conversation_id(accepted.conversation_id());
                 senderForward.set_conversation_seq(accepted.conversation_seq());
@@ -360,7 +353,7 @@ class GatewayStreamReactor final
             return;
         }
 
-        if (command.service_id() == ID_GROUP_FILE_SEND_REQ) {
+        if (command.operation() == protocol::Operation::OP_SEND_GROUP_FILE) {
             auto acceptedFile = Service::GetInstance()->Messages().AcceptGroupFile(command.actor_uid(), packet);
             const auto error = TcpPacketError(acceptedFile.response);
             reply(error, isRetryableError(error), {}, acceptedFile.response);
@@ -370,7 +363,6 @@ class GatewayStreamReactor final
                     gateway::ClientForwardEnvelope forward;
                     forward.set_forward_id(std::to_string(accepted.message_id()) + ":" + std::to_string(recipientUid));
                     forward.set_recipient_uid(recipientUid);
-                    forward.set_protocol_id(ID_GROUP_FILE_SEND_REQ);
                     forward.set_message_id(accepted.message_id());
                     forward.set_conversation_id(accepted.conversation_id());
                     forward.set_conversation_seq(accepted.conversation_seq());
@@ -381,7 +373,6 @@ class GatewayStreamReactor final
                 senderForward.set_forward_id(std::to_string(accepted.message_id()) + ":" +
                                              std::to_string(command.actor_uid()));
                 senderForward.set_recipient_uid(command.actor_uid());
-                senderForward.set_protocol_id(ID_GROUP_FILE_SEND_REQ);
                 senderForward.set_message_id(accepted.message_id());
                 senderForward.set_conversation_id(accepted.conversation_id());
                 senderForward.set_conversation_seq(accepted.conversation_seq());
@@ -392,7 +383,7 @@ class GatewayStreamReactor final
         }
 
         auto packetResponse =
-            Service::GetInstance()->ExecuteGatewayCommand(command.service_id(), command.actor_uid(), std::move(packet));
+            Service::GetInstance()->ExecuteGatewayCommand(command.operation(), command.actor_uid(), std::move(packet));
         const auto error = TcpPacketError(packetResponse);
         reply(error, isRetryableError(error), {}, packetResponse);
     }
@@ -501,8 +492,8 @@ bool GatewayStreamService::ForwardToUser(int64_t recipientUid, gateway::ClientFo
             ++forwardedCount;
         }
     }
-    LOG_DEBUG(logger, "[message/client-forward] 用户推送处理完成, uid: {}, protocol_id: {}, leases: {}, forwarded: {}",
-              recipientUid, envelope.protocol_id(), leases.size(), forwardedCount);
+    LOG_DEBUG(logger, "[message/client-forward] 用户推送处理完成, uid: {}, leases: {}, forwarded: {}", recipientUid,
+              leases.size(), forwardedCount);
     return forwarded;
 }
 

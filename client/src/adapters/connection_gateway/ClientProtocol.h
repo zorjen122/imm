@@ -1,66 +1,13 @@
 #pragma once
 
+#include "tcp_message.qpb.h"
+
 #include <QtGlobal>
 
 namespace wimi::client::protocol
 {
 
-enum ServiceId : quint32 {
-    PullFriendListRequest = 1001,
-    PullFriendListResponse = 1002,
-    PullFriendApplyListRequest = 1003,
-    PullFriendApplyListResponse = 1004,
-    PullSessionMessagesRequest = 1005,
-    PullSessionMessagesResponse = 1006,
-    PullGroupMembersRequest = 1009,
-    PullGroupMembersResponse = 1010,
-    PingRequest = 1011,
-    PingResponse = 1012,
-    LoginRequest = 1013,
-    LoginResponse = 1014,
-    QuitRequest = 1015,
-    QuitResponse = 1016,
-    InitUserInfoRequest = 1017,
-    InitUserInfoResponse = 1018,
-    SearchUserRequest = 1019,
-    SearchUserResponse = 1020,
-    AddFriendRequest = 1021,
-    AddFriendResponse = 1022,
-    ReplyFriendRequest = 1023,
-    ReplyFriendResponse = 1024,
-    RemoveFriendRequest = 1025,
-    RemoveFriendResponse = 1026,
-    SendTextRequest = 1027,
-    SendTextResponse = 1028,
-    SendFileRequest = 1029,
-    SendFileResponse = 1030,
-    UploadFileRequest = 1031,
-    UploadFileResponse = 1032,
-    Ack = 1033,
-    NullResponse = 1034,
-    CreateGroupRequest = 1035,
-    CreateGroupResponse = 1036,
-    JoinGroupRequest = 1037,
-    JoinGroupResponse = 1038,
-    ReplyJoinGroupRequest = 1039,
-    ReplyJoinGroupResponse = 1040,
-    QuitGroupRequest = 1041,
-    QuitGroupResponse = 1042,
-    SendGroupTextRequest = 1043,
-    SendGroupTextResponse = 1044,
-    TextReadReceiptNotification = 1045,
-    TextReadReceiptNotificationResponse = 1046,
-    FileUploadChunkRequest = 1047,
-    FileUploadChunkResponse = 1048,
-    FileUploadCompleteRequest = 1049,
-    FileUploadCompleteResponse = 1050,
-    FileDownloadRequest = 1051,
-    FileDownloadResponse = 1052,
-    KickGroupMemberRequest = 1053,
-    KickGroupMemberResponse = 1054,
-    SendGroupFileRequest = 1055,
-    SendGroupFileResponse = 1056,
-};
+using Operation = wimi::protocol::OperationGadget::Operation;
 
 enum ErrorCode : int {
     Success = 0,
@@ -97,9 +44,24 @@ enum ErrorCode : int {
     IdempotencyConflict = 1030,
 };
 
-constexpr quint32 ResponseFor(quint32 requestServiceId)
+inline wimi::protocol::PushTypeGadget::PushType PushTypeFor(const wimi::protocol::Packet& packet)
 {
-    return requestServiceId == Ack ? NullResponse : requestServiceId + 1;
+    using PushType = wimi::protocol::PushTypeGadget::PushType;
+    if (packet.hasTextMessagePush())
+        return PushType::PUSH_TYPE_TEXT_MESSAGE;
+    if (packet.hasFileMessagePush())
+        return PushType::PUSH_TYPE_FILE_MESSAGE;
+    if (packet.hasFriendRequestPush())
+        return PushType::PUSH_TYPE_FRIEND_REQUEST;
+    if (packet.hasFriendReplyPush())
+        return PushType::PUSH_TYPE_FRIEND_REPLY;
+    if (packet.hasGroupJoinRequestPush())
+        return PushType::PUSH_TYPE_GROUP_JOIN_REQUEST;
+    if (packet.hasGroupChangePush())
+        return PushType::PUSH_TYPE_GROUP_CHANGE;
+    if (packet.hasReadReceiptPush())
+        return PushType::PUSH_TYPE_READ_RECEIPT;
+    return PushType::PUSH_TYPE_UNSPECIFIED;
 }
 
 constexpr bool IsRetryableError(int code)

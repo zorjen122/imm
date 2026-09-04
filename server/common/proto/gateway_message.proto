@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package wimi.gateway;
 
+import "tcp_message.proto";
+
 // Gateway 建流后的首帧，用于声明节点身份和本次进程实例。
 message RegisterGateway {
   uint32 protocol_version = 1; // Gateway-Message 流协议版本
@@ -25,7 +27,7 @@ message CommandEnvelope {
   int64 actor_uid = 2;               // 已由 Gateway 鉴权的操作者用户 ID
   string connection_id = 3;         // 客户端物理连接 UUID
   uint64 connection_generation = 4; // 用户在线 lease 的连接代次
-  uint32 service_id = 5;             // 客户端 TCP/TLV 业务协议 ID
+  wimi.protocol.Operation operation = 5; // 客户端业务操作
   int64 conversation_id = 6;         // 会话 ID；无会话命令为 0
   bytes packet = 8;                  // 序列化后的 protocol.Packet
   string actor_device_id = 9;        // 已由 Gateway 鉴权的设备 ID
@@ -33,11 +35,10 @@ message CommandEnvelope {
 
 // Message Core 返回给入口 Gateway 的业务处理结果。
 message CommandResult {
-  string request_id = 1;         // 对应 CommandEnvelope.request_id
-  uint32 response_service_id = 2; // 发回客户端的响应协议 ID
-  int32 error = 3;                // 统一业务错误码
-  bool retryable = 4;             // 是否允许使用同一幂等键重试
-  bytes packet = 5;               // 序列化后的响应 protocol.Packet
+  string request_id = 1; // 对应 CommandEnvelope.request_id
+  int32 error = 3;       // 统一业务错误码
+  bool retryable = 4;    // 是否允许使用同一幂等键重试
+  bytes packet = 5;      // 序列化后的响应 protocol.Packet
 }
 
 // Message Core 请求目标 Gateway 转发给客户端的消息/通知。
@@ -46,7 +47,6 @@ message ClientForwardEnvelope {
   int64 recipient_uid = 2;             // 目标用户 ID
   string expected_connection_id = 3;   // 查询 lease 时看到的连接 UUID
   uint64 expected_connection_generation = 4; // 查询 lease 时看到的连接代次
-  uint32 protocol_id = 5;              // 客户端接收的推送协议 ID
   int64 message_id = 6;                // 持久化消息 ID；非消息通知可为 0
   int64 conversation_id = 7;           // 所属会话 ID；非会话通知可为 0
   int64 conversation_seq = 8;          // 会话内严格递增序号

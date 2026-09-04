@@ -6,13 +6,13 @@
 namespace wimi::client
 {
 
-QByteArray TcpFrameCodec::Encode(quint32 serviceId, const QByteArray& payload)
+QByteArray TcpFrameCodec::Encode(const QByteArray& payload)
 {
     QByteArray frame;
     frame.reserve(kHeaderSize + payload.size());
     QDataStream stream(&frame, QIODevice::WriteOnly);
     stream.setByteOrder(QDataStream::BigEndian);
-    stream << serviceId << static_cast<quint32>(payload.size());
+    stream << static_cast<quint32>(payload.size());
     frame.append(payload);
     return frame;
 }
@@ -28,9 +28,8 @@ QVector<TcpFrame> TcpFrameCodec::Feed(const QByteArray& bytes)
     while (buffer_.size() >= static_cast<qsizetype>(kHeaderSize)) {
         QDataStream header(buffer_.left(kHeaderSize));
         header.setByteOrder(QDataStream::BigEndian);
-        quint32 serviceId = 0;
         quint32 payloadSize = 0;
-        header >> serviceId >> payloadSize;
+        header >> payloadSize;
         if (header.status() != QDataStream::Ok) {
             error_ = QStringLiteral("invalid TCP frame header");
             buffer_.clear();
@@ -48,7 +47,6 @@ QVector<TcpFrame> TcpFrameCodec::Feed(const QByteArray& bytes)
         }
 
         frames.push_back(TcpFrame{
-            .serviceId = serviceId,
             .payload = buffer_.mid(kHeaderSize, payloadSize),
         });
         buffer_.remove(0, totalSize);

@@ -48,7 +48,7 @@ sudo apt-get install -y libmysqlcppconn-dev libmysqlcppconn10 libmysqlcppconnx2
 | `50052` | State gRPC |
 | `50055`、`50056` | Message gRPC 节点 |
 | `8090`、`8091` | Connection Gateway TCP 节点 |
-| `51000` | File gRPC |
+| `51100` | File gRPC |
 | `6380` | Redis 初始主节点，密码为 `root` |
 | `6381`、`6382` | Redis 副本节点，密码为 `root` |
 | `26389`、`26390`、`26391` | Redis Sentinel，密码为 `root` |

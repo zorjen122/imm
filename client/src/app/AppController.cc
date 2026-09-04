@@ -1104,7 +1104,8 @@ void AppController::ConfigureNetwork(const QString& gateUrl)
     emit authRequiredChanged();
 }
 
-void AppController::HandleGatewayResponse(const QString& requestId, quint32 serviceId, const QByteArray& payload)
+void AppController::HandleGatewayResponse(const QString& requestId, protocol::Operation operation,
+                                          const QByteArray& payload)
 {
     wimi::protocol::Packet response;
     if (!ParseProtobufPacket(payload, &response)) {
@@ -1113,7 +1114,7 @@ void AppController::HandleGatewayResponse(const QString& requestId, quint32 serv
     }
     const int errorCode = PacketError(response);
 
-    if (serviceId == protocol::PullGroupMembersResponse) {
+    if (operation == protocol::Operation::OP_PULL_GROUP_MEMBERS) {
         if (!response.hasPullGroupMembersResponse()) {
             SetServiceActionStatus(PacketStatusMessage(response).isEmpty() ? tr("无法拉取群成员")
                                                                            : PacketStatusMessage(response));
@@ -1377,7 +1378,7 @@ void AppController::HandleGatewayResponse(const QString& requestId, quint32 serv
         return;
     }
 
-    if (serviceId == protocol::CreateGroupResponse) {
+    if (operation == protocol::Operation::OP_CREATE_GROUP) {
         const QString groupName = create_group_requests_.take(requestId);
         if (errorCode != protocol::Success || !response.hasCreateGroupResponse() ||
             response.createGroupResponse().groupId() <= 0) {
@@ -1399,7 +1400,7 @@ void AppController::HandleGatewayResponse(const QString& requestId, quint32 serv
         return;
     }
 
-    if (serviceId == protocol::SendTextResponse || serviceId == protocol::SendGroupTextResponse) {
+    if (operation == protocol::Operation::OP_SEND_TEXT || operation == protocol::Operation::OP_SEND_GROUP_TEXT) {
         const auto found = outgoing_request_messages_.find(requestId);
         if (found == outgoing_request_messages_.end()) {
             return;
@@ -1464,7 +1465,7 @@ void AppController::HandleGatewayResponse(const QString& requestId, quint32 serv
         return;
     }
 
-    if (serviceId == protocol::PullFriendListResponse) {
+    if (operation == protocol::Operation::OP_PULL_FRIEND_LIST) {
         if (errorCode != protocol::Success || !response.hasPullFriendListResponse()) {
             SetServiceActionStatus(tr("拉取好友列表失败（%1）").arg(errorCode));
             return;
@@ -1500,7 +1501,7 @@ void AppController::HandleGatewayResponse(const QString& requestId, quint32 serv
         return;
     }
 
-    if (serviceId == protocol::PullFriendApplyListResponse) {
+    if (operation == protocol::Operation::OP_PULL_FRIEND_APPLICATIONS) {
         if (errorCode != protocol::Success || !response.hasPullFriendApplyListResponse()) {
             SetServiceActionStatus(tr("拉取好友申请失败（%1）").arg(errorCode));
             return;
@@ -1528,7 +1529,7 @@ void AppController::HandleGatewayResponse(const QString& requestId, quint32 serv
         return;
     }
 
-    if (serviceId == protocol::PullSessionMessagesResponse) {
+    if (operation == protocol::Operation::OP_PULL_CONVERSATION_MESSAGES) {
         const QString localConversationId = sync_request_conversations_.take(requestId);
         if (localConversationId.isEmpty() || errorCode != protocol::Success ||
             !response.hasPullConversationMessagesResponse()) {
@@ -1693,10 +1694,10 @@ void AppController::DrainPendingPush(const QString& localConversationId)
     pending->erase(next);
     if (pending->isEmpty())
         pending_pushes_.erase(pending);
-    QTimer::singleShot(0, this, [this, frame] { HandleGatewayPush(frame.first, frame.second); });
+    QTimer::singleShot(0, this, [this, frame] { HandleGatewayPush(frame); });
 }
 
-void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& payload)
+void AppController::HandleGatewayPush(const QByteArray& payload)
 {
     wimi::protocol::Packet packet;
     if (!ParseProtobufPacket(payload, &packet)) {
@@ -1704,11 +1705,7 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
         return;
     }
 
-    if (serviceId == protocol::TextReadReceiptNotification) {
-        if (!packet.hasReadReceiptPush()) {
-            SetServiceActionStatus(tr("收到不完整的已读通知"));
-            return;
-        }
+    if (packet.hasReadReceiptPush()) {
         const auto& receipt = packet.readReceiptPush();
         if (receipt.messageId() <= 0) {
             SetServiceActionStatus(tr("收到不完整的已读通知"));
@@ -1729,14 +1726,10 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
         return;
     }
 
-    if (serviceId == protocol::SendTextRequest || serviceId == protocol::SendGroupTextRequest ||
-        serviceId == protocol::SendFileRequest || serviceId == protocol::SendGroupFileRequest) {
-        const bool group = serviceId == protocol::SendGroupTextRequest || serviceId == protocol::SendGroupFileRequest;
-        const bool fileMessage = serviceId == protocol::SendFileRequest || serviceId == protocol::SendGroupFileRequest;
-        if ((fileMessage && !packet.hasFileMessagePush()) || (!fileMessage && !packet.hasTextMessagePush())) {
-            SetServiceActionStatus(tr("收到与服务类型不匹配的消息推送"));
-            return;
-        }
+    if (packet.hasTextMessagePush() || packet.hasFileMessagePush()) {
+        const bool fileMessage = packet.hasFileMessagePush();
+        const bool group =
+            fileMessage ? packet.fileMessagePush().groupId() > 0 : packet.textMessagePush().groupId() > 0;
         const std::int64_t from = fileMessage ? packet.fileMessagePush().from() : packet.textMessagePush().from();
         const std::int64_t to = fileMessage ? packet.fileMessagePush().to() : packet.textMessagePush().to();
         const std::int64_t groupId =
@@ -1768,7 +1761,7 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
         }
         const std::int64_t cursor = repository_->SyncCursor(localConversationId);
         if (conversationSeq > cursor + 1) {
-            pending_pushes_[localConversationId].insert(conversationSeq, qMakePair(serviceId, payload));
+            pending_pushes_[localConversationId].insert(conversationSeq, payload);
             ScheduleGapSync(localConversationId);
             return;
         }
@@ -1850,13 +1843,8 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
         return;
     }
 
-    if (serviceId == protocol::AddFriendRequest || serviceId == protocol::JoinGroupRequest) {
-        if ((serviceId == protocol::AddFriendRequest && !packet.hasFriendRequestPush()) ||
-            (serviceId == protocol::JoinGroupRequest && !packet.hasGroupJoinRequestPush())) {
-            SetServiceActionStatus(tr("收到与服务类型不匹配的申请推送"));
-            return;
-        }
-        const bool groupRequest = serviceId == protocol::JoinGroupRequest;
+    if (packet.hasFriendRequestPush() || packet.hasGroupJoinRequestPush()) {
+        const bool groupRequest = packet.hasGroupJoinRequestPush();
         const std::int64_t requestorUid =
             groupRequest ? packet.groupJoinRequestPush().requestorUid() : packet.friendRequestPush().from();
         const std::int64_t groupId =
@@ -1883,11 +1871,7 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
         return;
     }
 
-    if (serviceId == protocol::ReplyJoinGroupRequest) {
-        if (!packet.hasGroupChangePush()) {
-            SetServiceActionStatus(tr("收到与服务类型不匹配的群变更推送"));
-            return;
-        }
+    if (packet.hasGroupChangePush()) {
         const auto& changePush = packet.groupChangePush();
         if (changePush.groupId() <= 0)
             return;
@@ -1940,11 +1924,7 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
         return;
     }
 
-    if (serviceId == protocol::ReplyFriendRequest) {
-        if (!packet.hasFriendReplyPush()) {
-            SetServiceActionStatus(tr("收到与服务类型不匹配的好友回复推送"));
-            return;
-        }
+    if (packet.hasFriendReplyPush()) {
         if (packet.friendReplyPush().seq() > 0)
             gateway_client_.AcknowledgeDelivered(packet.friendReplyPush().seq(), 0, 0);
         gateway_client_.PullFriendList();
@@ -1952,7 +1932,7 @@ void AppController::HandleGatewayPush(quint32 serviceId, const QByteArray& paylo
     }
 }
 
-void AppController::HandleGatewayFailure(const QString& requestId, quint32 serviceId, int errorCode,
+void AppController::HandleGatewayFailure(const QString& requestId, protocol::Operation operation, int errorCode,
                                          const QString& message, bool outcomeUnknown)
 {
     const QString downloadId = file_download_requests_.take(requestId);
@@ -1999,7 +1979,7 @@ void AppController::HandleGatewayFailure(const QString& requestId, quint32 servi
         SetRequestStatus(std::abs(encodedRequestIndex) - 1, QStringLiteral("pending"), false);
     }
     create_group_requests_.remove(requestId);
-    SetServiceActionStatus(tr("请求 %1 失败：%2").arg(serviceId).arg(message));
+    SetServiceActionStatus(tr("请求 %1 失败：%2").arg(static_cast<int>(operation)).arg(message));
 }
 
 void AppController::SyncKnownConversations()

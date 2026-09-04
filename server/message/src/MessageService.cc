@@ -267,27 +267,7 @@ MessageService::AcceptedGroupText MessageService::AcceptGroupFile(int64_t actorU
     return result;
 }
 
-TcpPacket MessageService::SendText(uint32_t, int64_t actorUid, TcpPacket& request)
-{
-    return AcceptText(actorUid, request).response;
-}
-
-TcpPacket MessageService::SendGroupText(uint32_t, int64_t actorUid, TcpPacket& request)
-{
-    return AcceptGroupText(actorUid, request).response;
-}
-
-TcpPacket MessageService::SendFile(uint32_t, int64_t actorUid, TcpPacket& request)
-{
-    return AcceptFile(actorUid, request).response;
-}
-
-TcpPacket MessageService::SendGroupFile(uint32_t, int64_t actorUid, TcpPacket& request)
-{
-    return AcceptGroupFile(actorUid, request).response;
-}
-
-TcpPacket MessageService::PullConversationMessages(uint32_t, int64_t actorUid, TcpPacket& request)
+TcpPacket MessageService::PullConversationMessages(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const auto& pull = request.pull_conversation_messages_request();

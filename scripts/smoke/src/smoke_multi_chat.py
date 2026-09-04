@@ -3,7 +3,7 @@ import os
 import subprocess
 import time
 
-from wimi_tcp_client import WimClient, is_retryable_error, request_chat_auth, require
+from wimi_tcp_client import Operation, PushType, WimClient, is_retryable_error, request_chat_auth, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])
@@ -23,13 +23,6 @@ REDIS_PORT = os.environ["WIMI_REDIS_PORT"]
 REDIS_PASSWORD = os.environ["WIMI_REDIS_PASSWORD"]
 RESULT_FILE = os.environ["RESULT_FILE"]
 GATE_URL = os.environ["GATE_URL"]
-
-ID_PULL_FRIEND_LIST_REQ = 1001
-ID_PULL_FRIEND_APPLY_LIST_REQ = 1003
-ID_NOTIFY_ADD_FRIEND_REQ = 1021
-ID_REPLY_ADD_FRIEND_REQ = 1023
-ID_TEXT_SEND_REQ = 1027
-ID_TEXT_READ_RECEIPT_NOTIFY = 1045
 
 NOTIFY_MESSAGE_READ = 2
 
@@ -79,19 +72,19 @@ try:
     print("redis gateway session routes ok")
 
     apply_rsp = a.request(
-        ID_NOTIFY_ADD_FRIEND_REQ,
+        Operation.OP_ADD_FRIEND,
         {"from": UID_A, "to": UID_B, "requestMessage": FRIEND_MSG},
     )
     require(apply_rsp.get("error") == 0, f"cross-node friend apply failed: {apply_rsp}")
-    b.expect_async(
-        ID_NOTIFY_ADD_FRIEND_REQ,
+    b.expect_push(
+        PushType.PUSH_TYPE_FRIEND_REQUEST,
         lambda payload: payload.get("from") == UID_A
         and payload.get("to") == UID_B
         and payload.get("requestMessage") == FRIEND_MSG,
     )
     print("cross-node friend apply push ok")
 
-    apply_pull = b.request(ID_PULL_FRIEND_APPLY_LIST_REQ, {"uid": UID_B})
+    apply_pull = b.request(Operation.OP_PULL_FRIEND_APPLICATIONS, {"uid": UID_B})
     require(apply_pull.get("error") == 0, f"pull friend apply failed: {apply_pull}")
     require(
         any(item.get("content") == FRIEND_MSG for item in apply_pull.get("applyList", [])),
@@ -99,20 +92,20 @@ try:
     )
 
     reply_rsp = b.request(
-        ID_REPLY_ADD_FRIEND_REQ,
+        Operation.OP_REPLY_FRIEND,
         {"from": UID_B, "to": UID_A, "accept": True, "replyMessage": FRIEND_REPLY},
     )
     require(reply_rsp.get("error") == 0, f"cross-node friend reply failed: {reply_rsp}")
-    a.expect_async(
-        ID_REPLY_ADD_FRIEND_REQ,
+    a.expect_push(
+        PushType.PUSH_TYPE_FRIEND_REPLY,
         lambda payload: payload.get("from") == UID_B
         and payload.get("to") == UID_A
         and payload.get("accept") is True,
     )
     print("cross-node friend reply push ok")
 
-    friends_a = a.request(ID_PULL_FRIEND_LIST_REQ, {"uid": UID_A})
-    friends_b = b.request(ID_PULL_FRIEND_LIST_REQ, {"uid": UID_B})
+    friends_a = a.request(Operation.OP_PULL_FRIEND_LIST, {"uid": UID_A})
+    friends_b = b.request(Operation.OP_PULL_FRIEND_LIST, {"uid": UID_B})
     require(friends_a.get("error") == 0, f"pull friend list A failed: {friends_a}")
     require(friends_b.get("error") == 0, f"pull friend list B failed: {friends_b}")
     require(
@@ -127,7 +120,7 @@ try:
 
     client_message_id = f"multi_text_{time.time_ns()}"
     text_rsp = a.request(
-        ID_TEXT_SEND_REQ,
+        Operation.OP_SEND_TEXT,
         {
             "from": UID_A,
             "to": UID_B,
@@ -138,8 +131,8 @@ try:
     require(text_rsp.get("error") == 0, f"cross-node text response failed: {text_rsp}")
     require(text_rsp.get("messageId", 0) > 0, f"cross-node message id missing: {text_rsp}")
 
-    text_push = b.expect_async(
-        ID_TEXT_SEND_REQ,
+    text_push = b.expect_push(
+        PushType.PUSH_TYPE_TEXT_MESSAGE,
         lambda payload: payload.get("from") == UID_A
         and payload.get("to") == UID_B
         and payload.get("data") == TEXT_PAYLOAD,
@@ -154,8 +147,8 @@ try:
     b.ack(server_seq, receipt_type=NOTIFY_MESSAGE_READ,
           conversation_id=text_push["conversationId"],
           conversation_seq=text_push["conversationSeq"])
-    read_notify = a.expect_async(
-      ID_TEXT_READ_RECEIPT_NOTIFY,
+    read_notify = a.expect_push(
+      PushType.PUSH_TYPE_READ_RECEIPT,
       lambda payload: payload.get("conversationId") == text_push["conversationId"]
       and payload.get("conversationSeq") == text_push["conversationSeq"]
       and payload.get("messageId") == server_seq
@@ -172,18 +165,18 @@ try:
             "requestTimeoutMs": 100,
             "requestId": f"multi_delay_request_{time.time_ns()}",
         }
-        delayed_first = a.request(ID_TEXT_SEND_REQ, delayed_body)
+        delayed_first = a.request(Operation.OP_SEND_TEXT, delayed_body)
         require(delayed_first.get("error", 0) != 0 and
                 is_retryable_error(delayed_first.get("error")),
                 f"delayed RPC did not time out retryably: {delayed_first}")
-        delayed_push = b.expect_async(
-            ID_TEXT_SEND_REQ,
+        delayed_push = b.expect_push(
+            PushType.PUSH_TYPE_TEXT_MESSAGE,
             lambda payload: payload.get("data") == "rpc_delay_after_accept",
         )
         delayed_server_seq = int(delayed_push["messageId"])
 
         delayed_body["requestTimeoutMs"] = 2000
-        delayed_retry = a.request(ID_TEXT_SEND_REQ, delayed_body)
+        delayed_retry = a.request(Operation.OP_SEND_TEXT, delayed_body)
         require(delayed_retry.get("error", 0) != 0 and
                 not is_retryable_error(delayed_retry.get("error")),
                 f"delayed RPC retry was not rejected as duplicate: {delayed_retry}")

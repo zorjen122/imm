@@ -53,13 +53,14 @@ Service::~Service()
     }
 }
 
-void Service::RegisterHandle(uint32_t msgID, TaskType taskType, HandleType handle)
+void Service::RegisterHandle(protocol::Operation operation, TaskType taskType, HandleType handle)
 {
-    if (serviceGroup.find(msgID) != serviceGroup.end()) {
-        LOG_WARN(logger, "[message/register-handler] 重复的服务处理器, service_id: {}", msgID);
+    if (serviceGroup.find(operation) != serviceGroup.end()) {
+        LOG_WARN(logger, "[message/register-handler] 重复的服务处理器, operation: {}",
+                 protocol::Operation_Name(operation));
         return;
     }
-    serviceGroup[msgID] = HandlerEntry{std::move(handle), taskType};
+    serviceGroup[operation] = HandlerEntry{std::move(handle), taskType};
 }
 
 void Service::Init()
@@ -67,70 +68,43 @@ void Service::Init()
     // 状态
 
     // 消息与文件
-    RegisterHandle(ID_TEXT_SEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return messageService.SendText(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_FILE_UPLOAD_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return fileService.Upload(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_FILE_UPLOAD_CHUNK_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return fileService.Upload(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_FILE_UPLOAD_COMPLETE_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return fileService.Upload(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_FILE_DOWNLOAD_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return fileService.Download(msgID, actorUid, request);
-    });
+    RegisterHandle(protocol::Operation::OP_UPLOAD_FILE, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return fileService.Upload(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_UPLOAD_FILE_CHUNK, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return fileService.Upload(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_COMPLETE_FILE_UPLOAD, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return fileService.Upload(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_DOWNLOAD_FILE, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return fileService.Download(actorUid, request); });
 
     // 好友
-    RegisterHandle(ID_NOTIFY_ADD_FRIEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return friendService.NotifyAddFriend(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_REPLY_ADD_FRIEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return friendService.ReplyAddFriend(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_PULL_FRIEND_LIST_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return friendService.PullFriendList(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_PULL_FRIEND_APPLY_LIST_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return friendService.PullFriendApplyList(msgID, actorUid, request);
-    });
+    RegisterHandle(protocol::Operation::OP_ADD_FRIEND, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return friendService.NotifyAddFriend(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_REPLY_FRIEND, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return friendService.ReplyAddFriend(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_PULL_FRIEND_LIST, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return friendService.PullFriendList(actorUid, request); });
+    RegisterHandle(
+        protocol::Operation::OP_PULL_FRIEND_APPLICATIONS, TaskType::Heavy,
+        [this](auto actorUid, auto& request) { return friendService.PullFriendApplyList(actorUid, request); });
 
     // 消息拉取
-    RegisterHandle(ID_PULL_SESSION_MESSAGE_LIST_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return messageService.PullConversationMessages(msgID, actorUid, request);
-    });
+    RegisterHandle(
+        protocol::Operation::OP_PULL_CONVERSATION_MESSAGES, TaskType::Heavy,
+        [this](auto actorUid, auto& request) { return messageService.PullConversationMessages(actorUid, request); });
     // 群聊
-    RegisterHandle(ID_GROUP_CREATE_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return groupService.Create(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_GROUP_NOTIFY_JOIN_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return groupService.NotifyJoin(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_GROUP_REPLY_JOIN_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return groupService.ReplyJoin(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_GROUP_QUIT_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return groupService.Quit(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_GROUP_KICK_MEMBER_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return groupService.Kick(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_GROUP_PULL_MEMBER_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return groupService.PullNotify(msgID, actorUid, request);
-    });
-
-    /* 待实现 */
-    RegisterHandle(ID_GROUP_TEXT_SEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return messageService.SendGroupText(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_FILE_SEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return messageService.SendFile(msgID, actorUid, request);
-    });
-    RegisterHandle(ID_GROUP_FILE_SEND_REQ, TaskType::Heavy, [this](auto msgID, auto actorUid, auto& request) {
-        return messageService.SendGroupFile(msgID, actorUid, request);
-    });
+    RegisterHandle(protocol::Operation::OP_CREATE_GROUP, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return groupService.Create(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_JOIN_GROUP, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return groupService.NotifyJoin(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_REPLY_JOIN_GROUP, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return groupService.ReplyJoin(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_QUIT_GROUP, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return groupService.Quit(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_KICK_GROUP_MEMBER, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return groupService.Kick(actorUid, request); });
+    RegisterHandle(protocol::Operation::OP_PULL_GROUP_MEMBERS, TaskType::Heavy,
+                   [this](auto actorUid, auto& request) { return groupService.PullNotify(actorUid, request); });
 }
 
 bool Service::PostBackgroundTask(ThreadPool::Task task)
@@ -148,19 +122,23 @@ void Service::SetGatewayStreamService(rpc::GatewayStreamService* service)
     clientForwardService.SetGatewayStreamService(service);
 }
 
-TcpPacket Service::ExecuteGatewayCommand(uint32_t msgID, int64_t actorUid, TcpPacket request)
+TcpPacket Service::ExecuteGatewayCommand(protocol::Operation operation, int64_t actorUid, TcpPacket request)
 {
-    if (actorUid <= 0 || msgID == ID_LOGIN_INIT_REQ || msgID == ID_PING_REQ || msgID == ID_USER_QUIT_REQ) {
-        LOG_WARN(logger, "[message/dispatch] 拒绝 Gateway 控制命令, uid: {}, service_id: {}", actorUid, msgID);
+    if (actorUid <= 0 || operation == protocol::Operation::OP_LOGIN || operation == protocol::Operation::OP_PING ||
+        operation == protocol::Operation::OP_QUIT) {
+        LOG_WARN(logger, "[message/dispatch] 拒绝 Gateway 控制命令, uid: {}, operation: {}", actorUid,
+                 protocol::Operation_Name(operation));
         return MakeErrorPacket(ErrorCodes::AuthenticationRequired, "connection control command belongs to gateway");
     }
-    auto handle = serviceGroup.find(msgID);
+    auto handle = serviceGroup.find(operation);
     if (handle == serviceGroup.end()) {
-        LOG_WARN(logger, "[message/dispatch] 未找到服务处理器, uid: {}, service_id: {}", actorUid, msgID);
+        LOG_WARN(logger, "[message/dispatch] 未找到服务处理器, uid: {}, operation: {}", actorUid,
+                 protocol::Operation_Name(operation));
         return MakeErrorPacket(ErrorCodes::NotFound);
     }
-    LOG_DEBUG(logger, "[message/dispatch] 开始处理请求, uid: {}, service_id: {}", actorUid, msgID);
-    return handle->second.handle(msgID, actorUid, request);
+    LOG_DEBUG(logger, "[message/dispatch] 开始处理请求, uid: {}, operation: {}", actorUid,
+              protocol::Operation_Name(operation));
+    return handle->second.handle(actorUid, request);
 }
 
 } // namespace wimi

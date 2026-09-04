@@ -12,10 +12,10 @@ class FriendService
   public:
     explicit FriendService(ClientForwardService& clientForwardService);
 
-    TcpPacket NotifyAddFriend(unsigned int msgID, int64_t actorUid, TcpPacket& request);
-    TcpPacket ReplyAddFriend(unsigned int msgID, int64_t actorUid, TcpPacket& request);
-    TcpPacket PullFriendApplyList(uint32_t msgID, int64_t actorUid, TcpPacket& request);
-    TcpPacket PullFriendList(uint32_t msgID, int64_t actorUid, TcpPacket& request);
+    TcpPacket NotifyAddFriend(int64_t actorUid, TcpPacket& request);
+    TcpPacket ReplyAddFriend(int64_t actorUid, TcpPacket& request);
+    TcpPacket PullFriendApplyList(int64_t actorUid, TcpPacket& request);
+    TcpPacket PullFriendList(int64_t actorUid, TcpPacket& request);
 
   private:
     int StoreNotifyAddFriend(int64_t actorUid, const protocol::AddFriendRequest& request);

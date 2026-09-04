@@ -31,28 +31,28 @@ std::string FileExpiryTime()
 
 } // namespace
 
-TcpPacket FileService::Upload(uint32_t msgID, int64_t actorUid, TcpPacket& request)
+TcpPacket FileService::Upload(int64_t actorUid, TcpPacket& request)
 {
     TcpPacket rsp;
     const protocol::FileInfo* requestFile = nullptr;
     int64_t requestOffset = 0;
     std::string requestData;
     bool requestComplete = false;
-    if (msgID == ID_FILE_UPLOAD_REQ && request.has_file_upload_request()) {
+    if (request.has_file_upload_request()) {
         const auto& upload = request.file_upload_request();
         requestFile = upload.has_file() ? &upload.file() : nullptr;
         requestOffset = upload.offset();
         requestData = upload.data();
         requestComplete = upload.complete();
         rsp.mutable_file_upload_response();
-    } else if (msgID == ID_FILE_UPLOAD_CHUNK_REQ && request.has_file_upload_chunk_request()) {
+    } else if (request.has_file_upload_chunk_request()) {
         const auto& upload = request.file_upload_chunk_request();
         requestFile = upload.has_file() ? &upload.file() : nullptr;
         requestOffset = upload.offset();
         requestData = upload.data();
         requestComplete = upload.complete();
         rsp.mutable_file_upload_chunk_response();
-    } else if (msgID == ID_FILE_UPLOAD_COMPLETE_REQ && request.has_file_upload_complete_request()) {
+    } else if (request.has_file_upload_complete_request()) {
         const auto& upload = request.file_upload_complete_request();
         requestFile = upload.has_file() ? &upload.file() : nullptr;
         requestOffset = upload.offset();
@@ -61,7 +61,7 @@ TcpPacket FileService::Upload(uint32_t msgID, int64_t actorUid, TcpPacket& reque
         rsp.mutable_file_upload_complete_response();
     }
     if (requestFile == nullptr || actorUid <= 0) {
-        LOG_WARN(logger, "[message/file-upload] 拒绝缺少文件信息的请求, uid: {}, service_id: {}", actorUid, msgID);
+        LOG_WARN(logger, "[message/file-upload] 拒绝缺少文件信息的请求, uid: {}", actorUid);
         SetTcpPacketStatus(rsp, ErrorCodes::JsonParser, "file metadata is required");
         return rsp;
     }
@@ -144,9 +144,8 @@ TcpPacket FileService::Upload(uint32_t msgID, int64_t actorUid, TcpPacket& reque
     return rsp;
 }
 
-TcpPacket FileService::Download(uint32_t msgID, int64_t actorUid, TcpPacket& request)
+TcpPacket FileService::Download(int64_t actorUid, TcpPacket& request)
 {
-    (void)msgID;
     TcpPacket rsp;
     auto* response = rsp.mutable_file_download_response();
     const auto& download = request.file_download_request();

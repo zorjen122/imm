@@ -46,7 +46,7 @@ ConnectionGatewayClient::ConnectionGatewayClient(QObject* parent) : QObject(pare
         }
         wimi::protocol::Packet packet;
         packet.setLoginRequest(std::move(login));
-        SendPacket(protocol::LoginRequest, std::move(packet));
+        SendPacket(protocol::Operation::OP_LOGIN, std::move(packet));
     });
     connect(&socket_, &QTcpSocket::readyRead, this, [this] {
         const auto frames = codec_.Feed(socket_.readAll());
@@ -80,7 +80,7 @@ ConnectionGatewayClient::ConnectionGatewayClient(QObject* parent) : QObject(pare
         }
         wimi::protocol::Packet ping;
         ping.setPingRequest(wimi::protocol::PingRequest{});
-        SendPacket(protocol::PingRequest, std::move(ping));
+        SendPacket(protocol::Operation::OP_PING, std::move(ping));
     });
     connect(&reconnect_timer_, &QTimer::timeout, this, &ConnectionGatewayClient::StartSocket);
 }
@@ -93,7 +93,9 @@ ConnectionGatewayClient::~ConnectionGatewayClient()
     reconnect_timer_.stop();
     for (auto* timer : std::as_const(request_timers_)) {
         timer->stop();
+        timer->deleteLater();
     }
+    request_timers_.clear();
     socket_.abort();
 }
 
@@ -144,7 +146,7 @@ void ConnectionGatewayClient::Close()
     SetState(State::Closing);
     wimi::protocol::Packet quit;
     quit.setQuitRequest(wimi::protocol::QuitRequest{});
-    SendPacket(protocol::QuitRequest, std::move(quit));
+    SendPacket(protocol::Operation::OP_QUIT, std::move(quit));
     QTimer::singleShot(1000, this, [this] {
         if (state_ == State::Closing) {
             socket_.disconnectFromHost();
@@ -156,14 +158,14 @@ QString ConnectionGatewayClient::PullFriendList()
 {
     wimi::protocol::Packet packet;
     packet.setPullFriendListRequest(wimi::protocol::PullFriendListRequest{});
-    return QueueRequest(protocol::PullFriendListRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_PULL_FRIEND_LIST, std::move(packet));
 }
 
 QString ConnectionGatewayClient::PullFriendApplications()
 {
     wimi::protocol::Packet packet;
     packet.setPullFriendApplyListRequest(wimi::protocol::PullFriendApplyListRequest{});
-    return QueueRequest(protocol::PullFriendApplyListRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_PULL_FRIEND_APPLICATIONS, std::move(packet));
 }
 
 QString ConnectionGatewayClient::PullConversationMessages(std::int64_t conversationId, std::int64_t afterSequence,
@@ -175,7 +177,7 @@ QString ConnectionGatewayClient::PullConversationMessages(std::int64_t conversat
     request.setLimit(std::clamp(limit, 1, 200));
     wimi::protocol::Packet packet;
     packet.setPullConversationMessagesRequest(std::move(request));
-    return QueueRequest(protocol::PullSessionMessagesRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_PULL_CONVERSATION_MESSAGES, std::move(packet));
 }
 
 QString ConnectionGatewayClient::SendFriendRequest(std::int64_t recipientUid, const QString& message)
@@ -185,7 +187,7 @@ QString ConnectionGatewayClient::SendFriendRequest(std::int64_t recipientUid, co
     request.setRequestMessage(message);
     wimi::protocol::Packet packet;
     packet.setAddFriendRequest(std::move(request));
-    return QueueRequest(protocol::AddFriendRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_ADD_FRIEND, std::move(packet));
 }
 
 QString ConnectionGatewayClient::ReplyFriendRequest(std::int64_t recipientUid, bool accept, const QString& message)
@@ -196,7 +198,7 @@ QString ConnectionGatewayClient::ReplyFriendRequest(std::int64_t recipientUid, b
     request.setReplyMessage(message);
     wimi::protocol::Packet packet;
     packet.setReplyFriendRequest(std::move(request));
-    return QueueRequest(protocol::ReplyFriendRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_REPLY_FRIEND, std::move(packet));
 }
 
 QString ConnectionGatewayClient::SendText(std::int64_t recipientUid, const QByteArray& utf8Text,
@@ -211,7 +213,7 @@ QString ConnectionGatewayClient::SendText(std::int64_t recipientUid, const QByte
     }
     wimi::protocol::Packet packet;
     packet.setSendTextRequest(std::move(request));
-    return QueueRequest(protocol::SendTextRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_SEND_TEXT, std::move(packet));
 }
 
 QString ConnectionGatewayClient::UploadFile(std::int64_t clientSequence, const QString& fileName,
@@ -228,24 +230,24 @@ QString ConnectionGatewayClient::UploadFile(std::int64_t clientSequence, const Q
     request.setComplete(true);
     wimi::protocol::Packet packet;
     packet.setFileUploadRequest(std::move(request));
-    return QueueRequest(protocol::UploadFileRequest, std::move(packet), 15'000);
+    return QueueRequest(protocol::Operation::OP_UPLOAD_FILE, std::move(packet), 15'000);
 }
 
 QString ConnectionGatewayClient::UploadFileChunk(const wimi::protocol::FileInfo& file, std::int64_t offset,
                                                  const QByteArray& content, bool complete)
 {
-    const auto service = complete
-                             ? protocol::FileUploadCompleteRequest
-                             : (content.isEmpty() ? protocol::UploadFileRequest : protocol::FileUploadChunkRequest);
+    const auto operation = complete ? protocol::Operation::OP_COMPLETE_FILE_UPLOAD
+                                    : (content.isEmpty() ? protocol::Operation::OP_UPLOAD_FILE
+                                                         : protocol::Operation::OP_UPLOAD_FILE_CHUNK);
     wimi::protocol::Packet packet;
-    if (service == protocol::FileUploadCompleteRequest) {
+    if (operation == protocol::Operation::OP_COMPLETE_FILE_UPLOAD) {
         wimi::protocol::FileUploadCompleteRequest request;
         request.setFile(file);
         request.setOffset(std::max<std::int64_t>(0, offset));
         request.setData(content);
         request.setComplete(true);
         packet.setFileUploadCompleteRequest(std::move(request));
-    } else if (service == protocol::FileUploadChunkRequest) {
+    } else if (operation == protocol::Operation::OP_UPLOAD_FILE_CHUNK) {
         wimi::protocol::FileUploadChunkRequest request;
         request.setFile(file);
         request.setOffset(std::max<std::int64_t>(0, offset));
@@ -260,7 +262,7 @@ QString ConnectionGatewayClient::UploadFileChunk(const wimi::protocol::FileInfo&
         request.setComplete(false);
         packet.setFileUploadRequest(std::move(request));
     }
-    return QueueRequest(service, std::move(packet), 15'000);
+    return QueueRequest(operation, std::move(packet), 15'000);
 }
 
 QString ConnectionGatewayClient::SendFile(std::int64_t recipientUid, const wimi::protocol::FileInfo& file,
@@ -274,7 +276,7 @@ QString ConnectionGatewayClient::SendFile(std::int64_t recipientUid, const wimi:
         request.setConversationId(conversationId);
     wimi::protocol::Packet packet;
     packet.setSendFileRequest(std::move(request));
-    return QueueRequest(protocol::SendFileRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_SEND_FILE, std::move(packet));
 }
 
 QString ConnectionGatewayClient::DownloadFileChunk(const wimi::protocol::FileInfo& file, std::int64_t offset)
@@ -285,7 +287,7 @@ QString ConnectionGatewayClient::DownloadFileChunk(const wimi::protocol::FileInf
     request.setLimit(1024 * 1024);
     wimi::protocol::Packet packet;
     packet.setFileDownloadRequest(std::move(request));
-    return QueueRequest(protocol::FileDownloadRequest, std::move(packet), 15'000);
+    return QueueRequest(protocol::Operation::OP_DOWNLOAD_FILE, std::move(packet), 15'000);
 }
 
 QString ConnectionGatewayClient::CreateGroup(const QString& groupName)
@@ -294,7 +296,7 @@ QString ConnectionGatewayClient::CreateGroup(const QString& groupName)
     request.setGroupName(groupName);
     wimi::protocol::Packet packet;
     packet.setCreateGroupRequest(std::move(request));
-    return QueueRequest(protocol::CreateGroupRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_CREATE_GROUP, std::move(packet));
 }
 
 QString ConnectionGatewayClient::RequestJoinGroup(std::int64_t groupId, const QString& message)
@@ -304,7 +306,7 @@ QString ConnectionGatewayClient::RequestJoinGroup(std::int64_t groupId, const QS
     request.setRequestMessage(message);
     wimi::protocol::Packet packet;
     packet.setJoinGroupRequest(std::move(request));
-    return QueueRequest(protocol::JoinGroupRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_JOIN_GROUP, std::move(packet));
 }
 
 QString ConnectionGatewayClient::ReplyJoinGroup(std::int64_t groupId, std::int64_t requestorUid, bool accept)
@@ -315,7 +317,7 @@ QString ConnectionGatewayClient::ReplyJoinGroup(std::int64_t groupId, std::int64
     request.setAccept(accept);
     wimi::protocol::Packet packet;
     packet.setReplyJoinGroupRequest(std::move(request));
-    return QueueRequest(protocol::ReplyJoinGroupRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_REPLY_JOIN_GROUP, std::move(packet));
 }
 
 QString ConnectionGatewayClient::PullGroupMembers(std::int64_t groupId)
@@ -324,7 +326,7 @@ QString ConnectionGatewayClient::PullGroupMembers(std::int64_t groupId)
     request.setGroupId(groupId);
     wimi::protocol::Packet packet;
     packet.setPullGroupMembersRequest(std::move(request));
-    return QueueRequest(protocol::PullGroupMembersRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_PULL_GROUP_MEMBERS, std::move(packet));
 }
 
 QString ConnectionGatewayClient::QuitGroup(std::int64_t groupId)
@@ -333,7 +335,7 @@ QString ConnectionGatewayClient::QuitGroup(std::int64_t groupId)
     request.setGroupId(groupId);
     wimi::protocol::Packet packet;
     packet.setQuitGroupRequest(std::move(request));
-    return QueueRequest(protocol::QuitGroupRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_QUIT_GROUP, std::move(packet));
 }
 
 QString ConnectionGatewayClient::KickGroupMember(std::int64_t groupId, std::int64_t targetUid)
@@ -343,7 +345,7 @@ QString ConnectionGatewayClient::KickGroupMember(std::int64_t groupId, std::int6
     request.setMemberUid(targetUid);
     wimi::protocol::Packet packet;
     packet.setKickGroupMemberRequest(std::move(request));
-    return QueueRequest(protocol::KickGroupMemberRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_KICK_GROUP_MEMBER, std::move(packet));
 }
 
 QString ConnectionGatewayClient::SendGroupText(std::int64_t groupId, const QByteArray& utf8Text,
@@ -358,7 +360,7 @@ QString ConnectionGatewayClient::SendGroupText(std::int64_t groupId, const QByte
     }
     wimi::protocol::Packet packet;
     packet.setSendGroupTextRequest(std::move(request));
-    return QueueRequest(protocol::SendGroupTextRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_SEND_GROUP_TEXT, std::move(packet));
 }
 
 QString ConnectionGatewayClient::SendGroupFile(std::int64_t groupId, const wimi::protocol::FileInfo& file,
@@ -372,7 +374,7 @@ QString ConnectionGatewayClient::SendGroupFile(std::int64_t groupId, const wimi:
         request.setConversationId(conversationId);
     wimi::protocol::Packet packet;
     packet.setSendGroupFileRequest(std::move(request));
-    return QueueRequest(protocol::SendGroupFileRequest, std::move(packet));
+    return QueueRequest(protocol::Operation::OP_SEND_GROUP_FILE, std::move(packet));
 }
 
 void ConnectionGatewayClient::AcknowledgeDelivered(std::int64_t messageId, std::int64_t conversationId,
@@ -389,88 +391,70 @@ void ConnectionGatewayClient::AcknowledgeRead(std::int64_t messageId, std::int64
                 conversationId, conversationSequence);
 }
 
-QString ConnectionGatewayClient::QueueRequest(quint32 serviceId, wimi::protocol::Packet packet, int timeoutMilliseconds)
+QString ConnectionGatewayClient::QueueRequest(protocol::Operation operation, wimi::protocol::Packet packet,
+                                              int timeoutMilliseconds)
 {
     const QString requestId = NewRequestId();
     if (!IsReady()) {
-        emit RequestFailed(requestId, serviceId, protocol::DependencyUnavailable, tr("Connection Gateway 尚未就绪"),
+        emit RequestFailed(requestId, operation, protocol::DependencyUnavailable, tr("Connection Gateway 尚未就绪"),
                            false);
         return requestId;
     }
 
-    wimi::protocol::RequestContext context;
-    context.setRequestId(requestId);
-    packet.setRequest(std::move(context));
+    wimi::protocol::ClientEnvelope envelope;
+    wimi::protocol::ClientRequest request;
+    request.setRequestId(requestId);
+    request.setPacket(std::move(packet));
+    request.setOperation(operation);
+    envelope.setRequest(std::move(request));
     QByteArray payload;
-    if (!SerializeProtobufPacket(packet, &payload)) {
-        emit RequestFailed(requestId, serviceId, protocol::JsonParser, tr("无法序列化请求"), false);
+    if (!SerializeClientEnvelope(envelope, &payload)) {
+        emit RequestFailed(requestId, operation, protocol::JsonParser, tr("无法序列化请求"), false);
         return requestId;
     }
 
-    const quint32 responseServiceId = protocol::ResponseFor(serviceId);
-    auto& queue = pending_by_response_[responseServiceId];
-    queue.enqueue(PendingRequest{
-        .requestId = requestId,
-        .requestServiceId = serviceId,
-        .responseServiceId = responseServiceId,
-        .payload = payload,
-        .timeoutMilliseconds = timeoutMilliseconds,
+    pending_by_id_.insert(requestId, PendingRequest{
+                                         .requestId = requestId,
+                                         .operation = operation,
+                                         .payload = payload,
+                                         .timeoutMilliseconds = timeoutMilliseconds,
+                                     });
+    socket_.write(TcpFrameCodec::Encode(payload));
+
+    auto* timer = new QTimer(this);
+    timer->setSingleShot(true);
+    request_timers_.insert(requestId, timer);
+    connect(timer, &QTimer::timeout, this, [this, requestId] {
+        const auto found = pending_by_id_.find(requestId);
+        if (found == pending_by_id_.end()) {
+            return;
+        }
+        const PendingRequest pending = found.value();
+        pending_by_id_.erase(found);
+        if (auto* timer = request_timers_.take(requestId)) {
+            timer->deleteLater();
+        }
+        emit RequestFailed(pending.requestId, pending.operation, protocol::DeadlineExceeded, tr("请求等待响应超时"),
+                           true);
     });
-    if (queue.size() == 1) {
-        SendFront(responseServiceId);
-    }
+    timer->start(timeoutMilliseconds);
     return requestId;
 }
 
-void ConnectionGatewayClient::SendFront(quint32 responseServiceId)
+void ConnectionGatewayClient::CompleteRequest(const QString& requestId, const QByteArray& payload)
 {
-    auto found = pending_by_response_.find(responseServiceId);
-    if (found == pending_by_response_.end() || found->isEmpty() || !IsReady()) {
+    const auto found = pending_by_id_.find(requestId);
+    if (found == pending_by_id_.end()) {
+        emit ProtocolError(tr("收到没有在途请求的响应 request=%1").arg(requestId));
         return;
     }
-    const PendingRequest& pending = found->head();
-    socket_.write(TcpFrameCodec::Encode(pending.requestServiceId, pending.payload));
-
-    QTimer* timer = request_timers_.value(responseServiceId);
-    if (timer == nullptr) {
-        timer = new QTimer(this);
-        timer->setSingleShot(true);
-        request_timers_.insert(responseServiceId, timer);
-        connect(timer, &QTimer::timeout, this, [this, responseServiceId] {
-            auto current = pending_by_response_.find(responseServiceId);
-            if (current == pending_by_response_.end() || current->isEmpty()) {
-                return;
-            }
-            const PendingRequest timedOut = current->dequeue();
-            emit RequestFailed(timedOut.requestId, timedOut.requestServiceId, protocol::DeadlineExceeded,
-                               tr("请求等待响应超时"), true);
-            if (current->isEmpty()) {
-                pending_by_response_.erase(current);
-            } else {
-                SendFront(responseServiceId);
-            }
-        });
-    }
-    timer->start(pending.timeoutMilliseconds);
-}
-
-void ConnectionGatewayClient::CompleteFront(quint32 responseServiceId, const QByteArray& payload)
-{
-    auto found = pending_by_response_.find(responseServiceId);
-    if (found == pending_by_response_.end() || found->isEmpty()) {
-        emit ProtocolError(tr("收到没有在途请求的响应 service=%1").arg(responseServiceId));
-        return;
-    }
-    if (auto* timer = request_timers_.value(responseServiceId)) {
+    const PendingRequest completed = found.value();
+    pending_by_id_.erase(found);
+    if (auto* timer = request_timers_.take(requestId)) {
         timer->stop();
+        timer->deleteLater();
     }
-    const PendingRequest completed = found->dequeue();
-    emit ResponseReceived(completed.requestId, responseServiceId, payload);
-    if (found->isEmpty()) {
-        pending_by_response_.erase(found);
-    } else {
-        SendFront(responseServiceId);
-    }
+    emit ResponseReceived(completed.requestId, completed.operation, payload);
 }
 
 void ConnectionGatewayClient::FailAllPending(int errorCode, const QString& message, bool outcomeUnknown)
@@ -478,13 +462,10 @@ void ConnectionGatewayClient::FailAllPending(int errorCode, const QString& messa
     for (auto* timer : std::as_const(request_timers_)) {
         timer->stop();
     }
-    for (auto iterator = pending_by_response_.begin(); iterator != pending_by_response_.end(); ++iterator) {
-        while (!iterator->isEmpty()) {
-            const PendingRequest pending = iterator->dequeue();
-            emit RequestFailed(pending.requestId, pending.requestServiceId, errorCode, message, outcomeUnknown);
-        }
+    for (const auto& pending : std::as_const(pending_by_id_)) {
+        emit RequestFailed(pending.requestId, pending.operation, errorCode, message, outcomeUnknown);
     }
-    pending_by_response_.clear();
+    pending_by_id_.clear();
 }
 
 void ConnectionGatewayClient::SendReceipt(std::int64_t messageId, int receiptType, std::int64_t conversationId,
@@ -502,65 +483,81 @@ void ConnectionGatewayClient::SendReceipt(std::int64_t messageId, int receiptTyp
     }
     wimi::protocol::Packet packet;
     packet.setReceipt(std::move(receipt));
-    SendPacket(protocol::Ack, std::move(packet));
+    SendPacket(protocol::Operation::OP_ACKNOWLEDGE, std::move(packet));
 }
 
-void ConnectionGatewayClient::SendPacket(quint32 serviceId, wimi::protocol::Packet packet)
+void ConnectionGatewayClient::SendPacket(protocol::Operation operation, wimi::protocol::Packet packet)
 {
-    // QueueRequest already assigns a stable ID before serializing queued business
-    // requests. Direct packets (login, ping, quit, and receipts) pass through
-    // here, so make the Gateway's request_id invariant universal at this
-    // boundary.
-    if (!packet.hasRequest() || packet.request().requestId().isEmpty()) {
-        wimi::protocol::RequestContext context;
-        context.setRequestId(NewRequestId());
-        packet.setRequest(std::move(context));
-    }
+    wimi::protocol::ClientEnvelope envelope;
+    wimi::protocol::ClientRequest request;
+    request.setRequestId(NewRequestId());
+    request.setPacket(std::move(packet));
+    request.setOperation(operation);
+    envelope.setRequest(std::move(request));
     QByteArray payload;
-    if (!SerializeProtobufPacket(packet, &payload)) {
-        emit ProtocolError(tr("无法序列化 service=%1").arg(serviceId));
+    if (!SerializeClientEnvelope(envelope, &payload)) {
+        emit ProtocolError(tr("无法序列化 operation=%1").arg(static_cast<int>(operation)));
         return;
     }
-    socket_.write(TcpFrameCodec::Encode(serviceId, payload));
+    socket_.write(TcpFrameCodec::Encode(payload));
 }
 
 void ConnectionGatewayClient::HandleFrame(const TcpFrame& frame)
 {
-    if (frame.serviceId == protocol::LoginResponse) {
-        HandleLoginResponse(frame.payload);
-        return;
-    }
-    if (frame.serviceId == protocol::PingResponse) {
-        return;
-    }
-    if (frame.serviceId == protocol::QuitResponse) {
-        desired_open_ = false;
-        socket_.disconnectFromHost();
-        return;
-    }
-
-    wimi::protocol::Packet packet;
-    if (!ParseProtobufPacket(frame.payload, &packet)) {
-        emit ProtocolError(tr("无法解析 service=%1 的 Protobuf Packet").arg(frame.serviceId));
+    wimi::protocol::ClientEnvelope envelope;
+    if (!ParseClientEnvelope(frame.payload, &envelope)) {
+        emit ProtocolError(tr("无法解析 Gateway 信封"));
         socket_.abort();
         return;
     }
-    if ((frame.serviceId & 1U) == 0U) {
-        CompleteFront(frame.serviceId, frame.payload);
-    } else {
-        emit PushReceived(frame.serviceId, frame.payload);
+    if (envelope.hasResponse()) {
+        const auto& response = envelope.response();
+        const auto& packet = response.packet();
+        if (packet.hasLoginResponse()) {
+            HandleLoginResponse(packet);
+            return;
+        }
+        if (packet.hasPingResponse()) {
+            return;
+        }
+        if (packet.hasQuitResponse()) {
+            desired_open_ = false;
+            socket_.disconnectFromHost();
+            return;
+        }
+        QByteArray payload;
+        if (!SerializeProtobufPacket(packet, &payload)) {
+            emit ProtocolError(tr("无法序列化 Gateway 响应"));
+            return;
+        }
+        const auto pending = pending_by_id_.find(response.requestId());
+        if (pending != pending_by_id_.end() && response.operation() != pending->operation) {
+            emit ProtocolError(tr("Gateway 响应操作类型不匹配"));
+            socket_.abort();
+            return;
+        }
+        CompleteRequest(response.requestId(), payload);
+        return;
     }
+    if (envelope.hasPush()) {
+        if (envelope.push().type() != protocol::PushTypeFor(envelope.push().packet())) {
+            emit ProtocolError(tr("Gateway 推送类型不匹配"));
+            socket_.abort();
+            return;
+        }
+        QByteArray payload;
+        if (!SerializeProtobufPacket(envelope.push().packet(), &payload)) {
+            emit ProtocolError(tr("无法序列化 Gateway 推送"));
+            return;
+        }
+        emit PushReceived(payload);
+        return;
+    }
+    emit ProtocolError(tr("Gateway 返回了客户端不应接收的请求信封"));
 }
 
-void ConnectionGatewayClient::HandleLoginResponse(const QByteArray& payload)
+void ConnectionGatewayClient::HandleLoginResponse(const wimi::protocol::Packet& response)
 {
-    wimi::protocol::Packet response;
-    if (!ParseProtobufPacket(payload, &response)) {
-        emit ProtocolError(tr("无法解析 Gateway 登录响应"));
-        desired_open_ = false;
-        socket_.abort();
-        return;
-    }
     const int errorCode =
         response.hasStatus() && response.status().hasError() ? static_cast<int>(response.status().error()) : 0;
     if (errorCode != protocol::Success) {

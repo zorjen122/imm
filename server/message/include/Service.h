@@ -26,13 +26,13 @@ class Service : public Singleton<Service>
     friend class Singleton<Service>;
 
   public:
-    using HandleType = std::function<TcpPacket(uint32_t, int64_t, TcpPacket&)>;
+    using HandleType = std::function<TcpPacket(int64_t, TcpPacket&)>;
 
     ~Service();
     bool PostBackgroundTask(ThreadPool::Task task);
     MessageService& Messages();
     void SetGatewayStreamService(rpc::GatewayStreamService* service);
-    TcpPacket ExecuteGatewayCommand(uint32_t msgID, int64_t actorUid, TcpPacket request);
+    TcpPacket ExecuteGatewayCommand(protocol::Operation operation, int64_t actorUid, TcpPacket request);
 
   private:
     enum class TaskType { Light, Heavy };
@@ -43,7 +43,7 @@ class Service : public Singleton<Service>
 
     Service();
     void Init();
-    void RegisterHandle(uint32_t msgID, TaskType taskType, HandleType handle);
+    void RegisterHandle(protocol::Operation operation, TaskType taskType, HandleType handle);
 
     ClientForwardService clientForwardService;
     FriendService friendService;
@@ -51,6 +51,6 @@ class Service : public Singleton<Service>
     MessageService messageService;
     FileService fileService;
     std::unique_ptr<ThreadPool> threadPool;
-    std::map<uint32_t, HandlerEntry> serviceGroup;
+    std::map<protocol::Operation, HandlerEntry> serviceGroup;
 };
 }; // namespace wimi

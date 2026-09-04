@@ -163,10 +163,10 @@ class AppController : public QObject
     void ScheduleDeliveryLifecycle(std::int64_t clientMessageId);
     void UpdateMessageState(std::int64_t clientMessageId, MessageDeliveryState state);
     void ConfigureNetwork(const QString& gateUrl);
-    void HandleGatewayResponse(const QString& requestId, quint32 serviceId, const QByteArray& payload);
-    void HandleGatewayPush(quint32 serviceId, const QByteArray& payload);
-    void HandleGatewayFailure(const QString& requestId, quint32 serviceId, int errorCode, const QString& message,
-                              bool outcomeUnknown);
+    void HandleGatewayResponse(const QString& requestId, protocol::Operation operation, const QByteArray& payload);
+    void HandleGatewayPush(const QByteArray& payload);
+    void HandleGatewayFailure(const QString& requestId, protocol::Operation operation, int errorCode,
+                              const QString& message, bool outcomeUnknown);
     void SyncKnownConversations();
     void ScheduleGapSync(const QString& localConversationId);
     void DrainPendingPush(const QString& localConversationId);
@@ -242,7 +242,7 @@ class AppController : public QObject
     QHash<QString, FileDownload> file_downloads_;
     QHash<QString, QString> file_download_requests_;
     QHash<QString, QString> sync_request_conversations_;
-    QHash<QString, QMap<std::int64_t, QPair<quint32, QByteArray>>> pending_pushes_;
+    QHash<QString, QMap<std::int64_t, QByteArray>> pending_pushes_;
     QHash<QString, QTimer*> gap_timers_;
     QSet<QString> gap_syncing_;
     QHash<QString, int> friend_reply_requests_;

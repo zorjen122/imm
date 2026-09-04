@@ -32,7 +32,7 @@ class FileServer final
   public:
     FileServer(size_t workerSize, std::filesystem::path storageRoot);
     ~FileServer();
-    void Run(const std::string& host, unsigned short port);
+    bool Run(const std::string& host, unsigned short port);
     void Stop();
     bool stopped() const;
 
