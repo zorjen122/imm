@@ -12,25 +12,28 @@
 namespace wimi::connection
 {
 
-class GatewaySession;
+class ClientSession;
 
 class SessionManager
 {
   public:
     SessionManager(std::string gatewayId, std::string instanceId, long leaseTtlSeconds = 60);
 
-    db::SessionLease Bind(int64_t uid, const std::string& deviceId, const std::shared_ptr<GatewaySession>& session);
+    db::SessionLease Bind(int64_t uid, const std::string& deviceId, const std::shared_ptr<ClientSession>& session);
     bool Refresh(int64_t uid, const std::string& deviceId, const db::SessionLease& lease);
-    void Remove(int64_t uid, const std::string& deviceId, const std::shared_ptr<GatewaySession>& session,
+    void Remove(int64_t uid, const std::string& deviceId, const std::shared_ptr<ClientSession>& session,
                 const db::SessionLease& lease);
+    void Discard(int64_t uid, const std::string& deviceId, const std::shared_ptr<ClientSession>& session);
     gateway::ClientForwardStatus Forward(const gateway::ClientForwardEnvelope& forward);
 
     const std::string& GatewayId() const;
     const std::string& InstanceId() const;
 
   private:
+    bool RemoveLocal(int64_t uid, const std::string& deviceId, const std::shared_ptr<ClientSession>& session);
+
     struct LocalSession {
-        std::weak_ptr<GatewaySession> session;
+        std::shared_ptr<ClientSession> session;
         db::SessionLease lease;
     };
 

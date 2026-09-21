@@ -3,7 +3,6 @@
 #include "VerificationService.h"
 
 #include "Const.h"
-#include "HttpSession.h"
 #include "Logger.h"
 #include "Mysql.h"
 #include "Redis.h"
@@ -32,7 +31,7 @@ Service::Service()
 {
     using namespace std::placeholders;
 
-    OnGetHandle("/test", [this](HttpSession::ResponsePtr response, Json::Value& requestData) -> bool {
+    OnGetHandle("/test", [this](ServiceResponse& response, Json::Value& requestData) -> bool {
         responseWrite(response, "[TEST]");
         return true;
     });
@@ -45,22 +44,7 @@ Service::Service()
     OnPostHandle("/post-arrhythmia", std::bind(&Service::chatArrhythmia, this, _1, _2));
 }
 
-void Service::responseWrite(HttpSession::ResponsePtr response, const std::string& data)
-{
-    beast::ostream(response->body()) << data;
-}
-
-Json::Value Service::parseRequest(std::shared_ptr<HttpSession> connection)
-{
-    auto buffer = connection->GetRequest()->body().data();
-    auto body = boost::beast::buffers_to_string(buffer);
-
-    Json::Reader reader{};
-    Json::Value src{};
-    bool parseSuccess = reader.parse(body, src);
-
-    return parseSuccess ? src : Json::Value();
-}
+void Service::responseWrite(ServiceResponse& response, const std::string& data) { response.body += data; }
 
 void Service::OnGetHandle(std::string url, HttpHandler handler)
 {
@@ -78,50 +62,33 @@ void Service::OnPostHandle(std::string url, HttpHandler handler)
 
 Service::~Service() {}
 
-bool Service::Handle(std::shared_ptr<HttpSession> connection, std::string path, http::verb method)
+ServiceResponse Service::Handle(std::string_view body, const std::string& path, std::string_view method)
 {
-    HttpHandler handler;
-    bool hasFound = false;
-    if (method == http::verb::get) {
-        if (getHandlers.find(path) != getHandlers.end()) {
-            handler = getHandlers[path];
-            hasFound = true;
-        }
-    } else if (method == http::verb::post) {
-        if (postHandlers.find(path) != postHandlers.end()) {
-            handler = postHandlers[path];
-            hasFound = true;
-        }
+    ServiceResponse response;
+    const auto& handlers = method == "GET" ? getHandlers : postHandlers;
+    auto found = handlers.find(path);
+    if ((method != "GET" && method != "POST") || found == handlers.end()) {
+        response.status = 404;
+        response.contentType = "text/plain";
+        response.body = "url not found";
+        return response;
     }
 
-    auto response = connection->GetResponse();
-    if (hasFound == false || handler == nullptr) {
-        response->result(http::status::not_found);
-        response->set(http::field::content_type, "text/plain");
-        responseWrite(response, "url not found");
-        return false;
+    Json::Value source;
+    Json::Reader reader;
+    const bool parsed = reader.parse(body.data(), body.data() + body.size(), source);
+    if (method == "POST" && (!parsed || source.empty())) {
+        Json::Value error;
+        error["error"] = ErrorCodes::JsonParser;
+        response.body = "content-type not support | " + error.toStyledString();
+        return response;
     }
 
-    connection->GetResponse()->set(http::field::content_type, "application/json");
-    Json::Value source = parseRequest(connection);
-
-    if (source.empty() && method == http::verb::post) {
-        Json::Value rsp;
-        rsp["error"] = ErrorCodes::JsonParser;
-        responseWrite(response, "content-type not support | " + rsp.toStyledString());
-        return true;
-    }
-
-    logger->info("[service-handle] path as {}", path);
-
-    response->result(http::status::ok);
-    response->set(http::field::server, "GateServer");
-    bool handleSuccess = handler(response, source);
-
-    return handleSuccess;
+    found->second(response, source);
+    return response;
 }
 
-bool Service::requestVerificationCode(HttpSession::ResponsePtr response, Json::Value& requestData)
+bool Service::requestVerificationCode(ServiceResponse& response, Json::Value& requestData)
 {
     Json::Value rspInfo;
     Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
@@ -145,7 +112,7 @@ bool Service::requestVerificationCode(HttpSession::ResponsePtr response, Json::V
     return result.error == ErrorCodes::Success;
 }
 
-bool Service::signUp(HttpSession::ResponsePtr response, Json::Value& requestData)
+bool Service::signUp(ServiceResponse& response, Json::Value& requestData)
 {
     Json::Value rspInfo;
     Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
@@ -204,7 +171,7 @@ bool Service::signUp(HttpSession::ResponsePtr response, Json::Value& requestData
     return true;
 }
 
-bool Service::signIn(HttpSession::ResponsePtr response, Json::Value& requestData)
+bool Service::signIn(ServiceResponse& response, Json::Value& requestData)
 {
     Json::Value rspInfo;
     Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
@@ -259,7 +226,7 @@ bool Service::signIn(HttpSession::ResponsePtr response, Json::Value& requestData
     return true;
 }
 
-bool Service::chatArrhythmia(HttpSession::ResponsePtr response, Json::Value& requestData)
+bool Service::chatArrhythmia(ServiceResponse& response, Json::Value& requestData)
 {
     Json::Value rspInfo;
     Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });
@@ -280,7 +247,7 @@ bool Service::chatArrhythmia(HttpSession::ResponsePtr response, Json::Value& req
     return true;
 }
 
-bool Service::forgetPassword(HttpSession::ResponsePtr response, Json::Value& requestData)
+bool Service::forgetPassword(ServiceResponse& response, Json::Value& requestData)
 {
     Json::Value rspInfo;
     Defer _([&]() { responseWrite(response, rspInfo.toStyledString()); });

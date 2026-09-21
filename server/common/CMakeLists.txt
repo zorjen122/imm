@@ -3,8 +3,6 @@ cmake_minimum_required(VERSION 3.10)
 project(imCommon)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD 20)
 # 仅用于clangd搜索
 find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)

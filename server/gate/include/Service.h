@@ -1,20 +1,23 @@
 #pragma once
-#include <boost/beast/http/verb.hpp>
 #include <functional>
 #include <jsoncpp/json/value.h>
 #include <map>
 #include <memory>
 
 #include "Const.h"
-#include "HttpSession.h"
-#include <boost/beast.hpp>
+#include <string>
+#include <string_view>
 
 namespace wimi
 {
 
-namespace http = boost::beast::http;
+struct ServiceResponse {
+    unsigned status{200};
+    std::string contentType{"application/json"};
+    std::string body;
+};
 
-typedef std::function<bool(HttpSession::ResponsePtr, Json::Value&)> HttpHandler;
+using HttpHandler = std::function<bool(ServiceResponse&, Json::Value&)>;
 
 class Service : public Singleton<Service>
 {
@@ -22,19 +25,18 @@ class Service : public Singleton<Service>
 
   public:
     ~Service();
-    bool Handle(std::shared_ptr<HttpSession> connection, std::string path, http::verb method);
+    ServiceResponse Handle(std::string_view body, const std::string& path, std::string_view method);
     void OnGetHandle(std::string, HttpHandler);
     void OnPostHandle(std::string, HttpHandler);
 
   private:
-    bool requestVerificationCode(HttpSession::ResponsePtr, Json::Value&);
-    bool signUp(HttpSession::ResponsePtr, Json::Value&);
-    bool signIn(HttpSession::ResponsePtr, Json::Value&);
-    bool forgetPassword(HttpSession::ResponsePtr, Json::Value&);
-    bool chatArrhythmia(HttpSession::ResponsePtr, Json::Value&);
+    bool requestVerificationCode(ServiceResponse&, Json::Value&);
+    bool signUp(ServiceResponse&, Json::Value&);
+    bool signIn(ServiceResponse&, Json::Value&);
+    bool forgetPassword(ServiceResponse&, Json::Value&);
+    bool chatArrhythmia(ServiceResponse&, Json::Value&);
 
-    void responseWrite(HttpSession::ResponsePtr, const std::string&);
-    Json::Value parseRequest(std::shared_ptr<HttpSession> connection);
+    void responseWrite(ServiceResponse&, const std::string&);
 
   private:
     Service();

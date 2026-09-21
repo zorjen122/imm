@@ -4,8 +4,6 @@ project(file_test)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD 20)
 
 find_package(GTest REQUIRED)
 include(CTest)

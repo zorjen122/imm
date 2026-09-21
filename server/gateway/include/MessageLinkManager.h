@@ -36,6 +36,7 @@ class MessageLinkManager
     void Stop();
     bool Ready() const;
     std::size_t HealthyLinkCount() const;
+    bool ForwardNow(gateway::CommandEnvelope command, CommandCallback callback);
     boost::asio::awaitable<bool> Forward(gateway::CommandEnvelope command, CommandCallback callback);
     void SetClientForwardHandler(ClientForwardHandler handler);
 

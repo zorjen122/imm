@@ -1,6 +1,6 @@
 #include "SessionManager.h"
 
-#include "GatewaySession.h"
+#include "ClientSession.h"
 #include "Logger.h"
 #include "TcpMessageCodec.h"
 
@@ -15,7 +15,7 @@ SessionManager::SessionManager(std::string gatewayId, std::string instanceId, lo
 }
 
 db::SessionLease SessionManager::Bind(int64_t uid, const std::string& deviceId,
-                                      const std::shared_ptr<GatewaySession>& session)
+                                      const std::shared_ptr<ClientSession>& session)
 {
     db::SessionLease lease;
     lease.deviceId = deviceId;
@@ -30,13 +30,13 @@ db::SessionLease SessionManager::Bind(int64_t uid, const std::string& deviceId,
     }
 
     // rebind 会话，如果旧的会话存在，目前的规则是直接关闭旧的会话（没有明确通知）
-    std::shared_ptr<GatewaySession> oldSession;
+    std::shared_ptr<ClientSession> oldSession;
     {
         std::lock_guard<std::mutex> lock(mutex);
         auto& userSessions = sessions[uid];
         auto found = userSessions.find(deviceId);
         if (found != userSessions.end())
-            oldSession = found->second.session.lock();
+            oldSession = found->second.session;
         userSessions[deviceId] = LocalSession{session, lease};
     }
     if (oldSession && oldSession != session) {
@@ -57,32 +57,42 @@ bool SessionManager::Refresh(int64_t uid, const std::string& deviceId, const db:
     return db::RedisDao::GetInstance()->refreshSessionLease(uid, deviceId, lease, leaseTtlSeconds);
 }
 
-void SessionManager::Remove(int64_t uid, const std::string& deviceId, const std::shared_ptr<GatewaySession>& session,
+void SessionManager::Remove(int64_t uid, const std::string& deviceId, const std::shared_ptr<ClientSession>& session,
                             const db::SessionLease& lease)
 {
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        auto found = sessions.find(uid);
-        if (found == sessions.end())
-            return;
-        auto device = found->second.find(deviceId);
-        if (device == found->second.end())
-            return;
-        auto current = device->second.session.lock();
-        if (current && current != session)
-            return;
-        found->second.erase(device);
-        if (found->second.empty())
-            sessions.erase(found);
-    }
+    if (!RemoveLocal(uid, deviceId, session))
+        return;
     db::RedisDao::GetInstance()->clearSessionLease(uid, deviceId, lease);
     LOG_INFO(logger, "[gateway/session-remove] 会话已移除, uid: {}, connection_id: {}, generation: {}", uid,
              lease.connectionId, lease.generation);
 }
 
+void SessionManager::Discard(int64_t uid, const std::string& deviceId, const std::shared_ptr<ClientSession>& session)
+{
+    RemoveLocal(uid, deviceId, session);
+}
+
+bool SessionManager::RemoveLocal(int64_t uid, const std::string& deviceId,
+                                 const std::shared_ptr<ClientSession>& session)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    auto found = sessions.find(uid);
+    if (found == sessions.end())
+        return false;
+    auto device = found->second.find(deviceId);
+    if (device == found->second.end())
+        return false;
+    if (device->second.session && device->second.session != session)
+        return false;
+    found->second.erase(device);
+    if (found->second.empty())
+        sessions.erase(found);
+    return true;
+}
+
 gateway::ClientForwardStatus SessionManager::Forward(const gateway::ClientForwardEnvelope& forward)
 {
-    std::shared_ptr<GatewaySession> session;
+    std::shared_ptr<ClientSession> session;
     db::SessionLease lease;
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -98,7 +108,7 @@ gateway::ClientForwardStatus SessionManager::Forward(const gateway::ClientForwar
                       forward.recipient_uid(), forward.forward_id());
             return gateway::CLIENT_FORWARD_STATUS_OFFLINE;
         }
-        session = found->second.session.lock();
+        session = found->second.session;
         lease = found->second.lease;
     }
 

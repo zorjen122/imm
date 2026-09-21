@@ -107,16 +107,21 @@ std::size_t MessageLinkManager::HealthyLinkCount() const
 
 asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope command, CommandCallback callback)
 {
+    co_return ForwardNow(std::move(command), std::move(callback));
+}
+
+bool MessageLinkManager::ForwardNow(gateway::CommandEnvelope command, CommandCallback callback)
+{
     if (stopping.load(std::memory_order_acquire)) {
         LOG_DEBUG(logger, "[gateway/command-route] 链路正在停止, 拒绝新请求, request_id: {}", command.request_id());
-        co_return false;
+        return false;
     }
 
     auto link = SelectLink(command.conversation_id());
     if (!link) {
         LOG_WARN(logger, "[gateway/command-route] 没有可用的 Message 链路, request_id: {}, operation: {}",
                  command.request_id(), static_cast<int>(command.operation()));
-        co_return false;
+        return false;
     }
 
     const std::string requestId = command.request_id();
@@ -126,7 +131,7 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
         std::lock_guard<std::mutex> lock(pendingMutex);
         if (pending.contains(requestId)) {
             LOG_WARN(logger, "[gateway/command-route] 拒绝重复 request_id, request_id: {}", requestId);
-            co_return false;
+            return false;
         }
 
         PendingCommand pendingCommand;
@@ -149,7 +154,7 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
 
         // 单次投递 deadline 仅在帧已进入链路写队列后开始计时。
         ArmAttemptTimer(requestId, 1);
-        co_return true;
+        return true;
     }
 
     {
@@ -166,7 +171,7 @@ asio::awaitable<bool> MessageLinkManager::Forward(gateway::CommandEnvelope comma
     // Enqueue 返回失败意味着帧未进入该链路的写队列，可以安全地立即重新选择链路。
     RetryPending();
 
-    co_return true;
+    return true;
 }
 
 void MessageLinkManager::SetClientForwardHandler(ClientForwardHandler handler)
