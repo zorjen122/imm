@@ -3,7 +3,7 @@ package state;
 
 // Auth Gate 请求为某个用户选择连接节点。
 message ConnectUser {
-  int32 id = 1; // 用户 ID；用于轮询/亲和选择
+  int64 id = 1; // 用户 ID；用于轮询/亲和选择
 }
 
 message ConnectUserRsp {

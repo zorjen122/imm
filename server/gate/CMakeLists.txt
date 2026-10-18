@@ -7,38 +7,32 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
-find_package(gRPC REQUIRED)
-find_package(CURL REQUIRED)
+find_package(gRPC MODULE REQUIRED)
 set(Seastar_LTTNG ON)
 find_package(Seastar REQUIRED)
 
-file(GLOB SOURCE CONFIGURE_DEPENDS src/*.cc)
-list(REMOVE_ITEM SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
-add_library(imGate ${SOURCE})
-add_executable(gate src/main.cc)
+set(API_PROTO_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/api")
+add_custom_command(
+  OUTPUT "${API_PROTO_DIR}/gate_api.pb.cc" "${API_PROTO_DIR}/gate_api.pb.h"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${API_PROTO_DIR}"
+  COMMAND ${Protobuf_PROTOC_EXECUTABLE} --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/proto
+          --cpp_out=${API_PROTO_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/proto/gate_api.proto
+  DEPENDS proto/gate_api.proto
+  VERBATIM)
+add_library(imGateApi "${API_PROTO_DIR}/gate_api.pb.cc")
+target_include_directories(imGateApi PUBLIC "${API_PROTO_DIR}")
+target_link_libraries(imGateApi PUBLIC protobuf::libprotobuf)
 
-target_include_directories(imGate PUBLIC ./include ../common/include)
-target_link_directories(imGate PUBLIC ../common/build)
-
-target_link_libraries(
-  imGate
-  PUBLIC imCommon
-         Threads::Threads
-         protobuf::libprotobuf
-         Boost::filesystem
-         gRPC::grpc++
-         gRPC::grpc++_reflection
-         CURL::libcurl
-         fmt::fmt
-         yaml-cpp
-         spdlog
-         hiredis
-         redis++
-         mysqlcppconnx
-         jsoncpp)
-
-target_compile_options(imGate PRIVATE -Wall -g)
-
-target_link_libraries(gate PRIVATE imGate Seastar::seastar)
+add_executable(gate main.cc)
 
 target_compile_options(gate PRIVATE -Wall)
+
+include(ReactorMysql)
+find_package(OpenSSL REQUIRED)
+file(GLOB IO_SOURCE CONFIGURE_DEPENDS io/*.cc api/*.cc business/*.cc)
+add_library(imGateIo ${IO_SOURCE})
+target_include_directories(imGateIo PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" ../common/include)
+target_link_libraries(imGateIo PUBLIC imCommon imGateApi Seastar::seastar mariadbclient OpenSSL::SSL)
+target_link_libraries(gate PRIVATE imGateIo)
+
+target_compile_options(imGateIo PRIVATE -Wall -g)

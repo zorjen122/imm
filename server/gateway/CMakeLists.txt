@@ -6,7 +6,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
-find_package(gRPC REQUIRED)
+find_package(gRPC MODULE REQUIRED)
 set(Seastar_LTTNG ON)
 find_package(Seastar REQUIRED)
 
@@ -23,7 +23,6 @@ target_link_libraries(
          protobuf::libprotobuf
          Boost::filesystem
          gRPC::grpc++
-         gRPC::grpc++_reflection
          fmt::fmt
          yaml-cpp
          spdlog

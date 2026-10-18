@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
-find_package(gRPC REQUIRED)
+find_package(gRPC MODULE REQUIRED)
 
 file(GLOB SOURCE CONFIGURE_DEPENDS src/*.cc)
 list(REMOVE_ITEM SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
@@ -22,7 +22,6 @@ target_link_libraries(
          Threads::Threads
          protobuf::libprotobuf
          gRPC::grpc++
-         gRPC::grpc++_reflection
          fmt::fmt
          yaml-cpp
          spdlog

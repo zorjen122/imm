@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
-find_package(gRPC REQUIRED)
+find_package(gRPC MODULE REQUIRED)
 find_package(OpenSSL REQUIRED)
 
 file(GLOB SOURCE CONFIGURE_DEPENDS src/*.cc)
@@ -25,7 +25,6 @@ target_link_libraries(
          protobuf::libprotobuf
          imCommon
          gRPC::grpc++
-         gRPC::grpc++_reflection
          OpenSSL::Crypto
          fmt::fmt
          spdlog

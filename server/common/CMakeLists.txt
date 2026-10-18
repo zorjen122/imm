@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS true)
 find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
-find_package(gRPC REQUIRED)
+find_package(gRPC MODULE REQUIRED)
 
 # 添加 src 目录下的所有源文件
 file(GLOB SOURCES src/*.cc)
@@ -31,8 +31,7 @@ list(REMOVE_DUPLICATES WIMI_COMMON_PROTO_INCLUDE_DIRS)
 add_library(imProto STATIC ${WIMI_COMMON_PROTO_SRCS})
 set_target_properties(imProto PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(imProto PUBLIC ${WIMI_COMMON_PROTO_INCLUDE_DIRS})
-target_link_libraries(imProto PUBLIC protobuf::libprotobuf gRPC::grpc++
-                                    gRPC::grpc++_reflection)
+target_link_libraries(imProto PUBLIC protobuf::libprotobuf gRPC::grpc++)
 
 add_library(imCommon SHARED ${SOURCES})
 
@@ -46,7 +45,6 @@ target_link_libraries(
          protobuf::libprotobuf
          Boost::filesystem
          gRPC::grpc++
-         gRPC::grpc++_reflection
          fmt::fmt
          yaml-cpp
          spdlog
