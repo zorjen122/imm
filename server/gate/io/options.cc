@@ -93,13 +93,13 @@ options load_options(const YAML::Node& server)
         result.queue.bytes = queue["maxBytes"].as<size_t>(result.queue.bytes);
         result.queue.concurrency = queue["concurrency"].as<unsigned>(result.queue.concurrency);
     }
-    const auto business = server["business"];
-    if (business) {
-        result.max_requests = business["maxRequests"].as<size_t>(result.max_requests);
-        result.max_request_bytes = business["maxBytes"].as<size_t>(result.max_request_bytes);
+    const auto transaction = server["transaction"];
+    if (transaction) {
+        result.max_requests = transaction["maxRequests"].as<size_t>(result.max_requests);
+        result.max_request_bytes = transaction["maxBytes"].as<size_t>(result.max_request_bytes);
     }
     if (!result.max_requests || !result.max_request_bytes) {
-        throw std::invalid_argument("business admission limits must be positive");
+        throw std::invalid_argument("transaction admission limits must be positive");
     }
     return result;
 }

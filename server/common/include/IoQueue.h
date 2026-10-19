@@ -87,7 +87,11 @@ template <typename Backend, typename... Operations> class operation_queue<Backen
     seastar::future<> consume()
     {
         while (true) {
-            co_await _ready.wait([this] { return !_pending.empty() || !_accepting; });
+            // 通知不预留任务；每次恢复后都重新检查条件，检查与 pop 之间不再挂起。
+            // 使用协程原生 when() 等待，避免 wait(predicate) 的 future 续体引入调度间隙。
+            while (_pending.empty() && _accepting) {
+                co_await _ready.when();
+            }
             if (!_accepting) {
                 co_return;
             }

@@ -1,5 +1,6 @@
 #pragma once
 #include "IoQueue.h"
+#include "reactor/types.hh"
 #include <yaml-cpp/yaml.h>
 #include <cstdint>
 #include <string>
@@ -7,27 +8,15 @@
 
 namespace wimi::gate_io
 {
-struct endpoint {
-    std::string host;
-    uint16_t port;
-};
-struct mysql_options {
-    endpoint address{"127.0.0.1", 3306};
-    std::string user;
-    std::string password;
-    std::string schema;
-    std::string ca_file;
-    std::string ca_pem;
-};
 struct options {
     io::queue_limits queue;
     size_t max_requests{128};
     size_t max_request_bytes{16 * 1024 * 1024};
     int max_attempts{5};
     unsigned machine_id{};
-    mysql_options mysql;
-    endpoint state_rpc{"127.0.0.1", 50052};
-    std::vector<endpoint> sentinels;
+    io::mysql_options mysql;
+    io::endpoint state_rpc{"127.0.0.1", 50052};
+    std::vector<io::endpoint> sentinels;
     std::string master_name;
     std::string redis_password;
     std::string sentinel_password;
@@ -35,7 +24,7 @@ struct options {
     int cooldown_seconds{60};
     bool email_enabled{};
     bool expose_code{};
-    endpoint smtp{"smtp.qq.com", 465};
+    io::endpoint smtp{"smtp.qq.com", 465};
     bool implicit_tls{true};
     std::string smtp_user;
     std::string smtp_password;

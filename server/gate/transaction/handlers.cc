@@ -1,4 +1,4 @@
-#include "business/service.hh"
+#include "transaction/service.hh"
 #include "Logger.h"
 #include "Const.h"
 #include <seastar/core/coroutine.hh>
@@ -10,7 +10,7 @@
 #include <system_error>
 #include <cassert>
 
-namespace wimi::gate_business
+namespace wimi::gate_transaction
 {
 using namespace gate_io;
 namespace
@@ -93,7 +93,7 @@ seastar::future<gate_api::verification_response> service::handle(gate_api::verif
             try {
                 co_await _io.submit(clear_verification_code{email, code});
             } catch (const std::exception& error) {
-                LOG_WARN(logger, "[gate/business] verification cleanup failed: {}", error.what());
+                LOG_WARN(logger, "[gate/transaction] verification cleanup failed: {}", error.what());
             }
             std::rethrow_exception(failure);
         }
@@ -179,4 +179,4 @@ seastar::future<gate_api::reset_password_response> service::handle(gate_api::res
     response.set_username(request.username());
     co_return response;
 }
-} // namespace wimi::gate_business
+} // namespace wimi::gate_transaction

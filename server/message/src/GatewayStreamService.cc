@@ -19,6 +19,7 @@ namespace
 {
 
 constexpr std::size_t kMaxStreamQueue = 4096;
+std::atomic<uint64_t> next_stream_token{};
 
 } // namespace
 
@@ -117,22 +118,27 @@ class GatewayStreamReactor final
     {
         LOG_DEBUG(logger, "[message/gateway-stream] Gateway 流已结束, gateway: {}, instance: {}", gatewayId,
                   instanceId);
-        service.Unregister(gatewayId, instanceId, this);
+        service.Unregister(gatewayId, instanceId, shardId, streamToken, this);
         delete this;
     }
 
   private:
     void HandleRegister(const gateway::RegisterGateway& request)
     {
+        if (registered) {
+            FinishOnce();
+            return;
+        }
         gatewayId = request.gateway_id();
         instanceId = request.instance_id();
         streamEpoch = request.stream_epoch();
+        shardId = request.shard_id();
 
         // 更好的方法是在 Redis 里面校验一遍，现在只是判空
         const bool valid = request.protocol_version() == 1 && !gatewayId.empty() && !instanceId.empty() &&
                            !service.Draining() && (!service.RequirePeerIdentity() || authenticatedPeer == gatewayId);
         if (valid) {
-            service.Register(gatewayId, instanceId, this);
+            service.Register(gatewayId, instanceId, shardId, streamToken, this);
             registered = true;
         } else {
             LOG_WARN(logger,
@@ -156,7 +162,7 @@ class GatewayStreamReactor final
     {
         const std::string requestId = command.request_id();
         const auto operation = command.operation();
-        if (!registered || requestId.empty()) {
+        if (!registered || requestId.empty() || service.Draining()) {
             LOG_WARN(logger,
                      "[message/command] 拒绝未注册或缺少 request_id 的请求, gateway: {}, operation: {}, "
                      "registered: {}",
@@ -178,10 +184,16 @@ class GatewayStreamReactor final
         const std::string originInstanceId = instanceId;
         LOG_DEBUG(logger, "[message/command] 请求已进入业务队列, gateway: {}, request_id: {}, uid: {}, operation: {}",
                   gatewayId, requestId, command.actor_uid(), static_cast<int>(operation));
-        auto accepted = Service::GetInstance()->PostBackgroundTask(
-            [this, originGatewayId, originInstanceId, command = std::move(command)]() mutable {
-                HandleBackgroundCommand(originGatewayId, originInstanceId, std::move(command));
-            });
+        // 后台任务只复制流身份，不捕获 reactor；OnDone 可先于业务完成并销毁 reactor。
+        // token 区分同一地址被重新分配的对象，旧结果不能误投到重连的新流。
+        auto* stream_service = &service;
+        const auto origin_shard = shardId;
+        const auto origin_token = streamToken;
+        auto accepted = service.post_command([stream_service, originGatewayId, originInstanceId, origin_shard,
+                                              origin_token, command = std::move(command)]() mutable {
+            HandleBackgroundCommand(*stream_service, originGatewayId, originInstanceId, origin_shard, origin_token,
+                                    std::move(command));
+        });
 
         if (!accepted) {
             LOG_WARN(logger, "[message/command] 业务队列已满, 请求被拒绝, gateway: {}, request_id: {}, operation: {}",
@@ -197,10 +209,10 @@ class GatewayStreamReactor final
         }
     }
 
-    void HandleBackgroundCommand(const std::string& originGatewayId, const std::string& originInstanceId,
-                                 gateway::CommandEnvelope command)
+    static void HandleBackgroundCommand(GatewayStreamService& service, const std::string& originGatewayId,
+                                        const std::string& originInstanceId, unsigned origin_shard,
+                                        uint64_t origin_token, gateway::CommandEnvelope command)
     {
-        auto* originReactor = this;
         auto* streamService = &service;
         TcpPacket packet;
         gateway::MessageToGatewayFrame responseFrame;
@@ -213,8 +225,8 @@ class GatewayStreamReactor final
             response->set_error(error);
             response->set_retryable(retryable);
             response->set_packet(SerializeTcpPacket(*replyPacket));
-            const bool replied =
-                streamService->Reply(originGatewayId, originInstanceId, originReactor, std::move(responseFrame));
+            const bool replied = streamService->Reply(originGatewayId, originInstanceId, origin_shard, origin_token,
+                                                      std::move(responseFrame));
             if (!replied) {
                 LOG_WARN(logger,
                          "[message/command-result] 处理结果未进入 Gateway 写队列, gateway: {}, request_id: {}, "
@@ -235,7 +247,8 @@ class GatewayStreamReactor final
         // 用户重新登录后，旧连接 generation 不匹配，Message 端会拒绝。
         auto actorLease = db::RedisDao::GetInstance()->getSessionLease(command.actor_uid(), command.actor_device_id());
         if (actorLease.empty() || actorLease.gatewayId != originGatewayId ||
-            actorLease.instanceId != originInstanceId || actorLease.connectionId != command.connection_id() ||
+            actorLease.instanceId != originInstanceId || actorLease.shardId != origin_shard ||
+            actorLease.connectionId != command.connection_id() ||
             actorLease.generation != command.connection_generation()) {
             LOG_WARN(logger, "[message/command] 连接租约校验失败, gateway: {}, request_id: {}, uid: {}, operation: {}",
                      originGatewayId, command.request_id(), command.actor_uid(), static_cast<int>(command.operation()));
@@ -400,6 +413,8 @@ class GatewayStreamReactor final
     std::string instanceId;
     std::string authenticatedPeer;
     uint64_t streamEpoch{0};
+    unsigned shardId{};
+    const uint64_t streamToken{++next_stream_token};
     gateway::GatewayToMessageFrame readFrame;
     gateway::MessageToGatewayFrame writeFrame;
     std::mutex writeMutex;
@@ -426,20 +441,21 @@ GatewayStreamService::Connect(grpc::CallbackServerContext* context)
     return new GatewayStreamReactor(*this, std::move(peerIdentity));
 }
 
-void GatewayStreamService::Register(const std::string& gatewayId, const std::string& instanceId,
-                                    GatewayStreamReactor* reactor)
+void GatewayStreamService::Register(const std::string& gatewayId, const std::string& instanceId, unsigned shardId,
+                                    uint64_t streamToken, GatewayStreamReactor* reactor)
 {
     std::lock_guard<std::mutex> lock(streamsMutex);
-    streams[gatewayId] = RegisteredStream{instanceId, reactor};
+    streams[{gatewayId, instanceId, shardId}] = RegisteredStream{instanceId, reactor, streamToken};
     LOG_INFO(logger, "[message/gateway-register] Gateway 流已注册, gateway: {}, instance: {}", gatewayId, instanceId);
 }
 
-void GatewayStreamService::Unregister(const std::string& gatewayId, const std::string& instanceId,
-                                      GatewayStreamReactor* reactor)
+void GatewayStreamService::Unregister(const std::string& gatewayId, const std::string& instanceId, unsigned shardId,
+                                      uint64_t streamToken, GatewayStreamReactor* reactor)
 {
     std::lock_guard<std::mutex> lock(streamsMutex);
-    auto found = streams.find(gatewayId);
-    if (found == streams.end() || found->second.instanceId != instanceId || found->second.reactor != reactor)
+    auto found = streams.find({gatewayId, instanceId, shardId});
+    if (found == streams.end() || found->second.instanceId != instanceId || found->second.token != streamToken ||
+        found->second.reactor != reactor)
         return;
     streams.erase(found);
     LOG_INFO(logger, "[message/gateway-unregister] Gateway 流已注销, gateway: {}, instance: {}", gatewayId, instanceId);
@@ -448,7 +464,7 @@ void GatewayStreamService::Unregister(const std::string& gatewayId, const std::s
 bool GatewayStreamService::Forward(const db::SessionLease& lease, gateway::ClientForwardEnvelope envelope)
 {
     std::lock_guard<std::mutex> lock(streamsMutex);
-    auto found = streams.find(lease.gatewayId);
+    auto found = streams.find({lease.gatewayId, lease.instanceId, lease.shardId});
     if (found == streams.end() || found->second.instanceId != lease.instanceId) {
         LOG_DEBUG(logger, "[message/client-forward] Gateway 流不可用, gateway: {}, uid: {}", lease.gatewayId,
                   envelope.recipient_uid());
@@ -497,16 +513,16 @@ bool GatewayStreamService::ForwardToUser(int64_t recipientUid, gateway::ClientFo
     return forwarded;
 }
 
-bool GatewayStreamService::Reply(const std::string& gatewayId, const std::string& instanceId,
-                                 GatewayStreamReactor* reactor, gateway::MessageToGatewayFrame frame)
+bool GatewayStreamService::Reply(const std::string& gatewayId, const std::string& instanceId, unsigned shardId,
+                                 uint64_t streamToken, gateway::MessageToGatewayFrame frame)
 {
     std::lock_guard<std::mutex> lock(streamsMutex);
-    auto found = streams.find(gatewayId);
-    if (found == streams.end() || found->second.instanceId != instanceId || found->second.reactor != reactor) {
+    auto found = streams.find({gatewayId, instanceId, shardId});
+    if (found == streams.end() || found->second.instanceId != instanceId || found->second.token != streamToken) {
         LOG_DEBUG(logger, "[message/command-result] Gateway 流已变化, 无法返回结果, gateway: {}", gatewayId);
         return false;
     }
-    return reactor->Enqueue(std::move(frame));
+    return found->second.reactor->Enqueue(std::move(frame));
 }
 
 void GatewayStreamService::DrainAll(const std::string& reason)
@@ -530,4 +546,37 @@ bool GatewayStreamService::RequirePeerIdentity() const { return requirePeerIdent
 
 bool GatewayStreamService::Draining() const { return draining.load(std::memory_order_acquire); }
 
+} // namespace wimi::rpc
+
+namespace wimi::rpc
+{
+bool GatewayStreamService::post_command(std::function<void()> task)
+{
+    {
+        std::lock_guard lock(_commands_mutex);
+        if (draining.load()) {
+            return false;
+        }
+        ++_commands;
+    }
+    const bool accepted = wimi::Service::GetInstance()->PostBackgroundTask([this, task = std::move(task)] {
+        Defer complete([this] { command_complete(); });
+        task();
+    });
+    if (!accepted) {
+        command_complete();
+    }
+    return accepted;
+}
+void GatewayStreamService::command_complete()
+{
+    std::lock_guard lock(_commands_mutex);
+    --_commands;
+    _commands_changed.notify_all();
+}
+void GatewayStreamService::wait_commands()
+{
+    std::unique_lock lock(_commands_mutex);
+    _commands_changed.wait(lock, [this] { return _commands == 0; });
+}
 } // namespace wimi::rpc

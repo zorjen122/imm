@@ -1,5 +1,5 @@
 #pragma once
-#include "business/service.hh"
+#include "transaction/service.hh"
 #include <google/protobuf/message.h>
 #include <seastar/core/scheduling.hh>
 #include <span>
@@ -18,7 +18,7 @@ struct scheduling_groups {
     seastar::scheduling_group io;
 };
 using immediate_handler = http_result (*)(std::string_view);
-using asynchronous_handler = seastar::future<http_result> (*)(gate_business::service&, std::string,
+using asynchronous_handler = seastar::future<http_result> (*)(gate_transaction::service&, std::string,
                                                               seastar::scheduling_group);
 struct route {
     std::string_view method;
@@ -37,6 +37,6 @@ int decode(std::string_view body, gate_api::gateway_request& request);
 int decode(std::string_view body, gate_api::sign_up_request& request);
 int decode(std::string_view body, gate_api::reset_password_request& request);
 std::string encode(const google::protobuf::Message& response);
-seastar::future<http_result> dispatch(const route& route_endpoint, gate_business::service& service, std::string body,
+seastar::future<http_result> dispatch(const route& route_endpoint, gate_transaction::service& service, std::string body,
                                       seastar::scheduling_group transaction_group);
 } // namespace wimi::gate_protocol

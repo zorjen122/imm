@@ -52,7 +52,7 @@ http_result health(std::string_view)
     return {200, encode(response)};
 }
 template <typename Request>
-seastar::future<http_result> invoke(gate_business::service& service, std::string body,
+seastar::future<http_result> invoke(gate_transaction::service& service, std::string body,
                                     seastar::scheduling_group transaction_group)
 {
     // permit 在整个协程作用域内持有请求数、原始 payload 字节额度及请求 gate。
@@ -125,7 +125,7 @@ int decode(std::string_view body, gate_api::reset_password_request& request)
 {
     return parse(body, request) ? validate_verification(request) : ErrorCodes::JsonParser;
 }
-seastar::future<http_result> dispatch(const route& route_endpoint, gate_business::service& service, std::string body,
+seastar::future<http_result> dispatch(const route& route_endpoint, gate_transaction::service& service, std::string body,
                                       seastar::scheduling_group transaction_group)
 {
     try {

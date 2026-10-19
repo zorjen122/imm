@@ -1,4 +1,4 @@
-#include "io/mysql_connection.hh"
+#include "reactor/mysql_connection.hh"
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timer.hh>
@@ -8,7 +8,7 @@
 #include <poll.h>
 #include <system_error>
 
-namespace wimi::gate_io
+namespace wimi::io
 {
 mysql_connection::mysql_connection()
 {
@@ -222,4 +222,4 @@ seastar::future<> mysql_connection::close()
     }
     _mysql = nullptr;
 }
-} // namespace wimi::gate_io
+} // namespace wimi::io

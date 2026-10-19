@@ -91,6 +91,8 @@ class ImServiceRunner : public Singleton<ImServiceRunner>
                 });
 
             signalIoc.run();
+            // DrainAll 已关闭业务准入；等待已接收的后台命令退出，再关闭存储和流服务。
+            gatewayStreamService.wait_commands();
             ClearUp();
             Service::GetInstance()->SetGatewayStreamService(nullptr);
 

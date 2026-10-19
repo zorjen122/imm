@@ -1,6 +1,7 @@
 #include "Configer.h"
 #include "Logger.h"
 #include "api/protocol.hh"
+#include "reactor/grpc_engine.hh"
 #include <seastar/core/sharded.hh>
 #include <openssl/ssl.h>
 
@@ -36,7 +37,7 @@ void set_log_level(const std::string& configured)
 }
 
 seastar::future<std::unique_ptr<seastar::http::reply>>
-handle_http_request(seastar::sharded<wimi::gate_business::service>& services,
+handle_http_request(seastar::sharded<wimi::gate_transaction::service>& services,
                     const wimi::gate_protocol::route& route_endpoint, wimi::gate_protocol::scheduling_groups groups,
                     std::unique_ptr<seastar::http::request> request, std::unique_ptr<seastar::http::reply> reply)
 {
@@ -85,18 +86,18 @@ seastar::future<> run_gate(seastar::app_template& app)
 
     const auto io_options = wimi::gate_io::load_options(config);
 
-    wimi::gate_io::initialize_grpc();
+    wimi::io::initialize_grpc();
     const wimi::gate_protocol::scheduling_groups groups{co_await seastar::create_scheduling_group("protocol", 100),
                                                         co_await seastar::create_scheduling_group("transaction", 100),
                                                         co_await seastar::create_scheduling_group("io", 200)};
-    seastar::sharded<wimi::gate_business::service> services;
+    seastar::sharded<wimi::gate_transaction::service> services;
     bool services_constructed{};
     std::exception_ptr failure;
     seastar::httpd::http_server_control server;
     try {
         co_await services.start(io_options, groups.transaction, groups.io);
         services_constructed = true;
-        co_await services.invoke_on_all([groups](wimi::gate_business::service& local) {
+        co_await services.invoke_on_all([groups](wimi::gate_transaction::service& local) {
             return seastar::with_scheduling_group(groups.io, [&local] { return local.start(); });
         });
         co_await server.start("gate");
@@ -129,7 +130,7 @@ seastar::future<> run_gate(seastar::app_template& app)
     // 先让各 shard 拒绝业务并取消依赖，等待业务/驱动退出；再停止 HTTP 服务，
     // 销毁 shard 实例。调度组最后释放，因为在途协程恢复时仍会使用原组。
     if (services_constructed) {
-        co_await services.invoke_on_all([groups](wimi::gate_business::service& local) {
+        co_await services.invoke_on_all([groups](wimi::gate_transaction::service& local) {
             return seastar::with_scheduling_group(groups.io, [&local] { return local.stop(); });
         });
     }
@@ -137,7 +138,7 @@ seastar::future<> run_gate(seastar::app_template& app)
     if (services_constructed) {
         co_await services.stop();
     }
-    co_await wimi::gate_io::drain_grpc();
+    co_await wimi::io::drain_grpc();
     co_await seastar::destroy_scheduling_group(groups.io);
     co_await seastar::destroy_scheduling_group(groups.transaction);
     co_await seastar::destroy_scheduling_group(groups.protocol);
@@ -159,7 +160,7 @@ int main(int argc, char** argv)
     namespace bpo = boost::program_options;
     app.add_options()("log_level", bpo::value<std::string>()->default_value("info"), "wimi log level");
     const int result = app.run(argc, argv, [&app] { return run_gate(app); });
-    wimi::gate_io::shutdown_grpc();
+    wimi::io::shutdown_grpc();
     mysql_library_end();
     return result;
 }

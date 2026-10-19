@@ -9,11 +9,6 @@
 
 namespace wimi::gate_io
 {
-// Initialize once on shard 0 before creating any channels. Global thread joins
-// must run after app.run(), after every local grpc_client has closed and drained.
-void initialize_grpc();
-seastar::future<> drain_grpc();
-void shutdown_grpc();
 class grpc_client
 {
     std::shared_ptr<grpc_event_engine::experimental::EventEngine> _engine;

@@ -27,12 +27,10 @@ add_executable(gate main.cc)
 
 target_compile_options(gate PRIVATE -Wall)
 
-include(ReactorMysql)
-find_package(OpenSSL REQUIRED)
-file(GLOB IO_SOURCE CONFIGURE_DEPENDS io/*.cc api/*.cc business/*.cc)
+file(GLOB IO_SOURCE CONFIGURE_DEPENDS io/*.cc api/*.cc transaction/*.cc)
 add_library(imGateIo ${IO_SOURCE})
 target_include_directories(imGateIo PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" ../common/include)
-target_link_libraries(imGateIo PUBLIC imCommon imGateApi Seastar::seastar mariadbclient OpenSSL::SSL)
+target_link_libraries(imGateIo PUBLIC imReactorIo imGateApi Seastar::seastar)
 target_link_libraries(gate PRIVATE imGateIo)
 
 target_compile_options(imGateIo PRIVATE -Wall -g)

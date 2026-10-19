@@ -1,5 +1,5 @@
 #pragma once
-#include "io/fd_watch.hh"
+#include "reactor/fd_watch.hh"
 #include <ares.h>
 #include <seastar/net/inet_address.hh>
 #include <map>
@@ -7,12 +7,11 @@
 #include <unordered_map>
 #include <vector>
 
-namespace wimi::gate_io
+namespace wimi::io
 {
-// c-ares is driven exclusively by reactor readiness and its next timeout; no
-// c-ares event thread is enabled. Resolver configuration and hosts entries are
-// loaded at construction, before HTTP admission. Live requests use the in-memory
-// hosts snapshot or DNS packets, never synchronous hosts-file reads/stat calls.
+// c-ares 仅由 reactor 的 fd 就绪和库要求的定时器推进，不创建 DNS 事件线程。
+// 构造时读取 resolver 配置和 hosts 快照，因此实例须在接收业务前创建并复用；
+// 请求及重连阶段只查询内存或发送 DNS 包，不同步读取/stat 配置文件。
 class dns_resolver
 {
     ares_channel _channel{};
@@ -42,4 +41,4 @@ class dns_resolver
     // Must finish before destruction, including when no query has been made.
     seastar::future<> close();
 };
-} // namespace wimi::gate_io
+} // namespace wimi::io

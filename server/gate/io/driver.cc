@@ -8,6 +8,12 @@
 
 namespace wimi::gate_io
 {
+using io::endpoint;
+using io::mysql_connection;
+using io::mysql_parameter;
+using io::mysql_result;
+using io::redis_connection;
+using io::redis_reply;
 namespace
 {
 std::string verification_prefix(const std::string& email) { return "im:verify:{" + email + "}:"; }

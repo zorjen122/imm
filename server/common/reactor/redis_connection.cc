@@ -1,5 +1,5 @@
-#include "io/redis_connection.hh"
-#include "io/fd_watch.hh"
+#include "reactor/redis_connection.hh"
+#include "reactor/fd_watch.hh"
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <system_error>
 
-namespace wimi::gate_io
+namespace wimi::io
 {
 
 struct command_completion {
@@ -164,4 +164,4 @@ seastar::future<> redis_connection::close()
     }
     _watch.reset();
 }
-} // namespace wimi::gate_io
+} // namespace wimi::io

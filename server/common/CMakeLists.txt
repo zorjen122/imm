@@ -51,3 +51,11 @@ target_link_libraries(
          hiredis
          redis++
          mysqlcppconnx)
+
+set(Seastar_LTTNG ON)
+find_package(Seastar REQUIRED)
+include(ReactorMysql)
+find_package(OpenSSL REQUIRED)
+add_library(imReactorIo STATIC reactor/dns_resolver.cc reactor/grpc_engine.cc reactor/redis_connection.cc reactor/mysql_connection.cc)
+target_include_directories(imReactorIo PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" include)
+target_link_libraries(imReactorIo PUBLIC imCommon Seastar::seastar mariadbclient OpenSSL::SSL)

@@ -5,7 +5,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 
-namespace wimi::gate_business
+namespace wimi::gate_transaction
 {
 
 // 准入凭证覆盖解码、业务挂起及响应编码；获取额度不等待，service 必须存活到凭证销毁。
@@ -42,4 +42,4 @@ class service
     seastar::future<gate_api::reset_password_response> handle(gate_api::reset_password_request request);
     seastar::future<> stop();
 };
-} // namespace wimi::gate_business
+} // namespace wimi::gate_transaction

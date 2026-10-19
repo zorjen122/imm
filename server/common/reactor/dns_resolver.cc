@@ -1,4 +1,4 @@
-#include "io/dns_resolver.hh"
+#include "reactor/dns_resolver.hh"
 #include "IoQueue.h"
 #include <algorithm>
 #include <cassert>
@@ -8,7 +8,7 @@
 #include <mutex>
 #include <sstream>
 
-namespace wimi::gate_io
+namespace wimi::io
 {
 namespace
 {
@@ -203,4 +203,4 @@ seastar::future<> dns_resolver::close()
     co_await seastar::when_all_succeed(_retired.begin(), _retired.end());
     _retired.clear();
 }
-} // namespace wimi::gate_io
+} // namespace wimi::io

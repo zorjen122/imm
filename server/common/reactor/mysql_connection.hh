@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-#include "io/options.hh"
+#include "reactor/types.hh"
 #include <mysql.h>
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -8,7 +8,7 @@
 #include <optional>
 #include <variant>
 
-namespace wimi::gate_io
+namespace wimi::io
 {
 using mysql_parameter = std::variant<std::string, int64_t>;
 struct mysql_result {
@@ -38,4 +38,4 @@ class mysql_connection
     void abort();
     seastar::future<> close();
 };
-} // namespace wimi::gate_io
+} // namespace wimi::io

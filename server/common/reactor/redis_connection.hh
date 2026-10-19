@@ -1,4 +1,5 @@
 #pragma once
+#include "reactor/fd_watch.hh"
 #include <cstdint>
 #include <hiredis/async.h>
 #include <seastar/core/future.hh>
@@ -8,9 +9,9 @@
 #include <string>
 #include <vector>
 
-namespace wimi::gate_io
+namespace wimi::io
 {
-class fd_watch;
+
 struct redis_reply {
     int type{};
     long long integer{};
@@ -44,4 +45,4 @@ class redis_connection
     void abort();
     seastar::future<> close();
 };
-} // namespace wimi::gate_io
+} // namespace wimi::io
