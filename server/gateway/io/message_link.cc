@@ -9,7 +9,7 @@
 
 namespace wimi::gateway_io
 {
-message_link::message_link(driver& owner, options config, std::string node_id, io::endpoint address)
+message_link::message_link(driver& owner, options config, message_node_id node_id, io::endpoint address)
     : _driver(owner), _options(std::move(config)), _node_id(std::move(node_id)), _address(std::move(address)),
       _engine(io::make_grpc_engine())
 {
@@ -119,7 +119,7 @@ void message_link::OnReadDone(bool ok)
         return;
     }
     try {
-        _driver.on_frame(*this, std::move(_read));
+        _driver.on_grpc_frame(*this, std::move(_read));
     } catch (const std::exception& error) {
         LOG_WARN(logger, "[gateway/stream] callback failed: {}", error.what());
         stop();
@@ -144,7 +144,7 @@ void message_link::OnDone(const grpc::Status&)
     check_owner();
     _healthy = false;
     _finished = true;
-    _driver.on_done(*this);
+    _driver.on_grpc_done(*this);
     _done.set_value();
 }
 seastar::future<> message_link::close()

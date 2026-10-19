@@ -2,6 +2,7 @@
 #include "io/operations.hh"
 #include "io/options.hh"
 #include "io/budget.hh"
+#include "io/types.hh"
 #include "reactor/dns_resolver.hh"
 #include "reactor/redis_connection.hh"
 #include "reactor/mysql_connection.hh"
@@ -31,22 +32,25 @@ class driver
     std::shared_ptr<grpc::Channel> _state_channel;
     std::unique_ptr<state::StateService::Stub> _state;
     grpc::ClientContext* _state_call{};
-    std::unordered_map<std::string, std::unique_ptr<message_link>> _links;
+    // driver 由每个 shard 的 transaction service 独占；本表按 Message 节点 ID
+    // 持有独立的 gRPC link。拓扑稳定且连接建立后，M 个 shard、N 个节点对应
+    // M × N 条流；重连替换该节点的 link，拓扑增删同步调整本表。
+    std::unordered_map<message_node_id, std::unique_ptr<message_link>> _message_links;
     std::unordered_map<std::string, pending_command> _pending;
     budget _pending_budget;
     seastar::abort_source _abort;
-    seastar::condition_variable _changed;
-    std::optional<seastar::future<>> _control;
+    seastar::condition_variable _grpc_changed;
+    std::optional<seastar::future<>> _grpc_control;
     std::optional<seastar::future<>> _dns_closed;
     bool _mysql_initialized{};
     bool _stopping{};
     std::function<gateway::ClientForwardStatus(const gateway::ClientForwardEnvelope&)> _forward;
     seastar::future<io::redis_reply> redis_command(std::vector<std::string> command);
-    seastar::future<io::endpoint> discover_master();
+    seastar::future<io::endpoint> discover_redis_master();
     seastar::future<io::mysql_result> mysql_query(std::string sql, std::vector<io::mysql_parameter> parameters);
-    seastar::future<state::MessageTopology> fetch_topology();
-    seastar::future<> control();
-    message_link& select_link(int64_t conversation_id);
+    seastar::future<state::MessageTopology> fetch_grpc_topology();
+    seastar::future<> grpc_control();
+    message_link& select_grpc_link(int64_t conversation_id);
 
   public:
     budget writes;
@@ -58,8 +62,8 @@ class driver
     void abort();
     void cancel(const std::string& connection_id);
     seastar::future<> stop();
-    void on_frame(message_link& link, gateway::MessageToGatewayFrame frame);
-    void on_done(message_link& link);
+    void on_grpc_frame(message_link& link, gateway::MessageToGatewayFrame frame);
+    void on_grpc_done(message_link& link);
     seastar::future<bool> execute(validate_token);
     seastar::future<bool> execute(prepare_profile);
     seastar::future<bool> execute(register_device);

@@ -1,6 +1,7 @@
 #pragma once
 #include "io/budget.hh"
 #include "io/options.hh"
+#include "io/types.hh"
 #include "gateway_message.grpc.pb.h"
 #include "reactor/grpc_engine.hh"
 #include <seastar/core/gate.hh>
@@ -17,7 +18,7 @@ class message_link final
 {
     driver& _driver;
     options _options;
-    std::string _node_id;
+    message_node_id _node_id;
     io::endpoint _address;
     unsigned _owner{seastar::this_shard_id()};
     std::shared_ptr<grpc_event_engine::experimental::EventEngine> _engine;
@@ -39,7 +40,7 @@ class message_link final
     void check_owner() const;
 
   public:
-    message_link(driver& owner, options config, std::string node_id, io::endpoint address);
+    message_link(driver& owner, options config, message_node_id node_id, io::endpoint address);
     ~message_link();
     void start();
     void enqueue(gateway::GatewayToMessageFrame frame);
@@ -48,7 +49,7 @@ class message_link final
     bool healthy() const { return _healthy && !_stopping; }
     bool finished() const { return _finished; }
     const io::endpoint& address() const { return _address; }
-    const std::string& node_id() const { return _node_id; }
+    const message_node_id& node_id() const { return _node_id; }
     size_t inflight() const { return _inflight; }
     void add_inflight() { ++_inflight; }
     void remove_inflight()

@@ -72,10 +72,10 @@ driver::start(std::function<gateway::ClientForwardStatus(const gateway::ClientFo
         grpc::CreateCustomChannel("dns:///" + _options.state_rpc.host + ":" + std::to_string(_options.state_rpc.port),
                                   grpc::InsecureChannelCredentials(), arguments);
     _state = state::StateService::NewStub(_state_channel);
-    _control.emplace(control());
+    _grpc_control.emplace(grpc_control());
     LOG_INFO(logger, "[gateway/io] ready shard={} tid={}", seastar::this_shard_id(), syscall(SYS_gettid));
 }
-seastar::future<state::MessageTopology> driver::fetch_topology()
+seastar::future<state::MessageTopology> driver::fetch_grpc_topology()
 {
     state::TopologyRequest request;
     state::MessageTopology response;
@@ -93,42 +93,42 @@ seastar::future<state::MessageTopology> driver::fetch_topology()
     }
     co_return response;
 }
-seastar::future<> driver::control()
+seastar::future<> driver::grpc_control()
 {
     uint64_t heartbeat{};
     while (!_stopping) {
         try {
-            auto topology = co_await fetch_topology();
+            auto topology = co_await fetch_grpc_topology();
             if (_stopping) {
                 break;
             }
-            std::set<std::string> retained;
+            std::set<message_node_id> retained;
             for (const auto& node : topology.nodes()) {
                 if (node.status() != "active" || node.node_id().empty() || node.host().empty() || node.port() <= 0 ||
                     node.port() > 65535) {
                     continue;
                 }
                 retained.insert(node.node_id());
-                auto found = _links.find(node.node_id());
-                if (found != _links.end() &&
+                auto found = _message_links.find(node.node_id());
+                if (found != _message_links.end() &&
                     (found->second->finished() || found->second->address().host != node.host() ||
                      found->second->address().port != node.port())) {
                     co_await found->second->close();
-                    _links.erase(found);
-                    found = _links.end();
+                    _message_links.erase(found);
+                    found = _message_links.end();
                 }
-                if (found == _links.end()) {
+                if (found == _message_links.end()) {
                     auto link = std::make_unique<message_link>(
                         *this, _options, node.node_id(), endpoint{node.host(), static_cast<uint16_t>(node.port())});
                     auto* active = link.get();
-                    _links.emplace(node.node_id(), std::move(link));
+                    _message_links.emplace(node.node_id(), std::move(link));
                     active->start();
                 }
             }
-            for (auto current = _links.begin(); current != _links.end();) {
+            for (auto current = _message_links.begin(); current != _message_links.end();) {
                 if (!retained.contains(current->first)) {
                     co_await current->second->close();
-                    current = _links.erase(current);
+                    current = _message_links.erase(current);
                 } else {
                     ++current;
                 }
@@ -141,7 +141,7 @@ seastar::future<> driver::control()
         if (_stopping) {
             break;
         }
-        for (auto& [id, link] : _links) {
+        for (auto& [id, link] : _message_links) {
             if (!link->healthy()) {
                 continue;
             }
@@ -164,18 +164,20 @@ seastar::future<> driver::control()
 }
 seastar::future<> driver::wait_ready()
 {
-    co_await seastar::with_timeout(std::chrono::steady_clock::now() + std::chrono::seconds(30), _changed.wait([this] {
-        return _stopping || std::ranges::any_of(_links, [](const auto& entry) { return entry.second->healthy(); });
-    }));
+    co_await seastar::with_timeout(
+        std::chrono::steady_clock::now() + std::chrono::seconds(30), _grpc_changed.wait([this] {
+            return _stopping ||
+                   std::ranges::any_of(_message_links, [](const auto& entry) { return entry.second->healthy(); });
+        }));
     if (_stopping) {
         throw io::stopped();
     }
 }
-message_link& driver::select_link(int64_t conversation_id)
+message_link& driver::select_grpc_link(int64_t conversation_id)
 {
     message_link* selected{};
     size_t highest{};
-    for (auto& [id, link] : _links) {
+    for (auto& [id, link] : _message_links) {
         if (!link->healthy()) {
             continue;
         }
@@ -194,10 +196,10 @@ message_link& driver::select_link(int64_t conversation_id)
     }
     return *selected;
 }
-void driver::on_frame(message_link& link, gateway::MessageToGatewayFrame frame)
+void driver::on_grpc_frame(message_link& link, gateway::MessageToGatewayFrame frame)
 {
     if (frame.has_register_result()) {
-        _changed.broadcast();
+        _grpc_changed.broadcast();
         return;
     }
     if (frame.has_command_result()) {
@@ -222,7 +224,7 @@ void driver::on_frame(message_link& link, gateway::MessageToGatewayFrame frame)
         link.enqueue(std::move(ack));
     }
 }
-void driver::on_done(message_link& link)
+void driver::on_grpc_done(message_link& link)
 {
     // 断流只完成属于此实例的请求；已写出的命令结果未知，不统一自动重放业务操作。
     // 客户端得到可重试依赖错误后，仍须遵循具体业务的原有幂等键约束。
@@ -235,14 +237,14 @@ void driver::on_done(message_link& link)
             ++entry;
         }
     }
-    _changed.broadcast();
+    _grpc_changed.broadcast();
 }
 seastar::future<command_ticket> driver::execute(send_command operation)
 {
     if (_stopping) {
         throw io::stopped();
     }
-    auto& link = select_link(operation.command.conversation_id());
+    auto& link = select_grpc_link(operation.command.conversation_id());
     auto units = _pending_budget.acquire(operation.command.ByteSizeLong());
     const auto client_id = operation.command.request_id();
     const auto correlation = operation.command.connection_id() + ":" + client_id;
@@ -260,7 +262,7 @@ seastar::future<command_ticket> driver::execute(send_command operation)
     link.add_inflight();
     co_return command_ticket{std::move(result)};
 }
-seastar::future<endpoint> driver::discover_master()
+seastar::future<endpoint> driver::discover_redis_master()
 {
     std::exception_ptr last;
     for (const endpoint& address : _options.sentinels) {
@@ -302,7 +304,7 @@ seastar::future<redis_reply> driver::redis_command(std::vector<std::string> argu
     if (_stopping) {
         throw io::stopped();
     }
-    const auto address = co_await discover_master();
+    const auto address = co_await discover_redis_master();
     redis_connection connection;
     _redis.insert(&connection);
     auto remove = seastar::defer([this, &connection]() noexcept { _redis.erase(&connection); });
@@ -496,11 +498,11 @@ void driver::abort()
     }
     _stopping = true;
     _abort.request_abort();
-    _changed.broadcast();
+    _grpc_changed.broadcast();
     if (_state_call) {
         _state_call->TryCancel();
     }
-    for (auto& [id, link] : _links) {
+    for (auto& [id, link] : _message_links) {
         link->stop();
     }
     _dns_closed.emplace(_dns.close());
@@ -514,14 +516,14 @@ void driver::abort()
 seastar::future<> driver::stop()
 {
     abort();
-    if (_control) {
-        co_await std::move(*_control);
-        _control.reset();
+    if (_grpc_control) {
+        co_await std::move(*_grpc_control);
+        _grpc_control.reset();
     }
-    for (auto& [id, link] : _links) {
+    for (auto& [id, link] : _message_links) {
         co_await link->close();
     }
-    _links.clear();
+    _message_links.clear();
     assert(_pending.empty() && _redis.empty() && _mysql.empty());
     _state.reset();
     _state_channel.reset();
