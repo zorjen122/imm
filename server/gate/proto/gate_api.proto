@@ -1,0 +1,63 @@
+syntax = "proto3";
+package wimi.gate_api;
+
+message health_request {}
+message health_response {
+  optional string message = 1;
+}
+message verification_request {
+  optional string email = 1;
+}
+message verification_response {
+  optional int32 error = 1;
+  optional string email = 2;
+  optional bool issued = 3;
+  optional string verification_code = 4;
+}
+message sign_in_request {
+  optional string username = 1;
+  optional string password = 2;
+}
+message sign_in_response {
+  optional int32 error = 1;
+  optional int32 init = 2;
+  optional int64 uid = 3;
+  optional string ip = 4;
+  optional uint32 port = 5;
+  optional string gateway_id = 6;
+  optional string chat_token = 7;
+  optional int32 chat_token_expires_in = 8;
+}
+message gateway_request {
+  optional int64 uid = 1;
+}
+message gateway_response {
+  optional int32 error = 1;
+  optional string host = 2;
+  optional uint32 port = 3;
+}
+message sign_up_request {
+  optional string username = 1;
+  optional string password = 2;
+  optional string email = 3;
+  optional string verifycode = 4;
+}
+message sign_up_response {
+  optional int32 error = 1;
+  optional int64 uid = 2;
+  optional string username = 3;
+  optional string email = 4;
+}
+message reset_password_request {
+  optional string username = 1;
+  optional string password = 2;
+  optional string email = 3;
+  optional string verifycode = 4;
+}
+message reset_password_response {
+  optional int32 error = 1;
+  optional string username = 2;
+}
+message error_response {
+  optional int32 error = 1;
+}

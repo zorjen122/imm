@@ -3,13 +3,11 @@ cmake_minimum_required(VERSION 3.10)
 project(imCommon)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD 20)
 # 仅用于clangd搜索
 find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
-find_package(gRPC REQUIRED)
+find_package(gRPC MODULE REQUIRED)
 
 # 添加 src 目录下的所有源文件
 file(GLOB SOURCES src/*.cc)
@@ -33,8 +31,7 @@ list(REMOVE_DUPLICATES WIMI_COMMON_PROTO_INCLUDE_DIRS)
 add_library(imProto STATIC ${WIMI_COMMON_PROTO_SRCS})
 set_target_properties(imProto PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(imProto PUBLIC ${WIMI_COMMON_PROTO_INCLUDE_DIRS})
-target_link_libraries(imProto PUBLIC protobuf::libprotobuf gRPC::grpc++
-                                    gRPC::grpc++_reflection)
+target_link_libraries(imProto PUBLIC protobuf::libprotobuf gRPC::grpc++)
 
 add_library(imCommon SHARED ${SOURCES})
 
@@ -48,10 +45,18 @@ target_link_libraries(
          protobuf::libprotobuf
          Boost::filesystem
          gRPC::grpc++
-         gRPC::grpc++_reflection
          fmt::fmt
          yaml-cpp
          spdlog
          hiredis
          redis++
          mysqlcppconnx)
+
+set(Seastar_LTTNG ON)
+find_package(Seastar REQUIRED)
+include(ReactorMysql)
+find_package(OpenSSL REQUIRED)
+add_library(imReactorIo STATIC reactor/dns_resolver.cc reactor/grpc_engine.cc reactor/grpc_server.cc reactor/redis_connection.cc reactor/mysql_connection.cc)
+target_include_directories(imReactorIo PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" include)
+target_include_directories(imReactorIo PRIVATE "${wimi_grpc_SOURCE_DIR}")
+target_link_libraries(imReactorIo PUBLIC imCommon Seastar::seastar mariadbclient OpenSSL::SSL)

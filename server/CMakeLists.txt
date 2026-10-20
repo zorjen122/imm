@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.16)
-project(wimi_system VERSION 1.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.24)
+project(wimi_system VERSION 1.0 LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # 为工具链提供编译数据库
 add_compile_definitions(FMT_CONSTEVAL=constexpr)
@@ -26,4 +26,9 @@ add_subdirectory(state)
 
 if(BUILD_TESTING OR WIMI_BUILD_UNIT_TESTS)
     add_subdirectory(test)
+endif()
+
+option(WIMI_BUILD_BENCHMARKS "Build protocol-aware performance clients" OFF)
+if(WIMI_BUILD_BENCHMARKS)
+    add_subdirectory(bench)
 endif()

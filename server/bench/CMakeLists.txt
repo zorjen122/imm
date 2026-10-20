@@ -1,0 +1,12 @@
+find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED)
+add_executable(wimiPerf main.cc)
+target_link_libraries(wimiPerf PRIVATE imProto Threads::Threads jsoncpp OpenSSL::Crypto)
+target_compile_definitions(wimiPerf PRIVATE BOOST_ERROR_CODE_HEADER_ONLY)
+target_compile_options(wimiPerf PRIVATE -Wall -Wextra)
+if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME perf.driver_accounting
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/../scripts/perf/test-driver.py $<TARGET_FILE:wimiPerf>)
+    set_tests_properties(perf.driver_accounting PROPERTIES TIMEOUT 20)
+endif()

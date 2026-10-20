@@ -12,11 +12,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
 
-: "${CC:=clang}"
-: "${CXX:=clang++}"
+: "${CC:=gcc}"
+: "${CXX:=g++}"
 export CC CXX
 
 cmake -S "$ROOT_DIR/server" -B "$BUILD_DIR" \
+  -DCMAKE_C_COMPILER="$CC" \
+  -DCMAKE_CXX_COMPILER="$CXX" \
   -DBUILD_TESTING=ON \
   -DBUILD_DEMOS=OFF \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON

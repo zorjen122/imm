@@ -13,6 +13,8 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
+      additional_contexts:
+        seastar-source: ${WIMI_SEASTAR_SOURCE:-/home/zongjing/workspace/ref/network/seastar}
     command: [/opt/wimi/bin/state, --log_level, info]
     environment:
       WIMI_CONFIG: /etc/wimi/state.yaml
@@ -33,7 +35,9 @@ services:
 
   message:
     <<: *wimi-service
-    command: [/opt/wimi/bin/message, /etc/wimi/message.yaml, --log_level, info]
+    command: [/opt/wimi/bin/message, --log_level, info]
+    environment:
+      WIMI_CONFIG: /etc/wimi/message.yaml
     configs:
       - source: message-config
         target: /etc/wimi/message.yaml
@@ -49,7 +53,7 @@ services:
 
   gateway:
     <<: *wimi-service
-    command: [/opt/wimi/bin/gateway, --log_level, info]
+    command: [/opt/wimi/bin/gateway, --log_level, info, --smp, "1", --memory, 256M, --overprovisioned, --reactor-backend, io_uring]
     environment:
       WIMI_CONFIG: /etc/wimi/gateway.yaml
     configs:
@@ -69,7 +73,7 @@ services:
 
   gate:
     <<: *wimi-service
-    command: [/opt/wimi/bin/gate, --log_level, info]
+    command: [/opt/wimi/bin/gate, --log_level, info, --smp, "1", --memory, 256M, --overprovisioned, --reactor-backend, io_uring]
     environment:
       WIMI_CONFIG: /etc/wimi/gate.yaml
     configs:

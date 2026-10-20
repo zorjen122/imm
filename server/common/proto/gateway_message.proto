@@ -10,6 +10,7 @@ message RegisterGateway {
   string gateway_id = 2;       // 稳定的 Gateway 节点 ID
   string instance_id = 3;      // Gateway 进程启动实例 UUID
   uint64 stream_epoch = 4;     // 区分重连流的启动时间戳/纪元
+  uint32 shard_id = 6;         // 流及其连接状态所属的 Gateway shard
   uint32 capacity = 5;         // Gateway 声明的流发送队列容量
 }
 
@@ -114,4 +115,14 @@ service GatewayMessageTransport {
   // 每对 Gateway-Message 节点复用的一条双向长流。
   rpc Connect(stream GatewayToMessageFrame)
       returns (stream MessageToGatewayFrame);
+}
+
+// Redis 中的在线路由；绑定时连同 generation 原子发布，Message 据此选择目标 shard 的流。
+message SessionLease {
+  string device_id = 1;
+  string gateway_id = 2;
+  string instance_id = 3;
+  string connection_id = 4;
+  uint64 generation = 5;
+  uint32 shard_id = 6;
 }

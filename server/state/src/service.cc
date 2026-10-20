@@ -35,6 +35,10 @@ std::vector<ServiceNodeInfo> LoadNodes(const YAML::Node& server, const std::stri
         node.port = source[portKey].as<unsigned short>();
         node.status = source["status"] ? source["status"].as<std::string>() : std::string{"active"};
         node.weight = source["weight"] ? source["weight"].as<unsigned int>() : 1;
+        node.shard_count = source["shards"].as<unsigned>(1);
+        if (!node.port || !node.shard_count || static_cast<uint64_t>(node.port) + node.shard_count - 1 > 65535) {
+            throw std::invalid_argument("invalid node shard port range");
+        }
         nodes.push_back(std::move(node));
     }
     return nodes;
@@ -80,6 +84,7 @@ grpc::Status StateServiceImpl::ListMessageNodes(grpc::ServerContext*, const Topo
         target->set_port(node.port);
         target->set_status(node.status);
         target->set_weight(node.weight);
+        target->set_shard_count(node.shard_count);
     }
     return grpc::Status::OK;
 }

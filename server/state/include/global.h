@@ -10,6 +10,7 @@ struct ServiceNodeInfo {
     unsigned short port{0};
     std::string status{"active"};
     unsigned int weight{1};
+    unsigned shard_count{1};
 
     bool active() const { return status == "active" && !host.empty() && port != 0; }
 };

@@ -15,7 +15,9 @@ services:
   message-2:
     image: wimi-server:local
     restart: unless-stopped
-    command: [/opt/wimi/bin/message, /etc/wimi/message-2.yaml, --log_level, info]
+    command: [/opt/wimi/bin/message, --log_level, info]
+    environment:
+      WIMI_CONFIG: /etc/wimi/message-2.yaml
     configs:
       - source: cluster-message-2-config
         target: /etc/wimi/message-2.yaml
@@ -37,7 +39,7 @@ services:
   gateway-2:
     image: wimi-server:local
     restart: unless-stopped
-    command: [/opt/wimi/bin/gateway, --log_level, info]
+    command: [/opt/wimi/bin/gateway, --log_level, info, --smp, "1", --memory, 256M, --overprovisioned, --reactor-backend, io_uring]
     environment:
       WIMI_CONFIG: /etc/wimi/gateway-2.yaml
     configs:

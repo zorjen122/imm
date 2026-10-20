@@ -31,6 +31,7 @@ struct SessionLease {
     std::string instanceId;
     std::string connectionId;
     int64_t generation{0};
+    unsigned shardId{};
 
     bool empty() const
     {
@@ -332,6 +333,7 @@ return generation
             lease.instanceId = value["instanceId"].asString();
             lease.connectionId = value["connectionId"].asString();
             lease.generation = value["generation"].asInt64();
+            lease.shardId = value["shardId"].asUInt();
             return lease;
         });
     }
@@ -363,6 +365,7 @@ return generation
                 lease.instanceId = value["instanceId"].asString();
                 lease.connectionId = value["connectionId"].asString();
                 lease.generation = value["generation"].asInt64();
+                lease.shardId = value["shardId"].asUInt();
                 if (!lease.empty())
                     leases.push_back(std::move(lease));
             }
