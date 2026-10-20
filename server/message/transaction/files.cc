@@ -12,7 +12,7 @@
 #include <sstream>
 #include <string>
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 namespace
 {
@@ -197,4 +197,4 @@ seastar::future<protocol::Packet> files::download(request_context& context)
     co_return rsp;
 }
 
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

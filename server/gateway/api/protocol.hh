@@ -4,12 +4,12 @@
 #include <string_view>
 #include <seastar/core/future.hh>
 
-namespace wimi::gateway_transport
+namespace imm::gateway_transport
 {
 class connection;
 }
 
-namespace wimi::gateway_protocol
+namespace imm::gateway_protocol
 {
 enum class processing { login, immediate, forward };
 struct route {
@@ -22,4 +22,4 @@ std::span<const route> routes();
 ClientEnvelope decode(std::string_view payload);
 const route& route_for(protocol::Operation operation);
 int validate(const protocol::ClientRequest& request);
-} // namespace wimi::gateway_protocol
+} // namespace imm::gateway_protocol

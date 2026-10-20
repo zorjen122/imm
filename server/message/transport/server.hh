@@ -9,7 +9,7 @@
 #include <map>
 #include <tuple>
 
-namespace wimi::message_transport
+namespace imm::message_transport
 {
 // token 区分同一 Gateway/shard 的重连；旧请求完成后只能回复发起它的那条流。
 struct stream_route {
@@ -51,4 +51,4 @@ class server final : public gateway::GatewayMessageTransport::CallbackService
     void begin_stop();
     seastar::future<> close();
 };
-} // namespace wimi::message_transport
+} // namespace imm::message_transport

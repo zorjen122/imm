@@ -18,7 +18,7 @@
 #include <charconv>
 #include "src/core/lib/event_engine/extensions/blocking_dns.h"
 
-namespace wimi::io
+namespace imm::io
 {
 namespace
 {
@@ -192,12 +192,20 @@ class reactor_listener final : public ee::EventEngine::Listener
     {
         try {
             while (!listener->closing) {
-                auto [fd, address] = co_await socket.accept();
+                // 关闭监听会使等待中的 accept 失败；先保留并检查完成 future，
+                // 只有成功时才取出拥有 socket 的结果，关闭异常路径不构造该结果对象。
+                auto incoming = co_await seastar::coroutine::as_future(socket.accept());
+                if (incoming.failed() && listener->closing) {
+                    incoming.ignore_ready_future();
+                    break;
+                }
+                auto accepted = incoming.get();
                 if (listener->closing) {
                     break;
                 }
                 auto allocator = listener->allocator->CreateMemoryAllocator("seastar.grpc.accept");
-                auto endpoint = std::make_unique<reactor_endpoint>(std::move(fd), std::move(allocator));
+                auto endpoint =
+                    std::make_unique<reactor_endpoint>(std::move(std::get<0>(accepted)), std::move(allocator));
                 listener->accept(std::move(endpoint),
                                  listener->allocator->CreateMemoryAllocator("seastar.grpc.callback"));
             }
@@ -643,4 +651,4 @@ seastar::future<> close_grpc_engine(std::shared_ptr<ee::EventEngine> source)
         co_await seastar::sleep(std::chrono::milliseconds(1));
     }
 }
-} // namespace wimi::io
+} // namespace imm::io

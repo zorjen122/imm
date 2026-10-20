@@ -5,7 +5,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-namespace wimi::message
+namespace imm::message
 {
 shard_service::shard_service(message_io::options config, scheduling_groups groups,
                              seastar::sharded<shard_service>* services)
@@ -50,4 +50,4 @@ seastar::future<> shard_service::stop()
     co_await _dns.close();
     co_await io::drain_local_grpc();
 }
-} // namespace wimi::message
+} // namespace imm::message

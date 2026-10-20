@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace wimi::io
+namespace imm::io
 {
 
 struct redis_reply {
@@ -45,4 +45,4 @@ class redis_connection
     void abort();
     seastar::future<> close();
 };
-} // namespace wimi::io
+} // namespace imm::io

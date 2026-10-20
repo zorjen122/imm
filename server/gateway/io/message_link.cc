@@ -7,7 +7,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <cassert>
 
-namespace wimi::gateway_io
+namespace imm::gateway_io
 {
 message_link::message_link(driver& owner, options config, message_node_id node_id, io::endpoint address)
     : _driver(owner), _options(std::move(config)), _node_id(std::move(node_id)), _address(std::move(address)),
@@ -163,4 +163,4 @@ seastar::future<> message_link::close()
     co_await io::close_grpc_engine(_engine);
     _engine.reset();
 }
-} // namespace wimi::gateway_io
+} // namespace imm::gateway_io

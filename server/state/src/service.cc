@@ -1,5 +1,5 @@
 #include "service.h"
-#include "Configer.h"
+#include "configuration.hh"
 #include "global.h"
 #include "spdlog/spdlog.h"
 #include <grpcpp/server_context.h>
@@ -8,37 +8,22 @@
 #include <cstdint>
 #include <string>
 
-namespace wimi::rpc
+namespace imm::rpc
 {
 namespace
 {
 
-std::vector<ServiceNodeInfo> LoadNodes(const YAML::Node& server, const std::string& sectionName,
-                                       const std::string& prefix, const std::string& totalKey,
-                                       const std::string& portKey)
+std::vector<ServiceNodeInfo> load_nodes(const YAML::Node& entries)
 {
     std::vector<ServiceNodeInfo> nodes;
-    auto section = server[sectionName];
-    if (!section || !section[totalKey])
-        return nodes;
-
-    auto total = section[totalKey].as<int>();
-    nodes.reserve(std::max(total, 0));
-    for (int i = 1; i <= total; ++i) {
-        auto source = section[prefix + std::to_string(i)];
-        if (!source)
-            continue;
-
+    for (const auto& source : entries) {
         ServiceNodeInfo node;
         node.id = source["name"].as<std::string>();
         node.host = source["host"].as<std::string>();
-        node.port = source[portKey].as<unsigned short>();
-        node.status = source["status"] ? source["status"].as<std::string>() : std::string{"active"};
-        node.weight = source["weight"] ? source["weight"].as<unsigned int>() : 1;
+        node.port = source["port"].as<unsigned short>();
+        node.status = source["status"].as<std::string>("active");
+        node.weight = source["weight"].as<unsigned>(1);
         node.shard_count = source["shards"].as<unsigned>(1);
-        if (!node.port || !node.shard_count || static_cast<uint64_t>(node.port) + node.shard_count - 1 > 65535) {
-            throw std::invalid_argument("invalid node shard port range");
-        }
         nodes.push_back(std::move(node));
     }
     return nodes;
@@ -48,10 +33,10 @@ std::vector<ServiceNodeInfo> LoadNodes(const YAML::Node& server, const std::stri
 
 StateServiceImpl::StateServiceImpl()
 {
-    auto conf = Configer::getNode("server");
+    auto conf = imm::configuration::server();
 
-    gatewayNodes = LoadNodes(conf, "connection-gateway", "g", "gateway-total", "port");
-    messageNodes = LoadNodes(conf, "message", "m", "message-total", "streamPort");
+    gatewayNodes = load_nodes(conf["gateways"]);
+    messageNodes = load_nodes(conf["messages"]);
 }
 
 grpc::Status StateServiceImpl::PickConnectionGateway(grpc::ServerContext*, const ConnectUser*, ConnectUserRsp* response)
@@ -88,4 +73,4 @@ grpc::Status StateServiceImpl::ListMessageNodes(grpc::ServerContext*, const Topo
     }
     return grpc::Status::OK;
 }
-}; // namespace wimi::rpc
+}; // namespace imm::rpc

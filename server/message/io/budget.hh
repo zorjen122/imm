@@ -2,7 +2,7 @@
 #include "IoQueue.h"
 #include <seastar/core/semaphore.hh>
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 struct capacity_units {
     seastar::semaphore_units<> count;
@@ -26,4 +26,4 @@ class budget
         return {std::move(*count), std::move(*storage)};
     }
 };
-} // namespace wimi::message_io
+} // namespace imm::message_io

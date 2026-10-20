@@ -2,7 +2,7 @@
 #include "transaction/service.hh"
 #include <seastar/core/sharded.hh>
 
-namespace wimi::message
+namespace imm::message
 {
 struct scheduling_groups {
     seastar::scheduling_group protocol;
@@ -26,4 +26,4 @@ class shard_service
     seastar::future<> start();
     seastar::future<> stop();
 };
-} // namespace wimi::message
+} // namespace imm::message

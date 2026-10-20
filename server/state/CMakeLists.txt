@@ -26,8 +26,6 @@ target_link_libraries(
          yaml-cpp
          spdlog
          hiredis
-         redis++
-         mysqlcppconnx
          jsoncpp)
 
 target_compile_options(imState PRIVATE -Wall -g)

@@ -4,11 +4,11 @@
 #include "transaction/groups.hh"
 #include "transaction/files.hh"
 
-namespace wimi::message_protocol
+namespace imm::message_protocol
 {
 struct route;
 }
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 struct request_permit {
     seastar::gate::holder lifetime;
@@ -61,4 +61,4 @@ class service
     seastar::future<protocol::Packet> upload(request_context& context);
     seastar::future<protocol::Packet> download(request_context& context);
 };
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

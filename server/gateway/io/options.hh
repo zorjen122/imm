@@ -6,7 +6,7 @@
 #include <vector>
 #include <memory>
 
-namespace wimi::gateway_io
+namespace imm::gateway_io
 {
 struct options {
     std::string gateway_id;
@@ -29,4 +29,4 @@ struct options {
     size_t max_pending_bytes{256 * 1024 * 1024};
 };
 options load_options(const YAML::Node& server);
-} // namespace wimi::gateway_io
+} // namespace imm::gateway_io

@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace wimi::io
+namespace imm::io
 {
 // c-ares 仅由 reactor 的 fd 就绪和库要求的定时器推进，不创建 DNS 事件线程。
 // 构造时读取 resolver 配置和 hosts 快照，因此实例须在接收业务前创建并复用；
@@ -41,4 +41,4 @@ class dns_resolver
     // Must finish before destruction, including when no query has been made.
     seastar::future<> close();
 };
-} // namespace wimi::io
+} // namespace imm::io

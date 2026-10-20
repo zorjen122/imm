@@ -1,0 +1,4 @@
+# 只追加第二个 Gateway 和 Message；通过 IMM_EXTRA_CONFIG 与 single.yaml 同时加载。
+nodes:
+  gateway-2: {service: gateway, host: 127.0.0.1, port: 8091}
+  message-2: {service: message, host: 127.0.0.1, port: 50056, shards: 1, machineId: 2}

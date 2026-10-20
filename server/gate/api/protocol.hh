@@ -6,7 +6,7 @@
 #include <string_view>
 #include <variant>
 
-namespace wimi::gate_protocol
+namespace imm::gate_protocol
 {
 struct http_result {
     unsigned status{200};
@@ -39,4 +39,4 @@ int decode(std::string_view body, gate_api::reset_password_request& request);
 std::string encode(const google::protobuf::Message& response);
 seastar::future<http_result> dispatch(const route& route_endpoint, gate_transaction::service& service, std::string body,
                                       seastar::scheduling_group transaction_group);
-} // namespace wimi::gate_protocol
+} // namespace imm::gate_protocol

@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <optional>
 
-namespace wimi::gateway_transport
+namespace imm::gateway_transport
 {
 class connection;
 struct scheduling_groups {
@@ -40,4 +40,4 @@ class server
     const gateway_io::options& config() const { return _options; }
     const scheduling_groups& groups() const { return _groups; }
 };
-} // namespace wimi::gateway_transport
+} // namespace imm::gateway_transport

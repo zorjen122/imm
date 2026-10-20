@@ -6,7 +6,7 @@
 
 #include <string>
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 namespace
 {
@@ -343,4 +343,4 @@ seastar::future<protocol::Packet> messages::pull_conversation(int64_t actor_uid,
     co_return rsp;
 }
 
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

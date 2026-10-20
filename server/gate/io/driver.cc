@@ -6,7 +6,7 @@
 #include <cassert>
 #include <seastar/core/sleep.hh>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 using io::endpoint;
 using io::mysql_connection;
@@ -357,4 +357,4 @@ seastar::future<> driver::stop()
         _mysql_initialized = false;
     }
 }
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

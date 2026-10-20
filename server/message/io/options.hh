@@ -5,7 +5,7 @@
 #include <yaml-cpp/yaml.h>
 #include <memory>
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 struct options {
     std::string node_id;
@@ -28,4 +28,4 @@ struct options {
 };
 // 在开始接收业务前加载配置和凭据；各 shard 只复用已载入的内容。
 options load_options(const YAML::Node& server);
-} // namespace wimi::message_io
+} // namespace imm::message_io

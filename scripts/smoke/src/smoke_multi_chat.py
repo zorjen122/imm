@@ -3,7 +3,7 @@ import os
 import subprocess
 import time
 
-from wimi_tcp_client import Operation, PushType, WimClient, is_retryable_error, request_chat_auth, require
+from imm_tcp_client import Operation, PushType, ImmClient, is_retryable_error, request_chat_auth, require
 
 UID_A = int(os.environ["UID_A"])
 UID_B = int(os.environ["UID_B"])
@@ -18,9 +18,9 @@ CHAT_B_HOST = os.environ["CHAT_B_HOST"]
 CHAT_B_PORT = int(os.environ["CHAT_B_PORT"])
 GATEWAY_A_ID = os.environ["GATEWAY_A_ID"]
 GATEWAY_B_ID = os.environ["GATEWAY_B_ID"]
-REDIS_HOST = os.environ["WIMI_REDIS_HOST"]
-REDIS_PORT = os.environ["WIMI_REDIS_PORT"]
-REDIS_PASSWORD = os.environ["WIMI_REDIS_PASSWORD"]
+REDIS_HOST = os.environ["IMM_REDIS_HOST"]
+REDIS_PORT = os.environ["IMM_REDIS_PORT"]
+REDIS_PASSWORD = os.environ["IMM_REDIS_PASSWORD"]
 RESULT_FILE = os.environ["RESULT_FILE"]
 GATE_URL = os.environ["GATE_URL"]
 
@@ -53,9 +53,9 @@ def redis_session_lease(uid, device_id):
 
 auth_a = request_chat_auth(USER_A, "123456", GATE_URL)
 auth_b = request_chat_auth(USER_B, "123456", GATE_URL)
-a = WimClient(UID_A, CHAT_A_HOST, CHAT_A_PORT,
+a = ImmClient(UID_A, CHAT_A_HOST, CHAT_A_PORT,
               auth_token=auth_a["chatToken"])
-b = WimClient(UID_B, CHAT_B_HOST, CHAT_B_PORT,
+b = ImmClient(UID_B, CHAT_B_HOST, CHAT_B_PORT,
               auth_token=auth_b["chatToken"])
 server_seq = 0
 delayed_server_seq = 0
@@ -156,7 +156,7 @@ try:
 
     print("cross-node text push ok")
 
-    if os.environ.get("WIMI_TEST_RPC_DELAY") == "1":
+    if os.environ.get("IMM_TEST_RPC_DELAY") == "1":
         delayed_body = {
             "from": UID_A,
             "to": UID_B,

@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace wimi
+namespace imm
 {
 
 struct GrpcSecurityConfig {
@@ -82,4 +82,4 @@ inline std::shared_ptr<grpc::ServerCredentials> BuildServerCredentials(const Grp
     return grpc::SslServerCredentials(options);
 }
 
-} // namespace wimi
+} // namespace imm

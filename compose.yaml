@@ -1,46 +1,49 @@
-name: wimi
+name: imm
 
 include:
   - ./infra.yaml
 
-x-wimi-service: &wimi-service
-  image: wimi-server:local
+x-imm-service: &imm-service
+  image: imm-server:local
   restart: unless-stopped
 
 services:
   state:
-    <<: *wimi-service
+    <<: *imm-service
     build:
       context: .
       dockerfile: server/Dockerfile
       additional_contexts:
-        seastar-source: ${WIMI_SEASTAR_SOURCE:-/home/zongjing/workspace/ref/network/seastar}
-    command: [/opt/wimi/bin/state, --log_level, info]
+        seastar-source: ${IMM_SEASTAR_SOURCE:-/home/zongjing/workspace/ref/network/seastar}
+    command: [/opt/imm/bin/state, --log_level, info]
     environment:
-      WIMI_CONFIG: /etc/wimi/state.yaml
+      IMM_CONFIG: /etc/imm/services.yaml
+      IMM_NODE: state
     configs:
-      - source: state-config
-        target: /etc/wimi/state.yaml
+      - source: services-config
+        target: /etc/imm/services.yaml
 
   file:
-    <<: *wimi-service
-    command: [/opt/wimi/bin/file, --log_level, info]
+    <<: *imm-service
+    command: [/opt/imm/bin/file, --log_level, info]
     environment:
-      WIMI_CONFIG: /etc/wimi/file.yaml
+      IMM_CONFIG: /etc/imm/services.yaml
+      IMM_NODE: file
     configs:
-      - source: file-config
-        target: /etc/wimi/file.yaml
+      - source: services-config
+        target: /etc/imm/services.yaml
     volumes:
-      - file-data:/var/lib/wimi/files
+      - file-data:/var/lib/imm/files
 
   message:
-    <<: *wimi-service
-    command: [/opt/wimi/bin/message, --log_level, info]
+    <<: *imm-service
+    command: [/opt/imm/bin/message, --log_level, info]
     environment:
-      WIMI_CONFIG: /etc/wimi/message.yaml
+      IMM_CONFIG: /etc/imm/services.yaml
+      IMM_NODE: message-1
     configs:
-      - source: message-config
-        target: /etc/wimi/message.yaml
+      - source: services-config
+        target: /etc/imm/services.yaml
     depends_on:
       file:
         condition: service_started
@@ -52,13 +55,14 @@ services:
         condition: service_started
 
   gateway:
-    <<: *wimi-service
-    command: [/opt/wimi/bin/gateway, --log_level, info, --smp, "1", --memory, 256M, --overprovisioned, --reactor-backend, io_uring]
+    <<: *imm-service
+    command: [/opt/imm/bin/gateway, --log_level, info, --smp, "1", --memory, 256M, --overprovisioned, --reactor-backend, io_uring]
     environment:
-      WIMI_CONFIG: /etc/wimi/gateway.yaml
+      IMM_CONFIG: /etc/imm/services.yaml
+      IMM_NODE: gateway-1
     configs:
-      - source: gateway-config
-        target: /etc/wimi/gateway.yaml
+      - source: services-config
+        target: /etc/imm/services.yaml
     depends_on:
       message:
         condition: service_started
@@ -72,13 +76,14 @@ services:
       - "8090:8090"
 
   gate:
-    <<: *wimi-service
-    command: [/opt/wimi/bin/gate, --log_level, info, --smp, "1", --memory, 256M, --overprovisioned, --reactor-backend, io_uring]
+    <<: *imm-service
+    command: [/opt/imm/bin/gate, --log_level, info, --smp, "1", --memory, 256M, --overprovisioned, --reactor-backend, io_uring]
     environment:
-      WIMI_CONFIG: /etc/wimi/gate.yaml
+      IMM_CONFIG: /etc/imm/services.yaml
+      IMM_NODE: gate
     configs:
-      - source: gate-config
-        target: /etc/wimi/gate.yaml
+      - source: services-config
+        target: /etc/imm/services.yaml
     depends_on:
       mysql:
         condition: service_healthy
@@ -90,16 +95,8 @@ services:
       - "18080:18080"
 
 configs:
-  state-config:
-    file: ./conf/compose/state.yaml
-  file-config:
-    file: ./conf/compose/file.yaml
-  message-config:
-    file: ./conf/compose/message.yaml
-  gateway-config:
-    file: ./conf/compose/gateway.yaml
-  gate-config:
-    file: ./conf/compose/gate.yaml
+  services-config:
+    file: ./loopback/compose/services.yaml
 
 volumes:
   file-data:

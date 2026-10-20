@@ -9,7 +9,7 @@
 #include <cassert>
 #include <chrono>
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 namespace
 {
@@ -284,4 +284,4 @@ seastar::future<> driver::close()
     }
     // 本 shard 的服务端 listener 可能仍存活，由最外层在服务端关闭后统一 drain。
 }
-} // namespace wimi::message_io
+} // namespace imm::message_io

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <variant>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 struct gateway_node {
     std::string host;
@@ -104,4 +104,4 @@ using io_operation =
     std::variant<issue_verification_code, get_verification_code, clear_verification_code, send_verification_email,
                  find_user, has_user_info, pick_gateway, set_chat_token, consume_verification_code, generate_user_id,
                  user_exists, register_user, update_password>;
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

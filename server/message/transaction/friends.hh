@@ -2,7 +2,7 @@
 #include "transaction/context.hh"
 #include "io/driver.hh"
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 class friends
 {
@@ -17,4 +17,4 @@ class friends
     seastar::future<protocol::Packet> pull_applications(request_context& context);
     seastar::future<protocol::Packet> pull_friends(request_context& context);
 };
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

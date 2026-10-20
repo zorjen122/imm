@@ -2,7 +2,7 @@
 #include "transaction/context.hh"
 #include "io/driver.hh"
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 class files
 {
@@ -13,4 +13,4 @@ class files
     seastar::future<protocol::Packet> upload(request_context& context);
     seastar::future<protocol::Packet> download(request_context& context);
 };
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

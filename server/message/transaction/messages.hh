@@ -2,7 +2,7 @@
 #include "TcpMessageCodec.h"
 #include "io/driver.hh"
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 struct accepted_message {
     protocol::Packet response;
@@ -31,4 +31,4 @@ class messages
                                                       const std::string& device_id);
     seastar::future<protocol::Packet> pull_conversation(int64_t actor_uid, const protocol::Packet& request);
 };
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

@@ -6,7 +6,7 @@
 #include <cassert>
 #include <algorithm>
 
-namespace wimi::message_transport
+namespace imm::message_transport
 {
 class stream final : public grpc::ServerBidiReactor<gateway::GatewayToMessageFrame, gateway::MessageToGatewayFrame>,
                      public std::enable_shared_from_this<stream>
@@ -288,4 +288,4 @@ seastar::future<> server::close()
         co_await _calls.close();
     });
 }
-} // namespace wimi::message_transport
+} // namespace imm::message_transport

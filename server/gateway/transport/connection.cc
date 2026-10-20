@@ -9,7 +9,7 @@
 #include <cassert>
 #include <cstring>
 
-namespace wimi::gateway_transport
+namespace imm::gateway_transport
 {
 namespace
 {
@@ -362,4 +362,4 @@ void connection::error(const protocol::ClientRequest& request, int code, std::st
         respond(request, MakeErrorPacket(code, message));
     }
 }
-} // namespace wimi::gateway_transport
+} // namespace imm::gateway_transport

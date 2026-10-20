@@ -1,11 +1,10 @@
 #pragma once
 
-#include "RpcPool.h"
 #include <memory>
 #include <string>
 #include <vector>
 
-namespace wimi::db
+namespace imm::db
 {
 struct User {
     using Ptr = std::shared_ptr<User>;
@@ -159,4 +158,4 @@ struct GroupApply {
     std::string createTime;
 };
 
-} // namespace wimi::db
+} // namespace imm::db

@@ -6,7 +6,7 @@
 #include <map>
 #include <chrono>
 
-namespace wimi::gateway_transport
+namespace imm::gateway_transport
 {
 class connection : public std::enable_shared_from_this<connection>
 {
@@ -82,4 +82,4 @@ class connection : public std::enable_shared_from_this<connection>
     }
     seastar::future<bool> refresh();
 };
-} // namespace wimi::gateway_transport
+} // namespace imm::gateway_transport

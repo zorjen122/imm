@@ -2,7 +2,7 @@
 #include "transport/server.hh"
 #include "TcpMessageCodec.h"
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 struct delivery {
     int64_t recipient_uid{};
@@ -17,4 +17,4 @@ struct request_context {
     protocol::Packet packet;
     std::vector<delivery> deliveries;
 };
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

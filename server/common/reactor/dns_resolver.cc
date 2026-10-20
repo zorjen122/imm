@@ -8,7 +8,7 @@
 #include <mutex>
 #include <sstream>
 
-namespace wimi::io
+namespace imm::io
 {
 namespace
 {
@@ -203,4 +203,4 @@ seastar::future<> dns_resolver::close()
     co_await seastar::when_all_succeed(_retired.begin(), _retired.end());
     _retired.clear();
 }
-} // namespace wimi::io
+} // namespace imm::io

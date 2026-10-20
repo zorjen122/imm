@@ -4,7 +4,7 @@
 #include <seastar/core/reactor.hh>
 #include <stdexcept>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 namespace
 {
@@ -85,7 +85,7 @@ seastar::future<> smtp_connection::send(seastar::net::inet_address address, cons
     if (co_await reply() != 220) {
         throw std::runtime_error("SMTP greeting rejected");
     }
-    co_await command("EHLO wimi\r\n", 250);
+    co_await command("EHLO imm\r\n", 250);
     if (!config.implicit_tls) {
         co_await command("STARTTLS\r\n", 220);
         // STARTTLS 改变同一连接的传输层：先释放明文流，再移交 socket 给 TLS，
@@ -98,7 +98,7 @@ seastar::future<> smtp_connection::send(seastar::net::inet_address address, cons
             co_await seastar::tls::wrap_client(std::move(credentials), std::move(raw), tls_options(config.smtp.host));
         _socket.emplace(std::move(secured));
         streams();
-        co_await command("EHLO wimi\r\n", 250);
+        co_await command("EHLO imm\r\n", 250);
     }
     co_await command("AUTH LOGIN\r\n", 334);
     co_await command(base64(config.smtp_user) + "\r\n", 334);
@@ -107,8 +107,8 @@ seastar::future<> smtp_connection::send(seastar::net::inet_address address, cons
     co_await command("RCPT TO:<" + mail.recipient + ">\r\n", 250);
     co_await command("DATA\r\n", 354);
     co_await command("To: " + mail.recipient + "\r\nFrom: " + config.smtp_user +
-                         "\r\nSubject: WIMI verification code\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
-                         "Your WIMI verification code is " +
+                         "\r\nSubject: IMM verification code\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+                         "Your IMM verification code is " +
                          mail.code + ". It expires in " + std::to_string(mail.ttl_seconds) + " seconds.\r\n.\r\n",
                      250);
     // DATA 最终的 250 表示 SMTP 服务端已接受邮件，不代表收件人已收到。
@@ -153,4 +153,4 @@ seastar::future<> smtp_connection::close()
     }
     _socket.reset();
 }
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

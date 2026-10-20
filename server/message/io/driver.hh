@@ -11,7 +11,7 @@
 #include <seastar/core/semaphore.hh>
 #include <set>
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 template <typename Operation>
 concept mysql_operation = requires(mysql_store& store, Operation operation) { store.execute(std::move(operation)); };
@@ -74,4 +74,4 @@ class driver
     seastar::future<file::DownloadResponse> execute(download_file operation);
 };
 using operation_queue = io::operation_queue<driver, operations>;
-} // namespace wimi::message_io
+} // namespace imm::message_io

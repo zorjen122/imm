@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package wimi.gateway;
+package imm.gateway;
 
 import "tcp_message.proto";
 
@@ -28,7 +28,7 @@ message CommandEnvelope {
   int64 actor_uid = 2;               // 已由 Gateway 鉴权的操作者用户 ID
   string connection_id = 3;         // 客户端物理连接 UUID
   uint64 connection_generation = 4; // 用户在线 lease 的连接代次
-  wimi.protocol.Operation operation = 5; // 客户端业务操作
+  imm.protocol.Operation operation = 5; // 客户端业务操作
   int64 conversation_id = 6;         // 会话 ID；无会话命令为 0
   bytes packet = 8;                  // 序列化后的 protocol.Packet
   string actor_device_id = 9;        // 已由 Gateway 鉴权的设备 ID

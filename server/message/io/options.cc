@@ -1,14 +1,14 @@
 #include "io/options.hh"
 #include "GrpcSecurity.h"
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 options load_options(const YAML::Node& server)
 {
     options value;
     const auto self = server["self"];
     value.node_id = self["name"].as<std::string>();
-    value.listener = {self["host"].as<std::string>(), self["rpcPort"].as<uint16_t>()};
+    value.listener = {self["host"].as<std::string>(), self["port"].as<uint16_t>()};
     value.shards = self["shards"].as<unsigned>(1);
     if (!value.shards || !value.listener.port ||
         static_cast<uint64_t>(value.listener.port) + value.shards - 1 > 65535) {
@@ -18,7 +18,7 @@ options load_options(const YAML::Node& server)
     value.mtls = security.Mtls();
     value.server_credentials = BuildServerCredentials(security);
     const auto mysql = server["mysql"];
-    value.mysql.address = {mysql["host"].as<std::string>(), mysql["classicPort"].as<uint16_t>(3306)};
+    value.mysql.address = {mysql["host"].as<std::string>(), mysql["port"].as<uint16_t>(3306)};
     value.mysql.user = mysql["user"].as<std::string>();
     value.mysql.password = mysql["password"].as<std::string>();
     value.mysql.schema = mysql["schema"].as<std::string>();
@@ -26,7 +26,7 @@ options load_options(const YAML::Node& server)
     if (!value.mysql.ca_file.empty()) {
         value.mysql.ca_pem = ReadCredentialFile(value.mysql.ca_file);
     }
-    value.file_rpc = {server["file"]["host"].as<std::string>(), server["file"]["rpcPort"].as<uint16_t>()};
+    value.file_rpc = {server["file"]["host"].as<std::string>(), server["file"]["port"].as<uint16_t>()};
     const auto redis = server["redis"];
     value.master_name = redis["masterName"].as<std::string>();
     value.redis_password = redis["password"].as<std::string>("");
@@ -57,4 +57,4 @@ options load_options(const YAML::Node& server)
     }
     return value;
 }
-} // namespace wimi::message_io
+} // namespace imm::message_io

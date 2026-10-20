@@ -8,7 +8,7 @@
 #include <mutex>
 #include <string>
 
-namespace wimi::rpc
+namespace imm::rpc
 {
 
 class FileServiceImpl final : public file::FileService::Service
@@ -43,4 +43,4 @@ class FileServer final
     std::filesystem::path storageRoot;
 };
 
-} // namespace wimi::rpc
+} // namespace imm::rpc

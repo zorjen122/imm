@@ -2,7 +2,7 @@
 #include "IoQueue.h"
 #include <seastar/core/semaphore.hh>
 
-namespace wimi::gateway_io
+namespace imm::gateway_io
 {
 struct capacity_units {
     seastar::semaphore_units<> count;
@@ -17,6 +17,8 @@ class budget
 
   public:
     budget(size_t count, size_t bytes) : _count(count), _bytes(bytes) {}
+
+    // 在信号量现有总容量的约束内调整持有量，它不能把信号量扩容。
     void resize(capacity_units& units, size_t bytes)
     {
         const auto old = units.bytes.count();
@@ -40,4 +42,4 @@ class budget
         return {std::move(*count), std::move(*storage)};
     }
 };
-} // namespace wimi::gateway_io
+} // namespace imm::gateway_io

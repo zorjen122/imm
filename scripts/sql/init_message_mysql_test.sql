@@ -1,7 +1,6 @@
 -- MySQL schema and seed data for the chat module. scripts/init-mysql.sh creates
 -- and selects the target database before importing this file. The application
--- uses MySQL Connector/C++ 8 X DevAPI on port 33060, while initialization uses
--- the classic mysql client on port 3306.
+-- uses the MySQL classic protocol; initialization also uses the classic mysql client.
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -179,7 +178,7 @@ CREATE TABLE `conversationDeviceStates` (
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Minimal seed data for local smoke testing.
--- Matches test/common/mysqlDaoTest.cc: TEST_USERNAME = "zorjen".
+-- Default local smoke users.
 INSERT INTO `users` (`id`, `uid`, `username`, `password`, `email`, `createTime`) VALUES
   (NULL, 1001, 'zorjen', '123456', 'zorjen@example.com', '2026-05-19 00:00:00'),
   (NULL, 1002, 'alice', '123456', 'alice@example.com', '2026-05-19 00:00:00'),

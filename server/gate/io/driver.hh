@@ -8,7 +8,7 @@
 #include "reactor/dns_resolver.hh"
 #include <set>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 // 统一 I/O 队列的后端：将操作映射到协议调用，向业务返回拥有自身存储的结果。
 // 协议读写及其回调归各适配器负责，本层管理连接作用域、停止取消和操作级组合。
@@ -49,4 +49,4 @@ class driver
     seastar::future<bool> execute(register_user);
     seastar::future<> execute(update_password);
 };
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

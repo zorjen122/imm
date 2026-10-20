@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <string>
 
-namespace wimi::io
+namespace imm::io
 {
 struct endpoint {
     std::string host;
@@ -16,4 +16,4 @@ struct mysql_options {
     std::string ca_file;
     std::string ca_pem;
 };
-} // namespace wimi::io
+} // namespace imm::io

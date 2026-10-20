@@ -8,7 +8,7 @@
 #include <seastar/util/defer.hh>
 #include <seastar/core/sleep.hh>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 namespace ee = grpc_event_engine::experimental;
 grpc_client::grpc_client(std::string target) : _engine(io::make_grpc_engine())
@@ -75,4 +75,4 @@ seastar::future<> grpc_client::close()
     _engine.reset();
     co_await io::drain_local_grpc();
 }
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

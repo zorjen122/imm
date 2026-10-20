@@ -1,0 +1,33 @@
+# 本机单节点拓扑。启动进程通过 IMM_NODE 选择节点。
+shared:
+  mysql:
+    host: 127.0.0.1
+    port: 3306
+    user: zorjen
+    password: root
+    schema: chatServ
+  redis:
+    masterName: imm-master
+    password: root
+    sentinelPassword: root
+    sentinels:
+      - {host: 127.0.0.1, port: 26389}
+      - {host: 127.0.0.1, port: 26390}
+      - {host: 127.0.0.1, port: 26391}
+  transportSecurity: {environment: development, mode: insecure}
+nodes:
+  gate:
+    service: gate
+    host: 127.0.0.1
+    port: 18080
+    verification:
+      exposeCodeInResponse: true
+      email: {enabled: false}
+  file:
+    service: file
+    host: 127.0.0.1
+    port: 51100
+    storageRoot: ./imm-files
+  state: {service: state, host: 127.0.0.1, port: 50052}
+  gateway-1: {service: gateway, host: 127.0.0.1, port: 8090}
+  message-1: {service: message, host: 127.0.0.1, port: 50055, shards: 1, machineId: 1}

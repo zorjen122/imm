@@ -2,7 +2,7 @@
 #include "transaction/service.hh"
 #include <array>
 
-namespace wimi::message_protocol
+namespace imm::message_protocol
 {
 namespace
 {
@@ -79,4 +79,4 @@ gateway::ClientForwardEnvelope make_forward(const message_transaction::delivery&
     }
     return result;
 }
-} // namespace wimi::message_protocol
+} // namespace imm::message_protocol

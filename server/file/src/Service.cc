@@ -10,7 +10,7 @@
 
 namespace fs = std::filesystem;
 
-namespace wimi::rpc
+namespace imm::rpc
 {
 namespace
 {
@@ -237,4 +237,4 @@ void FileServer::Stop()
 
 bool FileServer::stopped() const { return stopEnable.load(); }
 
-} // namespace wimi::rpc
+} // namespace imm::rpc

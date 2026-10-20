@@ -5,7 +5,7 @@
 #include <seastar/net/tls.hh>
 #include <optional>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 // Owns a single SMTP transaction. The caller keeps this object alive through
 // send(), abort if necessary, and close(); all socket work stays on its shard.
@@ -28,4 +28,4 @@ class smtp_connection
     void abort();
     seastar::future<> close();
 };
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

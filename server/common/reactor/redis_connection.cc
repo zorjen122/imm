@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <system_error>
 
-namespace wimi::io
+namespace imm::io
 {
 
 struct command_completion {
@@ -164,4 +164,4 @@ seastar::future<> redis_connection::close()
     }
     _watch.reset();
 }
-} // namespace wimi::io
+} // namespace imm::io

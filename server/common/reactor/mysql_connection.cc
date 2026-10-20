@@ -8,7 +8,7 @@
 #include <poll.h>
 #include <system_error>
 
-namespace wimi::io
+namespace imm::io
 {
 mysql_connection::mysql_connection()
 {
@@ -112,7 +112,7 @@ seastar::future<> mysql_connection::connect(std::string numeric_ip, const mysql_
     if (!config.ca_pem.empty()) {
         // 项目生成的 Connector TLS 适配从内存读取 CA，并用原始主机名做 SNI/证书校验；
         // TCP 连接使用已异步解析的 numeric_ip，避免客户端再同步解析域名或读取证书文件。
-        ::mysql_optionsv(_mysql, MARIADB_OPT_USERDATA, "wimi_tls_peer_name",
+        ::mysql_optionsv(_mysql, MARIADB_OPT_USERDATA, "imm_tls_peer_name",
                          const_cast<char*>(config.address.host.c_str()));
         my_bool enabled = 1;
         ::mysql_options(_mysql, MYSQL_OPT_SSL_ENFORCE, &enabled);
@@ -272,4 +272,4 @@ seastar::future<> mysql_connection::close()
     }
     _mysql = nullptr;
 }
-} // namespace wimi::io
+} // namespace imm::io

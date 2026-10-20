@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package wimi.protocol;
+package imm.protocol;
 
 // 服务端返回的通用处理结果。
 message ResponseStatus {

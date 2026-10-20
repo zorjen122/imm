@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 struct options {
     io::queue_limits queue;
@@ -31,6 +31,6 @@ struct options {
     std::string smtp_ca_file;
 };
 // Reads immutable startup configuration. Environment overrides retain the
-// existing WIMI_VERIFY_* meanings; no configuration file is read per request.
+// existing IMM_VERIFY_* meanings; no configuration file is read per request.
 options load_options(const YAML::Node& server);
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

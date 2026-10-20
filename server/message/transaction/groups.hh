@@ -2,7 +2,7 @@
 #include "transaction/context.hh"
 #include "io/driver.hh"
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 class groups
 {
@@ -22,4 +22,4 @@ class groups
     seastar::future<protocol::Packet> quit(request_context& context);
     seastar::future<protocol::Packet> kick(request_context& context);
 };
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

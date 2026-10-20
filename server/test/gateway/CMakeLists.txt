@@ -1,0 +1,3 @@
+add_executable(gateway_protocol_test protocol_test.cc)
+target_link_libraries(gateway_protocol_test PRIVATE imGateway)
+add_test(NAME gateway.protocol COMMAND gateway_protocol_test)

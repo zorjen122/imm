@@ -6,40 +6,37 @@ set -euo pipefail
 #   若本地 Redis 主从和 Sentinel 未运行，会调用 start-redis.sh 启动；脚本退出时清理本次启动的进程。
 # 常用方式：
 #   ./scripts/run-local-services.sh
-# 停止当前用户从本仓库启动的旧 WIMI 服务，然后启动新服务：
+# 停止当前用户从本仓库启动的旧 IMM 服务，然后启动新服务：
 #   ./scripts/run-local-services.sh --stop-existing
-# G=2、N=2 方式：
-#   WIMI_STATE_CONFIG="$PWD/conf/state-multi.yaml" \
-#   WIMI_MESSAGE_CONFIGS="$PWD/conf/message-hunan-im.yaml $PWD/conf/message-beijing-im.yaml" \
-#   WIMI_GATEWAY_CONFIGS="$PWD/conf/gateway-hunan.yaml $PWD/conf/gateway-beijing.yaml" \
-#     ./scripts/run-local-services.sh
+# 双 Gateway/Message：./scripts/run-local-services.sh --cluster
 # 前置条件：
 #   先执行 ./scripts/build-server.sh；需要 MySQL 已可连接，通常也会先执行 ./scripts/init-mysql.sh。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
-: "${WIMI_STATE_CONFIG:=$ROOT_DIR/conf/state-multi.yaml}"
-: "${WIMI_GATE_CONFIG:=$ROOT_DIR/conf/gate.yaml}"
-: "${WIMI_FILE_CONFIG:=$ROOT_DIR/conf/file.yaml}"
-: "${WIMI_MESSAGE_CONFIGS:=$ROOT_DIR/conf/message-hunan-im.yaml $ROOT_DIR/conf/message-beijing-im.yaml}"
-: "${WIMI_GATEWAY_CONFIGS:=$ROOT_DIR/conf/gateway-hunan.yaml $ROOT_DIR/conf/gateway-beijing.yaml}"
-: "${WIMI_LOG_LEVEL:=info}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/imm-server}"
+: "${IMM_CONFIG:=$ROOT_DIR/loopback/single.yaml}"
+: "${IMM_LOG_LEVEL:=info}"
 
 usage() {
   cat <<EOF
-Usage: ./scripts/run-local-services.sh [--stop-existing]
+Usage: ./scripts/run-local-services.sh [--stop-existing] [--cluster]
 
 Options:
-  --stop-existing  Stop WIMI services started by the current user from this
+  --stop-existing  Stop IMM services started by the current user from this
                    repository before starting the requested local topology.
                    MySQL and Redis are not stopped.
+  --cluster       Append loopback/cluster.yaml nodes.
   -h, --help       Show this help message.
 EOF
 }
 
+cluster=0
 stop_existing=0
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --cluster)
+      cluster=1
+      ;;
     --stop-existing)
       stop_existing=1
       ;;
@@ -55,6 +52,30 @@ while [[ "$#" -gt 0 ]]; do
   esac
   shift
 done
+
+if [[ "$cluster" == "1" ]]; then
+  export IMM_EXTRA_CONFIG="${IMM_EXTRA_CONFIG:-$ROOT_DIR/loopback/cluster.yaml}"
+else
+  unset IMM_EXTRA_CONFIG
+fi
+export IMM_CONFIG
+node_listing="$(python3 - "$IMM_CONFIG" "${IMM_EXTRA_CONFIG:-}" <<'PYCONF'
+import sys, yaml
+with open(sys.argv[1]) as source:
+    nodes = yaml.safe_load(source)["nodes"]
+if sys.argv[2]:
+    with open(sys.argv[2]) as source:
+        additional = yaml.safe_load(source)["nodes"]
+    if nodes.keys() & additional.keys():
+        raise ValueError("duplicate node names")
+    nodes.update(additional)
+for kind in ("state", "file", "message", "gateway", "gate"):
+    for name, node in nodes.items():
+        if node["service"] == kind:
+            print(kind, name)
+PYCONF
+)"
+mapfile -t nodes <<< "$node_listing"
 
 for exe in "$BUILD_DIR/state/state" "$BUILD_DIR/file/file" "$BUILD_DIR/message/message" "$BUILD_DIR/gateway/gateway" "$BUILD_DIR/gate/gate" ; do
   if [[ ! -x "$exe" ]]; then
@@ -81,7 +102,7 @@ stop_existing_services() {
   local -A seen=()
   local pid
 
-  pid_is_wimi_service() {
+  pid_is_imm_service() {
     local target_pid="$1"
     local argument
     [[ -r "/proc/$target_pid/cmdline" ]] || return 1
@@ -99,18 +120,18 @@ stop_existing_services() {
 
   while IFS= read -r pid; do
     if [[ -n "$pid" && "$pid" != "$$" && -z "${seen[$pid]:-}" ]] &&
-      pid_is_wimi_service "$pid"; then
+      pid_is_imm_service "$pid"; then
       service_pids+=("$pid")
       seen["$pid"]=1
     fi
   done < <(pgrep -u "$(id -u)" -f -- "$ROOT_DIR/build/" || true)
 
   if [[ "${#service_pids[@]}" -eq 0 ]]; then
-    echo "No existing WIMI services found for the current user."
+    echo "No existing IMM services found for the current user."
     return 0
   fi
 
-  echo "Stopping existing WIMI services: ${service_pids[*]}"
+  echo "Stopping existing IMM services: ${service_pids[*]}"
   kill -TERM "${service_pids[@]}" 2>/dev/null || true
 
   local deadline=$((SECONDS + 8))
@@ -118,12 +139,12 @@ stop_existing_services() {
   while ((SECONDS < deadline)); do
     remaining=()
     for pid in "${service_pids[@]}"; do
-      if kill -0 "$pid" 2>/dev/null && pid_is_wimi_service "$pid"; then
+      if kill -0 "$pid" 2>/dev/null && pid_is_imm_service "$pid"; then
         remaining+=("$pid")
       fi
     done
     if [[ "${#remaining[@]}" -eq 0 ]]; then
-      echo "Existing WIMI services stopped."
+      echo "Existing IMM services stopped."
       return 0
     fi
     sleep 0.2
@@ -131,25 +152,25 @@ stop_existing_services() {
 
   local -a force_stop=()
   for pid in "${remaining[@]}"; do
-    if kill -0 "$pid" 2>/dev/null && pid_is_wimi_service "$pid"; then
+    if kill -0 "$pid" 2>/dev/null && pid_is_imm_service "$pid"; then
       force_stop+=("$pid")
     fi
   done
   if [[ "${#force_stop[@]}" -eq 0 ]]; then
-    echo "Existing WIMI services stopped."
+    echo "Existing IMM services stopped."
     return 0
   fi
 
-  echo "Forcing unresponsive WIMI services to stop: ${force_stop[*]}" >&2
+  echo "Forcing unresponsive IMM services to stop: ${force_stop[*]}" >&2
   kill -KILL "${force_stop[@]}" 2>/dev/null || true
   sleep 0.2
   for pid in "${force_stop[@]}"; do
-    if kill -0 "$pid" 2>/dev/null && pid_is_wimi_service "$pid"; then
-      echo "Unable to stop WIMI service process $pid." >&2
+    if kill -0 "$pid" 2>/dev/null && pid_is_imm_service "$pid"; then
+      echo "Unable to stop IMM service process $pid." >&2
       return 1
     fi
   done
-  echo "Existing WIMI services stopped."
+  echo "Existing IMM services stopped."
 }
 
 if [[ "$stop_existing" == "1" ]]; then
@@ -158,7 +179,7 @@ fi
 
 redis_topology_ready() {
   [[ "$(timeout 1 redis-cli --no-auth-warning --raw -h 127.0.0.1 -p 26389 -a root \
-    SENTINEL get-master-addr-by-name wimi-master 2>/dev/null | tail -n 1)" =~ ^638[0-2]$ ]]
+    SENTINEL get-master-addr-by-name imm-master 2>/dev/null | tail -n 1)" =~ ^638[0-2]$ ]]
 }
 
 started_redis=0
@@ -192,19 +213,10 @@ start_service() {
   fi
 }
 
-start_service state "$ROOT_DIR/server/state" env WIMI_CONFIG="$WIMI_STATE_CONFIG" "$BUILD_DIR/state/state" --log_level "$WIMI_LOG_LEVEL"
-start_service file "$ROOT_DIR/server/file" env WIMI_CONFIG="$WIMI_FILE_CONFIG" "$BUILD_DIR/file/file" --log_level "$WIMI_LOG_LEVEL"
-message_index=1
-for message_config in $WIMI_MESSAGE_CONFIGS; do
-  start_service "message-$message_index" "$ROOT_DIR/server/message" env WIMI_CONFIG="$message_config" "$BUILD_DIR/message/message" --log_level "$WIMI_LOG_LEVEL"
-  message_index=$((message_index + 1))
+for entry in "${nodes[@]}"; do
+  read -r service node <<< "$entry"
+  start_service "$node" "$ROOT_DIR" env IMM_NODE="$node" "$BUILD_DIR/$service/$service" --log_level "$IMM_LOG_LEVEL"
 done
-gateway_index=1
-for gateway_config in $WIMI_GATEWAY_CONFIGS; do
-  start_service "gateway-$gateway_index" "$ROOT_DIR/server/gateway" env WIMI_CONFIG="$gateway_config" "$BUILD_DIR/gateway/gateway" --log_level "$WIMI_LOG_LEVEL"
-  gateway_index=$((gateway_index + 1))
-done
-start_service gate "$ROOT_DIR/server/gate" env WIMI_CONFIG="$WIMI_GATE_CONFIG" "$BUILD_DIR/gate/gate" --log_level "$WIMI_LOG_LEVEL"
 
 echo "Local services are running. Gate: http://127.0.0.1:18080"
 wait

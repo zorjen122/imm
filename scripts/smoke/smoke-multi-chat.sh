@@ -6,7 +6,7 @@ set -euo pipefail
 #   用户 A 登录 gateway-1，用户 B 登录 gateway-2，脚本检查 Redis 会话路由、
 #   跨节点文本 ACCEPTED/投递/ACK 落库、跨节点好友申请/回复和好友拉取。
 # 前置条件：
-#   使用 conf/state-multi.yaml 和两个 message config 启动服务。
+#   使用 ./scripts/run-local-services.sh --cluster 启动服务。
 #   典型启动方式见 --help 输出。
 # 注意：
 #   该脚本会向测试库写入临时用户、好友申请、好友关系和消息数据。
@@ -19,10 +19,7 @@ Usage: ./scripts/smoke/smoke-multi-chat.sh
 
 Requires two gateway services, two message services, and shared dependencies to be running, for example:
   ./scripts/init-mysql.sh
-  WIMI_STATE_CONFIG="\$PWD/conf/state-multi.yaml" \\
-  WIMI_MESSAGE_CONFIGS="\$PWD/conf/message-hunan-im.yaml \$PWD/conf/message-beijing-im.yaml" \\
-  WIMI_GATEWAY_CONFIGS="\$PWD/conf/gateway-hunan.yaml \$PWD/conf/gateway-beijing.yaml" \\
-    ./scripts/run-local-services.sh
+    ./scripts/run-local-services.sh --cluster
 
 Verifies the currently supported multi-message-node path:
   - user A logs in to gateway node 1, user B logs in to gateway node 2
@@ -42,18 +39,18 @@ fi
 
 : "${MYSQL_HOST:=127.0.0.1}"
 : "${MYSQL_PORT:=3306}"
-: "${WIMI_DB:=chatServ}"
-: "${WIMI_DB_USER:=zorjen}"
-: "${WIMI_DB_PASSWORD:=root}"
-: "${WIMI_REDIS_HOST:=127.0.0.1}"
-: "${WIMI_REDIS_PORT:=6380}"
-: "${WIMI_REDIS_PASSWORD:=root}"
+: "${IMM_DB:=chatServ}"
+: "${IMM_DB_USER:=zorjen}"
+: "${IMM_DB_PASSWORD:=root}"
+: "${IMM_REDIS_HOST:=127.0.0.1}"
+: "${IMM_REDIS_PORT:=6380}"
+: "${IMM_REDIS_PASSWORD:=root}"
 : "${CHAT_A_HOST:=127.0.0.1}"
 : "${CHAT_A_PORT:=8090}"
 : "${CHAT_B_HOST:=127.0.0.1}"
 : "${CHAT_B_PORT:=8091}"
-: "${GATEWAY_A_ID:=hunan-gateway}"
-: "${GATEWAY_B_ID:=beijing-gateway}"
+: "${GATEWAY_A_ID:=gateway-1}"
+: "${GATEWAY_B_ID:=gateway-2}"
 : "${GATE_URL:=http://127.0.0.1:18080}"
 
 check_chat_port() {
@@ -66,10 +63,7 @@ if ! check_chat_port "gateway node A" "$CHAT_A_HOST" "$CHAT_A_PORT" ||
 smoke-multi-chat.sh requires two gateway nodes before it writes test data.
 
 Start the local stack in multi-chat mode:
-  WIMI_STATE_CONFIG="\$PWD/conf/state-multi.yaml" \\
-  WIMI_MESSAGE_CONFIGS="\$PWD/conf/message-hunan-im.yaml \$PWD/conf/message-beijing-im.yaml" \\
-  WIMI_GATEWAY_CONFIGS="\$PWD/conf/gateway-hunan.yaml \$PWD/conf/gateway-beijing.yaml" \\
-    ./scripts/run-local-services.sh
+    ./scripts/run-local-services.sh --cluster
 
 Current expected TCP endpoints:
   gateway node A: $CHAT_A_HOST:$CHAT_A_PORT
@@ -86,12 +80,12 @@ user_b="multi_b_${stamp}"
 friend_msg="multi_friend_apply_${stamp}"
 friend_reply="multi_friend_reply_${stamp}"
 text_payload="multi_text_${stamp}"
-result_file="$(mktemp /tmp/wimi-multi-chat.XXXXXX.json)"
+result_file="$(mktemp /tmp/imm-multi-chat.XXXXXX.json)"
 trap 'rm -f "$result_file"' EXIT
 
 mysql_exec() {
   mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" "$WIMI_DB" "$@"
+    -u"$IMM_DB_USER" -p"$IMM_DB_PASSWORD" "$IMM_DB" "$@"
 }
 
 mysql_scalar() {
@@ -136,9 +130,9 @@ CHAT_B_PORT="$CHAT_B_PORT" \
 GATEWAY_A_ID="$GATEWAY_A_ID" \
 GATEWAY_B_ID="$GATEWAY_B_ID" \
 GATE_URL="$GATE_URL" \
-WIMI_REDIS_HOST="$WIMI_REDIS_HOST" \
-WIMI_REDIS_PORT="$WIMI_REDIS_PORT" \
-WIMI_REDIS_PASSWORD="$WIMI_REDIS_PASSWORD" \
+IMM_REDIS_HOST="$IMM_REDIS_HOST" \
+IMM_REDIS_PORT="$IMM_REDIS_PORT" \
+IMM_REDIS_PASSWORD="$IMM_REDIS_PASSWORD" \
 RESULT_FILE="$result_file" \
 python3 "$ROOT_DIR/scripts/smoke/src/smoke_multi_chat.py"
 
