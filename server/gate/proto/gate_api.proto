@@ -1,5 +1,5 @@
 syntax = "proto3";
-package wimi.gate_api;
+package imm.gate_api;
 
 message health_request {}
 message health_response {

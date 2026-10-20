@@ -6,7 +6,7 @@
 #include "Const.h"
 #include "tcp_message.pb.h"
 
-namespace wimi
+namespace imm
 {
 
 using TcpPacket = protocol::Packet;
@@ -169,4 +169,4 @@ inline int64_t TcpPacketReliableSequence(const TcpPacket& packet)
 
 inline std::string TcpPacketDebugString(const TcpPacket& packet) { return packet.ShortDebugString(); }
 
-} // namespace wimi
+} // namespace imm

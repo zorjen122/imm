@@ -1,7 +1,7 @@
 import hashlib
 import os
 
-from wimi_tcp_client import Operation, PushType, WimClient, request_chat_auth, require
+from imm_tcp_client import Operation, PushType, ImmClient, request_chat_auth, require
 
 
 gateway_host = os.environ["GATEWAY_HOST"]
@@ -17,8 +17,8 @@ with open(upload_path, "rb") as source:
 
 auth_a = request_chat_auth("zorjen", "123456", gate_url)
 auth_b = request_chat_auth("alice", "123456", gate_url)
-a = WimClient(1001, gateway_host, gateway_port, auth_token=auth_a["chatToken"])
-b = WimClient(1002, gateway_host, gateway_port, auth_token=auth_b["chatToken"])
+a = ImmClient(1001, gateway_host, gateway_port, auth_token=auth_a["chatToken"])
+b = ImmClient(1002, gateway_host, gateway_port, auth_token=auth_b["chatToken"])
 
 try:
     a.login(init=False)

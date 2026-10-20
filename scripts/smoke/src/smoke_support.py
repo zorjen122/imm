@@ -29,7 +29,7 @@ def print_json_fields(fields, file_name):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Helpers for WIMI smoke scripts")
+    parser = argparse.ArgumentParser(description="Helpers for IMM smoke scripts")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     tcp_parser = subparsers.add_parser("check-tcp")

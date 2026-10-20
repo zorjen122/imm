@@ -3,7 +3,7 @@
 #include <seastar/core/coroutine.hh>
 #include <algorithm>
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 using namespace db;
 seastar::future<sql_result> mysql_store::query(std::string sql, std::vector<io::mysql_parameter> arguments)
@@ -897,4 +897,4 @@ seastar::future<int> mysql_store::execute(update_user_info_head_image_url operat
 
     co_return 0;
 }
-} // namespace wimi::message_io
+} // namespace imm::message_io

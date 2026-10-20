@@ -11,8 +11,8 @@ set -euo pipefail
 #   ./scripts/tune-perf-temp.sh restore
 #   ./scripts/tune-perf-temp.sh run ./scripts/run-local-services.sh
 
-STATE_FILE="${WIMI_TUNE_STATE_FILE:-/tmp/wwimiperf-sysctl.state}"
-NOFILE_LIMIT="${WIMI_TUNE_NOFILE:-1048576}"
+STATE_FILE="${IMM_TUNE_STATE_FILE:-/tmp/immperf-sysctl.state}"
+NOFILE_LIMIT="${IMM_TUNE_NOFILE:-1048576}"
 
 PARAMS=(
   "fs.file-max=2097152"
@@ -41,8 +41,8 @@ Commands:
   run       Apply temporary values, raise nofile for the child process, then exec command.
 
 Environment:
-  WIMI_TUNE_STATE_FILE  Restore-state file. Default: /tmp/wwimiperf-sysctl.state
-  WIMI_TUNE_NOFILE      Child-process nofile limit for run. Default: 1048576
+  IMM_TUNE_STATE_FILE  Restore-state file. Default: /tmp/immperf-sysctl.state
+  IMM_TUNE_NOFILE      Child-process nofile limit for run. Default: 1048576
 
 Notes:
   - sysctl changes are runtime-only and vanish after reboot unless restored earlier.

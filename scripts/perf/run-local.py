@@ -13,12 +13,33 @@ import uuid
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+# 基准必须显式关闭单连接限流，否则测到的是限流器而不是服务上限。
+GATEWAY_COMMAND_RATE_LIMIT = 0
 
 
 def free_port():
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         return sock.getsockname()[1]
+
+
+def physical_core_count():
+    """物理核数：按 (physical id, core id) 去重；无法判定时退化为逻辑核数的一半。"""
+    cores = set()
+    physical_id = core_id = None
+    try:
+        for line in Path('/proc/cpuinfo').read_text().splitlines():
+            if line.startswith('physical id'):
+                physical_id = line.split(':', 1)[1].strip()
+            elif line.startswith('core id'):
+                core_id = line.split(':', 1)[1].strip()
+            elif not line.strip():
+                if physical_id is not None and core_id is not None:
+                    cores.add((physical_id, core_id))
+                physical_id = core_id = None
+    except OSError:
+        pass
+    return len(cores) if cores else max(1, (os.cpu_count() or 2) // 2)
 
 
 def wait_port(port, process):
@@ -54,10 +75,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--seconds', type=float, default=10)
-    parser.add_argument('--rate', type=float, default=40)
+    parser.add_argument('--seconds', type=float, default=180)
+    parser.add_argument('--rate', type=float, default=200)
     parser.add_argument('--workers', type=int, default=4)
-    parser.add_argument('--seastar-smp', type=int, default=1)
+    parser.add_argument('--seastar-smp', type=int, default=physical_core_count())
     parser.add_argument('--network-interface', default='lo')
     parser.add_argument('--block-device', default='')
     parser.add_argument('--idle-connections', type=int, default=100)
@@ -75,12 +96,12 @@ def main():
     scenarios = args.scenarios.split(',') if args.scenarios else all_scenarios
     if not scenarios or len(scenarios) != len(set(scenarios)) or any(item not in all_scenarios for item in scenarios):
         parser.error('invalid or duplicate scenario')
-    for executable in ["bench/wimiPerf", "gate/gate", "gateway/gateway", "message/message", "file/file", "state/state"]:
+    for executable in ["bench/immPerf", "gate/gate", "gateway/gateway", "message/message", "file/file", "state/state"]:
         if not (args.build / executable).is_file():
             parser.error(f"missing executable: {executable}")
     args.output = args.output.resolve()
-    args.output.mkdir(parents=True, exist_ok=False)
-    schema = 'wimi_perf_' + uuid.uuid4().hex[:12]
+    args.output.mkdir(parents=True, exist_ok=True)
+    schema = 'imm_perf_' + uuid.uuid4().hex[:12]
     original_ports = [18080, 8090, 8091, 50052, 50055, 50056, 51100, 6380, 26389]
     ports = {}
     for original in original_ports:
@@ -132,6 +153,7 @@ def main():
                 'network_runtime': args.network_runtime,
                 'reactor_backend': 'io_uring' if args.network_runtime == 'seastar' else None,
                 'host': {'kernel': capture(['uname', '-srvmo']), 'logical_cpus': os.cpu_count(),
+                         'physical_cpus': physical_core_count(),
                          'cpu_model': value_after_prefix(Path('/proc/cpuinfo'), 'model name'),
                          'memory': value_after_prefix(Path('/proc/meminfo'), 'MemTotal')},
                 'toolchain': {'cxx': capture(['/usr/bin/g++', '--version']), 'standard': 'C++23',
@@ -141,7 +163,8 @@ def main():
                 'service_budget': {'gate_memory': '256M', 'gateway_memory': '256M',
                                    'gate_blocking_workers': 4, 'gateway_blocking_workers': 4,
                                    'gateway_message_io_workers': 2},
-                'redis_persistence': {'save': False, 'appendonly': False}, 'log_level': 'info'}
+                'redis_persistence': {'save': False, 'appendonly': False}, 'log_level': 'info',
+                'gateway_command_rate_limit': GATEWAY_COMMAND_RATE_LIMIT}
     (args.output / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     (args.output / 'workspace.diff').write_bytes(subprocess.check_output(['git', 'diff'], cwd=ROOT))
     try:
@@ -159,38 +182,36 @@ def main():
         wait_port(ports[6380], redis)
         sentinel_config = args.output / 'sentinel.conf'
         sentinel_config.write_text(f'bind 127.0.0.1\nport {ports[26389]}\nrequirepass root\n'
-                                   f'sentinel monitor wimi-master 127.0.0.1 {ports[6380]} 1\n'
-                                   'sentinel auth-pass wimi-master root\n')
+                                   f'sentinel monitor imm-master 127.0.0.1 {ports[6380]} 1\n'
+                                   'sentinel auth-pass imm-master root\n')
         sentinel = start('sentinel', ['redis-server', str(sentinel_config), '--sentinel'])
         wait_port(ports[26389], sentinel)
 
-        services = [('state', 'state-multi.yaml', 50052), ('file', 'file.yaml', 51100),
-                    ('message', 'message-hunan-im.yaml', 50055),
-                    ('message', 'message-beijing-im.yaml', 50056),
-                    ('gateway', 'gateway-hunan.yaml', 8090),
-                    ('gateway', 'gateway-beijing.yaml', 8091), ('gate', 'gate.yaml', 18080)]
-        for service, filename, original_port in services:
-            config = rewrite(yaml.safe_load((ROOT / 'conf' / filename).read_text()))
-            server = config['server']
-            if 'mysql' in server:
-                server['mysql']['schema'] = schema
-            if 'redis' in server:
-                server['redis']['sentinels'] = [{'host': '127.0.0.1', 'port': ports[26389]}]
-            if service == 'file':
-                server['file']['storageRoot'] = str(args.output / 'files')
-            path = args.output / filename
-            path.write_text(yaml.safe_dump(config))
-            env = os.environ | {'WIMI_CONFIG': str(path)}
-            command = [str(args.build / service / service)]
-            if service == 'message':
-                command.append(str(path))
-            if service in {'gate', 'gateway'} and args.network_runtime == 'seastar':
-                command.extend(['--smp', str(args.seastar_smp), '--memory', '256M',
-                                '--overprovisioned', '--reactor-backend', 'io_uring'])
-            process = start(filename, command, env)
-            wait_port(ports[original_port], process)
+        config = rewrite(yaml.safe_load((ROOT / 'loopback/single.yaml').read_text()))
+        extra = rewrite(yaml.safe_load((ROOT / 'loopback/cluster.yaml').read_text()))
+        config['nodes'].update(extra['nodes'])
+        config['shared']['mysql']['schema'] = schema
+        config['shared']['redis']['sentinels'] = [{'host': '127.0.0.1', 'port': ports[26389]}]
+        config['nodes']['file']['storageRoot'] = str(args.output / 'files')
+        for node in config['nodes'].values():
+            if node['service'] == 'gateway':
+                node['commandRateLimit'] = GATEWAY_COMMAND_RATE_LIMIT
+        path = args.output / 'services.yaml'
+        path.write_text(yaml.safe_dump(config))
+        for service in ('state', 'file', 'message', 'gateway', 'gate'):
+            for name, node in config['nodes'].items():
+                if node['service'] != service:
+                    continue
+                env = os.environ | {'IMM_CONFIG': str(path), 'IMM_NODE': name}
+                command = [str(args.build / service / service)]
+                if service in {'gate', 'gateway', 'message'}:
+                    if service != 'message':
+                        command.extend(['--smp', str(args.seastar_smp)])
+                    command.extend(['--memory', '256M', '--overprovisioned', '--reactor-backend', 'epoll'])
+                process = start(name, command, env)
+                wait_port(node['port'], process)
         time.sleep(2)
-        env = os.environ | {'WIMI_DB': schema, 'WIMI_REDIS_PORT': str(ports[6380]),
+        env = os.environ | {'IMM_DB': schema, 'IMM_REDIS_PORT': str(ports[6380]),
                             'CHAT_A_PORT': str(ports[8090]), 'CHAT_B_PORT': str(ports[8091]),
                             'GATE_URL': f'http://127.0.0.1:{ports[18080]}',
                             'PERF_GATE_PORT': str(ports[18080]), 'PERF_GATEWAY_PORT': str(ports[8090]),
@@ -241,7 +262,7 @@ def main():
         snapshots = []
         for scenario in scenarios:
             with (args.output / f'{scenario}.summary.json').open('w') as summary:
-                command = [str(args.build / 'bench/wimiPerf'), scenario, str(args.rate), str(args.seconds),
+                command = [str(args.build / 'bench/immPerf'), scenario, str(args.rate), str(args.seconds),
                            str(args.workers), str(args.output / f'{scenario}.jsonl')]
                 perf = subprocess.Popen(command, env=env, stdout=summary, stderr=subprocess.PIPE, text=True)
                 processes.append(perf)

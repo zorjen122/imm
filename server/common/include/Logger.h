@@ -11,7 +11,7 @@
 #include <string>
 #include <string_view>
 
-namespace wimi
+namespace imm
 {
 
 inline std::string_view logSourceFileName(std::string_view path)
@@ -21,7 +21,7 @@ inline std::string_view logSourceFileName(std::string_view path)
 }
 
 #define LOG_DEBUG(logger, ...)                                                                                         \
-    (spdlog::default_logger_raw()->debug("{}:{}({})\n{}", ::wimi::logSourceFileName(__FILE__), __LINE__, __FUNCTION__, \
+    (spdlog::default_logger_raw()->debug("{}:{}({})\n{}", ::imm::logSourceFileName(__FILE__), __LINE__, __FUNCTION__,  \
                                          fmt::format(__VA_ARGS__)))
 
 #define LOG_TRACE(logger, ...) (spdlog::default_logger_raw()->trace("{}", fmt::format(__VA_ARGS__)))
@@ -118,4 +118,4 @@ class Logger final
 
 inline auto& logger = Logger::instance().logger();
 
-}; // namespace wimi
+}; // namespace imm

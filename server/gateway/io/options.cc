@@ -3,7 +3,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
-namespace wimi::gateway_io
+namespace imm::gateway_io
 {
 options load_options(const YAML::Node& server)
 {
@@ -13,7 +13,7 @@ options load_options(const YAML::Node& server)
     value.command_rate_limit = server["self"]["commandRateLimit"].as<unsigned>(100);
     value.instance_id = boost::uuids::to_string(boost::uuids::random_generator{}());
     const auto mysql = server["mysql"];
-    value.mysql.address = {mysql["host"].as<std::string>(), mysql["classicPort"].as<uint16_t>(3306)};
+    value.mysql.address = {mysql["host"].as<std::string>(), mysql["port"].as<uint16_t>(3306)};
     value.mysql.user = mysql["user"].as<std::string>();
     value.mysql.password = mysql["password"].as<std::string>();
     value.mysql.schema = mysql["schema"].as<std::string>();
@@ -53,4 +53,4 @@ options load_options(const YAML::Node& server)
     value.message_credentials = BuildChannelCredentials(LoadGrpcSecurityConfig(server));
     return value;
 }
-} // namespace wimi::gateway_io
+} // namespace imm::gateway_io

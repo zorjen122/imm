@@ -22,7 +22,7 @@
 
 namespace asio = boost::asio;
 namespace http = boost::beast::http;
-namespace protocol = wimi::protocol;
+namespace protocol = imm::protocol;
 using Clock = std::chrono::steady_clock;
 using namespace std::chrono_literals;
 
@@ -239,7 +239,7 @@ int main(int argc, char** argv)
 {
     try {
         if (argc != 6)
-            throw std::runtime_error("Usage: wimiPerf SCENARIO RATE SECONDS WORKERS OUTPUT.jsonl");
+            throw std::runtime_error("Usage: immPerf SCENARIO RATE SECONDS WORKERS OUTPUT.jsonl");
         const std::string scenario = argv[1];
         const std::vector<std::string> supported{
             "http-test",     "http-test-keepalive", "http-login", "http-login-keepalive",

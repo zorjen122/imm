@@ -8,7 +8,7 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/scheduling.hh>
 
-namespace wimi::gateway_io
+namespace imm::gateway_io
 {
 class driver;
 // 流在所属 shard 的 io 调度组构造。gRPC 回调和协议事件都由同一个 reactor 驱动，
@@ -62,4 +62,4 @@ class message_link final
     void OnWriteDone(bool ok) override;
     void OnDone(const grpc::Status& status) override;
 };
-} // namespace wimi::gateway_io
+} // namespace imm::gateway_io

@@ -6,32 +6,32 @@ set -euo pipefail
 #   覆盖登录、state 路由、文本消息落库、文件上传和在线直发消息。
 # 前置条件：
 #   已执行 ./scripts/build-server.sh 和 ./scripts/init-mysql.sh，
-#   并通过 ./scripts/run-local-services.sh 启动本地服务。
+#   并通过 ./scripts/run-local-services.sh --cluster 启动本地服务。
 # 注意：
 #   该脚本会使用测试用户 1001/1002，并创建临时上传文件。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/wimi-server}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/imm-server}"
 
 : "${GATE_URL:=http://127.0.0.1:18080}"
 : "${MYSQL_HOST:=127.0.0.1}"
 : "${MYSQL_PORT:=3306}"
-: "${WIMI_DB:=chatServ}"
-: "${WIMI_DB_USER:=zorjen}"
-: "${WIMI_DB_PASSWORD:=root}"
-: "${WIMI_REDIS_HOST:=127.0.0.1}"
-: "${WIMI_REDIS_PORT:=6380}"
-: "${WIMI_REDIS_PASSWORD:=root}"
+: "${IMM_DB:=chatServ}"
+: "${IMM_DB_USER:=zorjen}"
+: "${IMM_DB_PASSWORD:=root}"
+: "${IMM_REDIS_HOST:=127.0.0.1}"
+: "${IMM_REDIS_PORT:=6380}"
+: "${IMM_REDIS_PASSWORD:=root}"
 
-timeout 3 redis-cli -h "$WIMI_REDIS_HOST" -p "$WIMI_REDIS_PORT" -a "$WIMI_REDIS_PASSWORD" \
+timeout 3 redis-cli -h "$IMM_REDIS_HOST" -p "$IMM_REDIS_PORT" -a "$IMM_REDIS_PASSWORD" \
   DEL im:user:1001 im:user:1002 >/dev/null 2>&1 || true
 
 stamp="$(date +%s)"
 text_payload="hello_from_smoke_$stamp"
-upload_file="wimi_upload_smoke_$stamp.txt"
+upload_file="imm_upload_smoke_$stamp.txt"
 upload_src="/tmp/$upload_file"
 upload_file_id="smoke-file-$stamp"
-upload_dst="$BUILD_DIR/file/wimi-files/1001/$upload_file_id"
+upload_dst="$BUILD_DIR/file/imm-files/1001/$upload_file_id"
 cleanup_files() {
   rm -f "$upload_src" "$upload_dst"
 }
@@ -76,8 +76,8 @@ python3 "$ROOT_DIR/scripts/smoke/src/smoke_base.py"
 
 for _ in {1..10}; do
   text_count="$(mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" -N -B \
-    -e "SELECT COUNT(*) FROM $WIMI_DB.messages WHERE content='$text_payload';" 2>/dev/null)"
+    -u"$IMM_DB_USER" -p"$IMM_DB_PASSWORD" -N -B \
+    -e "SELECT COUNT(*) FROM $IMM_DB.messages WHERE content='$text_payload';" 2>/dev/null)"
   if [[ "$text_count" == "1" ]]; then
     echo "chat text ok"
     break

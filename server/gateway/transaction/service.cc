@@ -4,7 +4,7 @@
 #include <seastar/core/coroutine.hh>
 #include <cassert>
 
-namespace wimi::gateway_transaction
+namespace imm::gateway_transaction
 {
 using namespace gateway_io;
 service::service(options config, seastar::scheduling_group transaction, seastar::scheduling_group io_group)
@@ -152,4 +152,4 @@ seastar::future<> service::stop()
     co_await _requests.close();
     co_await _driver.stop();
 }
-} // namespace wimi::gateway_transaction
+} // namespace imm::gateway_transaction

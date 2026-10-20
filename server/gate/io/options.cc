@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <stdexcept>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 namespace
 {
@@ -29,7 +29,7 @@ options load_options(const YAML::Node& server)
 {
     options result;
     const auto mysql = server["mysql"];
-    result.mysql.address = {mysql["host"].as<std::string>(), mysql["classicPort"].as<uint16_t>(3306)};
+    result.mysql.address = {mysql["host"].as<std::string>(), mysql["port"].as<uint16_t>(3306)};
     result.mysql.user = mysql["user"].as<std::string>();
     result.mysql.password = mysql["password"].as<std::string>();
     result.mysql.schema = mysql["schema"].as<std::string>();
@@ -65,11 +65,11 @@ options load_options(const YAML::Node& server)
         result.smtp_ca_file = email["caFile"].as<std::string>("");
         url = email["smtpUrl"].as<std::string>(url);
     }
-    result.email_enabled = environment_bool("WIMI_VERIFY_SEND_EMAIL", result.email_enabled);
-    result.expose_code = environment_bool("WIMI_VERIFY_EXPOSE_CODE", result.expose_code);
-    result.smtp_user = environment("WIMI_VERIFY_EMAIL_USER", std::move(result.smtp_user));
-    result.smtp_password = environment("WIMI_VERIFY_EMAIL_PASS", std::move(result.smtp_password));
-    url = environment("WIMI_VERIFY_SMTP_URL", std::move(url));
+    result.email_enabled = environment_bool("IMM_VERIFY_SEND_EMAIL", result.email_enabled);
+    result.expose_code = environment_bool("IMM_VERIFY_EXPOSE_CODE", result.expose_code);
+    result.smtp_user = environment("IMM_VERIFY_EMAIL_USER", std::move(result.smtp_user));
+    result.smtp_password = environment("IMM_VERIFY_EMAIL_PASS", std::move(result.smtp_password));
+    url = environment("IMM_VERIFY_SMTP_URL", std::move(url));
     result.implicit_tls = url.starts_with("smtps://");
     if (!result.implicit_tls && !url.starts_with("smtp://")) {
         throw std::invalid_argument("SMTP URL must use smtp:// or smtps://");
@@ -103,4 +103,4 @@ options load_options(const YAML::Node& server)
     }
     return result;
 }
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

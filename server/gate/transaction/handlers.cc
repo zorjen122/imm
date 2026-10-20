@@ -10,7 +10,7 @@
 #include <system_error>
 #include <cassert>
 
-namespace wimi::gate_transaction
+namespace imm::gate_transaction
 {
 using namespace gate_io;
 namespace
@@ -179,4 +179,4 @@ seastar::future<gate_api::reset_password_response> service::handle(gate_api::res
     response.set_username(request.username());
     co_return response;
 }
-} // namespace wimi::gate_transaction
+} // namespace imm::gate_transaction

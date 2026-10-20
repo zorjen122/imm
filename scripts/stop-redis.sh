@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# These ports are reserved for the disposable /tmp/wimi-redis topology.
+# These ports are reserved for the disposable /tmp/imm-redis topology.
 
-RUN_DIR=/tmp/wimi-redis/run
+RUN_DIR=/tmp/imm-redis/run
 
 for port in 26391 26390 26389 6382 6381 6380; do
   timeout 2 redis-cli --no-auth-warning -h 127.0.0.1 -p "$port" -a root \

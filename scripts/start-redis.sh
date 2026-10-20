@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # Start a disposable local topology with one master, two replicas, and three
-# Sentinels. Every run replaces /tmp/wimi-redis.
+# Sentinels. Every run replaces /tmp/imm-redis.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEMPLATE_DIR="$ROOT_DIR/conf/redis"
-RUNTIME_ROOT=/tmp/wimi-redis
+TEMPLATE_DIR="$ROOT_DIR/loopback/redis"
+RUNTIME_ROOT=/tmp/imm-redis
 VAR_DIR="$RUNTIME_ROOT/var"
 LOG_DIR="$RUNTIME_ROOT/log"
 RUN_DIR="$RUNTIME_ROOT/run"
@@ -21,7 +21,7 @@ sentinel_topology_ready() {
 
   mapfile -t info < <(
     timeout 1 redis-cli --no-auth-warning --raw -h 127.0.0.1 -p "$SENTINEL_PORT" -a root \
-      SENTINEL master wimi-master 2>/dev/null
+      SENTINEL master imm-master 2>/dev/null
   )
   for ((index = 0; index + 1 < ${#info[@]}; index += 2)); do
     case "${info[index]}" in
@@ -34,7 +34,7 @@ sentinel_topology_ready() {
 }
 
 "$ROOT_DIR/scripts/stop-redis.sh" >/dev/null 2>&1 || true
-rm -rf -- /tmp/wimi-redis
+rm -rf -- /tmp/imm-redis
 mkdir -p "$VAR_DIR/master" "$VAR_DIR/replica-1" "$VAR_DIR/replica-2"
 mkdir -p "$VAR_DIR/sentinel-1" "$VAR_DIR/sentinel-2" "$VAR_DIR/sentinel-3"
 mkdir -p "$LOG_DIR" "$RUN_DIR"

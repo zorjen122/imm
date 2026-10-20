@@ -8,7 +8,7 @@
 #include <array>
 #include <algorithm>
 
-namespace wimi::gate_protocol
+namespace imm::gate_protocol
 {
 namespace
 {
@@ -146,4 +146,4 @@ seastar::future<http_result> dispatch(const route& route_endpoint, gate_transact
         co_return error_result(200, ErrorCodes::DependencyUnavailable);
     }
 }
-} // namespace wimi::gate_protocol
+} // namespace imm::gate_protocol

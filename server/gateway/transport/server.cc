@@ -4,7 +4,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/with_scheduling_group.hh>
 
-namespace wimi::gateway_transport
+namespace imm::gateway_transport
 {
 server::server(gateway_io::options config, scheduling_groups groups, seastar::sharded<server>* shards)
     : _options(std::move(config)), _groups(groups), _shards(shards),
@@ -115,4 +115,4 @@ seastar::future<> server::stop()
     co_await _transaction.stop();
     _stopped = true;
 }
-} // namespace wimi::gateway_transport
+} // namespace imm::gateway_transport

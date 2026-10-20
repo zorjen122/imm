@@ -4,7 +4,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-namespace wimi::gate_transaction
+namespace imm::gate_transaction
 {
 using namespace gate_io;
 service::service(options config, seastar::scheduling_group transaction_group, seastar::scheduling_group io_group)
@@ -49,4 +49,4 @@ seastar::future<> service::stop()
     co_await _driver.stop();
     _stopped = true;
 }
-} // namespace wimi::gate_transaction
+} // namespace imm::gate_transaction

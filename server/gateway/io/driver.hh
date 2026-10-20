@@ -13,7 +13,7 @@
 #include <functional>
 #include <unordered_map>
 
-namespace wimi::gateway_io
+namespace imm::gateway_io
 {
 class message_link;
 class driver
@@ -72,4 +72,4 @@ class driver
     seastar::future<> execute(clear_session);
     seastar::future<command_ticket> execute(send_command);
 };
-} // namespace wimi::gateway_io
+} // namespace imm::gateway_io

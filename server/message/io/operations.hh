@@ -3,7 +3,7 @@
 #include "file.pb.h"
 #include "gateway_message.pb.h"
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 struct get_session {
     using result_type = gateway::SessionLease;
@@ -39,4 +39,4 @@ template <typename... Sql> struct registered_operations<std::variant<Sql...>> {
     using type = std::variant<Sql..., get_session, get_sessions, generate_id, upload_file, download_file>;
 };
 using operations = registered_operations<mysql_operations>::type;
-} // namespace wimi::message_io
+} // namespace imm::message_io

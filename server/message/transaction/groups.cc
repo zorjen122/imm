@@ -3,7 +3,7 @@
 #include "Const.h"
 #include "Logger.h"
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 
 void groups::notify_application(request_context& context, int64_t master_uid, int64_t requestor_uid, int64_t group_id,
@@ -236,4 +236,4 @@ seastar::future<protocol::Packet> groups::kick(request_context& context)
     co_return rsp;
 }
 
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

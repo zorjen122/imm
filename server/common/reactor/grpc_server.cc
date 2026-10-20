@@ -7,7 +7,7 @@
 #include <seastar/core/reactor.hh>
 #include <cassert>
 
-namespace wimi::io
+namespace imm::io
 {
 namespace
 {
@@ -77,4 +77,4 @@ seastar::future<> grpc_server::close(std::function<seastar::future<>()> wait_cal
         _engine.reset();
     }
 }
-} // namespace wimi::io
+} // namespace imm::io

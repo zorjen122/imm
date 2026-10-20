@@ -2,7 +2,7 @@
 #include "io/mysql_operations.hh"
 #include "io/sql_result.hh"
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 // 调用者须在整个 execute 期间独占连接；SQL 异常导致连接废弃，不重放结果未知的事务。
 class mysql_store
@@ -37,4 +37,4 @@ class mysql_store
     seastar::future<int> execute(update_user_info_sex operation);
     seastar::future<int> execute(update_user_info_head_image_url operation);
 };
-} // namespace wimi::message_io
+} // namespace imm::message_io

@@ -9,7 +9,7 @@
 #include <system_error>
 #include <vector>
 
-namespace wimi::io
+namespace imm::io
 {
 // 原 socket 由协议库拥有；dup 出的描述符只交给 reactor 监控就绪，不负责协议读写。
 // close 副本可撤销监控且不关闭原描述符；shutdown 则会影响同一个 socket，不能用于此目的。
@@ -86,4 +86,4 @@ class fd_watch : public std::enable_shared_from_this<fd_watch>
     }
 };
 
-} // namespace wimi::io
+} // namespace imm::io

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace wimi::gate_protocol
+namespace imm::gate_protocol
 {
 std::string normalize_email(const std::string& email)
 {
@@ -30,4 +30,4 @@ bool is_valid_email(const std::string& email)
     return dot != std::string::npos && dot + 1 < email.size();
 }
 
-} // namespace wimi::gate_protocol
+} // namespace imm::gate_protocol

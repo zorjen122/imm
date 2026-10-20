@@ -14,10 +14,7 @@ Usage: ./scripts/smoke/smoke-gateway-message.sh
 
 Start the multi-node stack first:
   ./scripts/init-mysql.sh
-  WIMI_STATE_CONFIG="\$PWD/conf/state-multi.yaml" \
-  WIMI_MESSAGE_CONFIGS="\$PWD/conf/message-hunan-im.yaml \$PWD/conf/message-beijing-im.yaml" \
-  WIMI_GATEWAY_CONFIGS="\$PWD/conf/gateway-hunan.yaml \$PWD/conf/gateway-beijing.yaml" \
-    ./scripts/run-local-services.sh
+    ./scripts/run-local-services.sh --cluster
 
 Checks:
   - default users zorjen(1001), alice(1002) and bob(1003) exist
@@ -39,18 +36,18 @@ fi
 
 : "${MYSQL_HOST:=127.0.0.1}"
 : "${MYSQL_PORT:=3306}"
-: "${WIMI_DB:=chatServ}"
-: "${WIMI_DB_USER:=zorjen}"
-: "${WIMI_DB_PASSWORD:=root}"
-: "${WIMI_REDIS_HOST:=127.0.0.1}"
-: "${WIMI_REDIS_PORT:=6380}"
-: "${WIMI_REDIS_PASSWORD:=root}"
+: "${IMM_DB:=chatServ}"
+: "${IMM_DB_USER:=zorjen}"
+: "${IMM_DB_PASSWORD:=root}"
+: "${IMM_REDIS_HOST:=127.0.0.1}"
+: "${IMM_REDIS_PORT:=6380}"
+: "${IMM_REDIS_PASSWORD:=root}"
 : "${GATEWAY_A_HOST:=127.0.0.1}"
 : "${GATEWAY_A_PORT:=8090}"
 : "${GATEWAY_B_HOST:=127.0.0.1}"
 : "${GATEWAY_B_PORT:=8091}"
-: "${GATEWAY_A_ID:=hunan-gateway}"
-: "${GATEWAY_B_ID:=beijing-gateway}"
+: "${GATEWAY_A_ID:=gateway-1}"
+: "${GATEWAY_B_ID:=gateway-2}"
 : "${GATE_URL:=http://127.0.0.1:18080}"
 : "${MESSAGE_A_PORT:=50055}"
 : "${MESSAGE_B_PORT:=50056}"
@@ -81,12 +78,12 @@ user_b="alice"
 user_c="bob"
 payload="gateway_text_${stamp}"
 client_message_id="client_${stamp}"
-result_file="$(mktemp /tmp/wimi-gateway-message.XXXXXX.json)"
+result_file="$(mktemp /tmp/imm-gateway-message.XXXXXX.json)"
 trap 'rm -f "$result_file"' EXIT
 
 mysql_exec() {
   mysql --protocol=tcp -h"$MYSQL_HOST" -P"$MYSQL_PORT" \
-    -u"$WIMI_DB_USER" -p"$WIMI_DB_PASSWORD" "$WIMI_DB" "$@"
+    -u"$IMM_DB_USER" -p"$IMM_DB_PASSWORD" "$IMM_DB" "$@"
 }
 
 default_user_count="$(
@@ -125,8 +122,8 @@ CLIENT_MESSAGE_ID="$client_message_id" GATEWAY_A_HOST="$GATEWAY_A_HOST" \
 GATEWAY_A_PORT="$GATEWAY_A_PORT" GATEWAY_B_HOST="$GATEWAY_B_HOST" \
 GATEWAY_B_PORT="$GATEWAY_B_PORT" GATEWAY_A_ID="$GATEWAY_A_ID" \
 GATEWAY_B_ID="$GATEWAY_B_ID" GATE_URL="$GATE_URL" \
-WIMI_REDIS_HOST="$WIMI_REDIS_HOST" WIMI_REDIS_PORT="$WIMI_REDIS_PORT" \
-WIMI_REDIS_PASSWORD="$WIMI_REDIS_PASSWORD" RESULT_FILE="$result_file" \
+IMM_REDIS_HOST="$IMM_REDIS_HOST" IMM_REDIS_PORT="$IMM_REDIS_PORT" \
+IMM_REDIS_PASSWORD="$IMM_REDIS_PASSWORD" RESULT_FILE="$result_file" \
 python3 "$ROOT_DIR/scripts/smoke/src/smoke_gateway_message.py"
 
 read -r message_id conversation_seq < <(

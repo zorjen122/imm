@@ -5,7 +5,7 @@
 static const char* tls_peer_name(MYSQL* mysql)
 {
     const char* name = NULL;
-    mysql_get_optionv(mysql, MARIADB_OPT_USERDATA, "wimi_tls_peer_name", &name);
+    mysql_get_optionv(mysql, MARIADB_OPT_USERDATA, "imm_tls_peer_name", &name);
     return name;
 }
 static int load_memory_ca(SSL_CTX* context, const char* pem, const char* directory)

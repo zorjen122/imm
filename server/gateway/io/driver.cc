@@ -15,7 +15,7 @@
 #include <cassert>
 #include <algorithm>
 
-namespace wimi::gateway_io
+namespace imm::gateway_io
 {
 using io::endpoint;
 using io::mysql_connection;
@@ -545,4 +545,4 @@ seastar::future<> driver::stop()
         _mysql_initialized = false;
     }
 }
-} // namespace wimi::gateway_io
+} // namespace imm::gateway_io

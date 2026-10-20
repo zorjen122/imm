@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace wimi
+namespace imm
 {
 
 struct ServiceNodeInfo {
@@ -14,4 +14,4 @@ struct ServiceNodeInfo {
 
     bool active() const { return status == "active" && !host.empty() && port != 0; }
 };
-}; // namespace wimi
+}; // namespace imm

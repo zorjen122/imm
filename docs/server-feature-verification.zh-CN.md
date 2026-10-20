@@ -1,8 +1,8 @@
-# wimi Server 核心能力与验证状态
+# imm Server 核心能力与验证状态
 
-最后更新：2026-08-23。
+最后更新：2026-10-21。
 
-本文记录服务端主要功能和部署能力的验证状态。
+本文记录当前服务端主要流程的验证结果。测试通过表示所列场景成立，不代表已完成生产容量或全部故障场景验证。
 
 ## 状态口径
 
@@ -16,26 +16,27 @@
 
 | 能力 | 状态 | 验证范围或当前边界 |
 | --- | --- | --- |
-| 注册与邮箱验证码 | 已验证 | 可以申请验证码并完成注册；真实邮件发送还需要继续验证。 |
+| 注册与邮箱验证码 | 已验证 | 验证码、注册和本地 TLS SMTP 集成通过；未验证外部邮件服务商投递。 |
 | 登录与连接 | 已验证 | 可以登录，并连接到聊天服务。 |
 | 文本消息 | 已验证 | 支持单聊和群聊的发送、保存与接收。 |
-| 文件消息 | 部分验证 | 支持上传、续传、下载和发送文件消息；完整服务链路还需要继续验证。 |
+| 文件消息 | 部分验证 | 真实服务链路已覆盖文件消息、分块上传、完成和下载；复杂断点恢复仍需继续验证。 |
 | 好友关系 | 已验证 | 支持添加好友、处理好友申请和查看好友列表。 |
 | 群聊与成员关系 | 已验证 | 支持建群、加入群聊和群内消息。 |
-| 分布式有序消息 | 已验证 | 多个聊天服务共同工作时，消息可以按正确顺序送达。 |
+| 跨节点投递 | 已验证 | 双 Gateway、双 Message 拓扑下完成消息投递、会话同步和重复请求验证。 |
 | 消息去重 | 已验证 | 同一条消息重复提交时，不会重复保存或发送。 |
 | 消息重传与同步修复 | 部分验证 | 网络超时后可以安全重试并补齐遗漏消息；复杂断线恢复仍需继续验证。 |
 | Redis 主从与故障转移 | 已验证 | Redis 主节点故障后，可以自动切换到可用副本。 |
-| Docker Compose 部署 | 部分验证 | 已提供容器化部署和集群验证脚本；完整容器部署仍待本轮验证。 |
+| 背压与停止 | 已验证 | 超出条目/字节额度时拒绝，停止时收束在途请求；集成覆盖存储等待和流重连。 |
+| Docker Compose 部署 | 部分验证 | 保留单实例本地容器配置并通过配置检查；完整容器部署尚未验证。 |
 
 ## 验证入口
 
 | 命令 | 覆盖能力 | 状态 |
 | --- | --- | --- |
-| `./scripts/build-server.sh` 与 `ctest --test-dir build/wimi-server --output-on-failure` | 服务端构建与基础测试 | 已验证 |
+| `./scripts/build-server.sh` 与 `ctest --test-dir build/imm-server --output-on-failure` | 服务端构建与基础测试 | 已验证 |
 | `./scripts/smoke/smoke-base.sh` | 注册、登录、文本和文件消息 | 已验证 |
 | `./scripts/smoke/smoke-gateway-message.sh` | 多服务协作、消息去重、好友和群聊 | 已验证 |
-| `./scripts/test-redis-sentinel.sh` | Redis 故障转移 | 已验证 |
-| `./scripts/smoke/smoke-compose-service-cluster.sh` | Docker 服务集群 | 部分验证 |
+| `python3 server/test/gate/run_io_integration.py` | 验证码、注册登录、SMTP 和依赖停止 | 已验证 |
+| `python3 server/test/gateway/run_integration.py --mtls --full-smoke --redis-failover` | 双 Gateway/Message、业务链路、重连、背压和 Redis 故障转移 | 已验证 |
 
 本地服务启动、配置和 Docker 使用方式见 [服务端依赖与本地流程](requirements.zh-CN.md) 与 [配置说明](configuration.zh-CN.md)。

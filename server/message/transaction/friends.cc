@@ -7,7 +7,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 
 seastar::future<int> friends::store_application(int64_t actor_uid, const protocol::AddFriendRequest& request)
@@ -171,4 +171,4 @@ seastar::future<protocol::Packet> friends::pull_friends(request_context& context
     co_return rsp;
 }
 
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

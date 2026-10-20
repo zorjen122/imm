@@ -1,4 +1,4 @@
-#include "Configer.h"
+#include "configuration.hh"
 #include "Logger.h"
 #include "Service.h"
 
@@ -23,13 +23,13 @@ std::filesystem::path ResolveStorageRoot(const std::filesystem::path& configured
 }
 } // namespace
 
-using wimi::Logger;
+using imm::Logger;
 
 int main(int argc, char* argv[])
 {
     Logger::instance().initialize(argv[0], Logger::Service::File);
-    const char* configPath = std::getenv("WIMI_CONFIG");
-    const char* logLevel = std::getenv("WIMI_SERVER_LOG_LEVEL");
+    const char* configPath = std::getenv("IMM_CONFIG");
+    const char* logLevel = std::getenv("IMM_SERVER_LOG_LEVEL");
     auto logLevelArgument = 1;
     if (configPath == nullptr && argc > 1) {
         configPath = argv[1];
@@ -54,26 +54,26 @@ int main(int argc, char* argv[])
             return EXIT_FAILURE;
         }
     }
-    if (!Configer::loadConfig(configPath == nullptr ? "../conf/file.yaml" : configPath)) {
+    if (!imm::configuration::load(configPath == nullptr ? "loopback/single.yaml" : configPath)) {
         spdlog::error("File service config load failed");
         return EXIT_FAILURE;
     }
 
-    const auto server = Configer::getNode("server");
-    if (!server || !server["file"] || !server["file"]["host"] || !server["file"]["rpcPort"] ||
-        !server["file"]["storageRoot"]) {
-        spdlog::error("File service config requires server.file.host, rpcPort and storageRoot");
+    const auto server = imm::configuration::server();
+    if (!server || !server["self"] || !server["self"]["host"] || !server["self"]["port"] ||
+        !server["self"]["storageRoot"]) {
+        spdlog::error("File node requires host, port and storageRoot");
         return EXIT_FAILURE;
     }
 
     try {
-        const auto file = server["file"];
+        const auto file = server["self"];
         const std::string host = file["host"].as<std::string>();
-        const auto port = file["rpcPort"].as<unsigned short>();
+        const auto port = file["port"].as<unsigned short>();
         const std::filesystem::path configuredRoot = file["storageRoot"].as<std::string>();
         const std::filesystem::path root = ResolveStorageRoot(configuredRoot, argv[0]);
         spdlog::info("File service storage root: {}", root.string());
-        wimi::rpc::FileServer fileServer(2, root);
+        imm::rpc::FileServer fileServer(2, root);
         if (!fileServer.Run(host, port)) {
             spdlog::error("File service failed to start, listening on {}:{}", host, port);
             return EXIT_FAILURE;

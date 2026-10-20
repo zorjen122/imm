@@ -7,7 +7,7 @@
 
 namespace fs = std::filesystem;
 
-namespace wimi::rpc::test
+namespace imm::rpc::test
 {
 namespace
 {
@@ -39,7 +39,7 @@ class FileClientTest : public ::testing::Test
     void SetUp() override
     {
         root = fs::temp_directory_path() /
-               ("wimi-file-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+               ("imm-file-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         service = std::make_unique<FileServiceImpl>(root);
     }
 
@@ -130,4 +130,4 @@ TEST_F(FileClientTest, RejectsInvalidMetadataAndChecksum)
     EXPECT_FALSE(fs::exists(root / "123" / kFileId));
 }
 
-} // namespace wimi::rpc::test
+} // namespace imm::rpc::test

@@ -1,0 +1,50 @@
+shared:
+  mysql:
+    host: mysql
+    port: 3306
+    user: zorjen
+    password: root
+    schema: chatServ
+  redis:
+    masterName: imm-master
+    password: root
+    sentinelPassword: root
+    sentinels:
+    - host: sentinel
+      port: 26379
+  transportSecurity:
+    environment: development
+    mode: insecure
+nodes:
+  gate:
+    service: gate
+    host: gate
+    port: 18080
+    verification:
+      exposeCodeInResponse: true
+      email:
+        enabled: false
+    listenHost: 0.0.0.0
+  file:
+    service: file
+    host: file
+    port: 51000
+    storageRoot: /var/lib/imm/files
+    listenHost: 0.0.0.0
+  state:
+    service: state
+    host: state
+    port: 50052
+    listenHost: 0.0.0.0
+  gateway-1:
+    service: gateway
+    host: 127.0.0.1
+    port: 8090
+    listenHost: 0.0.0.0
+  message-1:
+    service: message
+    host: message
+    port: 50055
+    shards: 1
+    machineId: 1
+    listenHost: 0.0.0.0

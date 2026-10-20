@@ -4,7 +4,7 @@
 #include <optional>
 #include <variant>
 
-namespace wimi::gateway_io
+namespace imm::gateway_io
 {
 struct validate_token {
     using result_type = bool;
@@ -57,4 +57,4 @@ struct send_command {
 };
 using io_operation = std::variant<validate_token, prepare_profile, register_device, bind_session, refresh_session,
                                   clear_session, send_command>;
-} // namespace wimi::gateway_io
+} // namespace imm::gateway_io

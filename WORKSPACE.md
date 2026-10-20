@@ -2,13 +2,13 @@
 
 ## 验证
 
-按改动范围选择验证：C++、Proto 或服务配置改动至少执行宿主机构建与基础测试；Dockerfile、Compose 或跨节点行为改动还应执行 Docker 服务集群 smoke。
+按改动范围选择验证：C++、Proto 或服务配置改动至少执行宿主机构建与基础测试；跨节点行为改动还应执行宿主机集成 smoke；Compose 改动执行配置检查。
 
 ### 宿主机构建与基础测试
 
 ```bash
 ./scripts/build-server.sh
-ctest --test-dir build/wimi-server --output-on-failure
+ctest --test-dir build/imm-server --output-on-failure
 python3 -m compileall -q scripts/smoke/src
 bash -n scripts/smoke/*.sh
 git diff --check
@@ -21,7 +21,7 @@ git diff --check
 ```bash
 ./scripts/build-server.sh
 ./scripts/init-mysql.sh
-./scripts/run-local-services.sh --stop-existing
+./scripts/run-local-services.sh --cluster --stop-existing
 ```
 
 服务就绪后，在第二个终端运行跨节点 smoke：
@@ -30,17 +30,24 @@ git diff --check
 ./scripts/smoke/smoke-multi-chat.sh
 ```
 
-### Docker 服务集群 smoke
+### 隔离的宿主机集成验证
 
-需要 Docker Compose，以及宿主机上的 `python3`、`mysql`、`redis-cli`：
+```bash
+python3 server/test/gate/run_io_integration.py
+python3 server/test/gateway/run_integration.py --mtls --full-smoke --redis-failover
+```
+
+两个脚本分别验证 Gate 的验证码、注册登录及 SMTP 链路，以及双 Gateway、双 Message 的完整业务链路。使用独立端口和临时数据库，退出时只清理自身资源。
+
+`build/` 可以清理；其中 `build/deps/` 可保留依赖源码缓存，构建脚本会自动使用。删除缓存后，CMake 会重新下载依赖。
+
+### 基础容器部署配置检查
 
 ```bash
 docker compose config --quiet
-docker compose -f compose.yaml -f compose.service-cluster.yaml config --quiet
-./scripts/smoke/smoke-compose-service-cluster.sh
 ```
 
-该脚本启动隔离的 10 容器测试项目，验证双 Gateway、双 Message 的跨节点链路。退出时删除本次测试的容器、网络和数据卷，但保留镜像与 Docker 构建缓存；`8090`、`8091`、`18080` 需要可用。
+基础 Compose 部署配置位于 `loopback/compose/`，不维护额外的 Docker 集群测试。
 
 ## 提交流程
 
@@ -69,10 +76,10 @@ docker compose -f compose.yaml -f compose.service-cluster.yaml config --quiet
 示例：
 
 ```text
-feat(docker): add service cluster smoke
+refactor(config): unify local topology configuration
 
 why：需要验证双 Gateway、双 Message 的容器内跨节点链路。
-how：增加 Compose 覆盖、第二节点配置和一键 smoke 包装脚本。
-result：可以在隔离环境中完成跨节点消息、好友和数据落库验证，并自动清理测试资源。
-use：运行 ./scripts/smoke/smoke-compose-service-cluster.sh。
+how：统一共享依赖和具名节点，集群文件只追加节点。
+result：State 拓扑与服务配置共用同一份节点定义。
+use：运行 ./scripts/run-local-services.sh --cluster。
 ```

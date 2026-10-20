@@ -6,7 +6,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
 find_package(Protobuf REQUIRED)
-find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(gRPC MODULE REQUIRED)
 set(Seastar_LTTNG ON)
 find_package(Seastar REQUIRED)

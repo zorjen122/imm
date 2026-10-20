@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace wimi::db
+namespace imm::db
 {
 struct MessageAcceptResult {
     int error{ErrorCodes::MysqlFailed};
@@ -86,4 +86,4 @@ struct ConversationAckResult {
     bool readStateChanged{false};
 };
 
-} // namespace wimi::db
+} // namespace imm::db

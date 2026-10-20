@@ -4,7 +4,7 @@ import subprocess
 import hashlib
 import uuid
 
-from wimi_tcp_client import Operation, PushType, WimClient, is_retryable_error, request_chat_auth, require
+from imm_tcp_client import Operation, PushType, ImmClient, is_retryable_error, request_chat_auth, require
 
 OP_PULL_CONVERSATION_MESSAGES = Operation.OP_PULL_CONVERSATION_MESSAGES
 OP_PULL_GROUP_MEMBERS = Operation.OP_PULL_GROUP_MEMBERS
@@ -32,9 +32,9 @@ client_message_id = os.environ["CLIENT_MESSAGE_ID"]
 def lease(uid, device_id):
     value = subprocess.check_output(
         [
-            "redis-cli", "-h", os.environ["WIMI_REDIS_HOST"],
-            "-p", os.environ["WIMI_REDIS_PORT"],
-            "-a", os.environ["WIMI_REDIS_PASSWORD"],
+            "redis-cli", "-h", os.environ["IMM_REDIS_HOST"],
+            "-p", os.environ["IMM_REDIS_PORT"],
+            "-a", os.environ["IMM_REDIS_PASSWORD"],
             "GET", f"im:session:{uid}:{device_id}",
         ],
         stderr=subprocess.DEVNULL,
@@ -47,16 +47,16 @@ def lease(uid, device_id):
 auth_a = request_chat_auth(os.environ["USER_A"], "123456", os.environ["GATE_URL"])
 auth_b = request_chat_auth(os.environ["USER_B"], "123456", os.environ["GATE_URL"])
 auth_c = request_chat_auth(os.environ["USER_C"], "123456", os.environ["GATE_URL"])
-a = WimClient(uid_a, os.environ["GATEWAY_A_HOST"],
+a = ImmClient(uid_a, os.environ["GATEWAY_A_HOST"],
               int(os.environ["GATEWAY_A_PORT"]), auth_token=auth_a["chatToken"])
-b = WimClient(uid_b, os.environ["GATEWAY_B_HOST"],
+b = ImmClient(uid_b, os.environ["GATEWAY_B_HOST"],
               int(os.environ["GATEWAY_B_PORT"]), auth_token=auth_b["chatToken"])
-c = WimClient(uid_c, os.environ["GATEWAY_B_HOST"],
+c = ImmClient(uid_c, os.environ["GATEWAY_B_HOST"],
               int(os.environ["GATEWAY_B_PORT"]), auth_token=auth_c["chatToken"])
-a_secondary = WimClient(
+a_secondary = ImmClient(
     uid_a, os.environ["GATEWAY_B_HOST"], int(os.environ["GATEWAY_B_PORT"]),
     auth_token=auth_a["chatToken"])
-b_secondary = WimClient(
+b_secondary = ImmClient(
     uid_b, os.environ["GATEWAY_A_HOST"], int(os.environ["GATEWAY_A_PORT"]),
     auth_token=auth_b["chatToken"])
 

@@ -11,7 +11,7 @@ from pathlib import Path
 SMOKE_SRC = Path(__file__).resolve().parents[1] / 'smoke' / 'src'
 sys.path.insert(0, str(SMOKE_SRC))
 
-from wimi_tcp_client import ClientEnvelope, Operation, encode_envelope  # noqa: E402
+from imm_tcp_client import ClientEnvelope, Operation, encode_envelope  # noqa: E402
 
 
 def frame(payload):

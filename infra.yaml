@@ -8,7 +8,7 @@ services:
       MYSQL_PASSWORD: root
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./scripts/sql/init_message_mysql_test.sql:/docker-entrypoint-initdb.d/10-wimi.sql:ro
+      - ./scripts/sql/init_message_mysql_test.sql:/docker-entrypoint-initdb.d/10-imm.sql:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -55,7 +55,7 @@ services:
         - CMD-SHELL
         - >-
           redis-cli --no-auth-warning -a root -p 26379
-          SENTINEL get-master-addr-by-name wimi-master | grep -q '^redis$$'
+          SENTINEL get-master-addr-by-name imm-master | grep -q '^redis$$'
       interval: 5s
       timeout: 3s
       retries: 20
@@ -63,7 +63,7 @@ services:
 
 configs:
   sentinel-config:
-    file: ./conf/compose/sentinel.conf
+    file: ./loopback/compose/sentinel.conf
 
 volumes:
   mysql-data:

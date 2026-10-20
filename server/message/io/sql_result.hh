@@ -6,7 +6,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 // 单行按值持有，避免从临时查询结果取得的行跨挂起点后悬空。
 class sql_row
@@ -57,4 +57,4 @@ template <sql_parameter... Values> std::vector<io::mysql_parameter> parameters(V
     (add(std::forward<Values>(values)), ...);
     return result;
 }
-} // namespace wimi::message_io
+} // namespace imm::message_io

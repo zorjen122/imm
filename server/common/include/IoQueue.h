@@ -17,7 +17,7 @@
 #include <variant>
 #include <vector>
 
-namespace wimi::io
+namespace imm::io
 {
 
 class overloaded : public std::runtime_error
@@ -175,4 +175,4 @@ template <typename Backend, typename... Operations> class operation_queue<Backen
         _consumers.clear();
     }
 };
-} // namespace wimi::io
+} // namespace imm::io

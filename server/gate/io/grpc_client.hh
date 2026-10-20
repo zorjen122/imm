@@ -7,7 +7,7 @@
 #include <set>
 #include <string>
 
-namespace wimi::gate_io
+namespace imm::gate_io
 {
 class grpc_client
 {
@@ -22,4 +22,4 @@ class grpc_client
     void abort();
     seastar::future<> close();
 };
-} // namespace wimi::gate_io
+} // namespace imm::gate_io

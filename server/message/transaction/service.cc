@@ -3,7 +3,7 @@
 #include "Logger.h"
 #include <seastar/core/with_scheduling_group.hh>
 
-namespace wimi::message_transaction
+namespace imm::message_transaction
 {
 service::service(message_io::options config, seastar::scheduling_group transaction, seastar::scheduling_group io_group,
                  message_transport::server& transport)
@@ -187,4 +187,4 @@ seastar::future<> service::stop()
     co_await _requests.close();
     co_await _driver.close();
 }
-} // namespace wimi::message_transaction
+} // namespace imm::message_transaction

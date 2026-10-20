@@ -1,4 +1,4 @@
-#include "Configer.h"
+#include "configuration.hh"
 #include "Logger.h"
 #include "service.h"
 #include <cstdlib>
@@ -8,12 +8,12 @@
 /*
  * 注意：该状态服务只是一个微服务，运行在网关服务器主机，其目的仅在后续扩展以及独立网关服务器的路由职责。[2025-3-18]
  */
-using wimi::Logger;
+using imm::Logger;
 
 int main(int argc, char* argv[])
 {
     Logger::instance().initialize(argv[0], Logger::Service::State);
-    const char* logLevel = std::getenv("WIMI_SERVER_LOG_LEVEL");
+    const char* logLevel = std::getenv("IMM_SERVER_LOG_LEVEL");
     if (argc == 3 && std::string_view(argv[1]) == "--log_level") {
         if (logLevel == nullptr)
             logLevel = argv[2];
@@ -30,23 +30,23 @@ int main(int argc, char* argv[])
         else
             return EXIT_FAILURE;
     }
-    const char* configPath = std::getenv("WIMI_CONFIG");
-    auto existConfig = Configer::loadConfig(configPath ? configPath : "../conf/state-single.yaml");
+    const char* configPath = std::getenv("IMM_CONFIG");
+    auto existConfig = imm::configuration::load(configPath ? configPath : "loopback/single.yaml");
     if (!existConfig) {
         spdlog::error("Config load failed");
         return 0;
     }
 
-    auto config = Configer::getNode("server");
-    if (!config || !config["state"]) {
+    auto config = imm::configuration::server();
+    if (!config || !config["self"]) {
         spdlog::error("self config not found");
         return 0;
     }
 
-    auto host = config["state"]["host"].as<std::string>();
-    auto port = config["state"]["port"].as<std::string>();
+    auto host = config["self"]["host"].as<std::string>();
+    auto port = config["self"]["port"].as<std::string>();
 
-    wimi::rpc::StateServiceImpl stateImpl;
+    imm::rpc::StateServiceImpl stateImpl;
     grpc::ServerBuilder builder;
     builder.AddListeningPort(host + ":" + port, grpc::InsecureServerCredentials());
     builder.RegisterService(&stateImpl);

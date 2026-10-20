@@ -4,16 +4,19 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/scheduling.hh>
 
-namespace wimi::gateway_transport
+namespace imm::gateway_transport
 {
 class connection;
 }
-namespace wimi::gateway_transaction
+namespace imm::gateway_transaction
 {
 struct request_permit {
     seastar::gate::holder lifetime;
     gateway_io::capacity_units capacity;
 };
+
+// imm::gateway_transaction::service 是业务处理的核心类，它通过 driver 的消费模型，
+// 可以使它只关注业务处理所需要的要素，而无需关注 rpc/redis/mysql 等 io 操作的实现细节。
 class service
 {
     gateway_io::options _options;
@@ -39,4 +42,4 @@ class service
     seastar::future<bool> refresh(int64_t uid, gateway::SessionLease lease);
     seastar::future<> stop();
 };
-} // namespace wimi::gateway_transaction
+} // namespace imm::gateway_transaction

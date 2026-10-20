@@ -5,7 +5,7 @@
 #include <grpcpp/security/server_credentials.h>
 #include <functional>
 
-namespace wimi::io
+namespace imm::io
 {
 // 在所属 reactor 构造/启动/关闭。凭据须在准入前加载，address.host 必须为数字 IP。
 // close 的回调在 core 停止接收和取消 RPC 后执行，须等待全部应用 OnDone 结束；
@@ -22,4 +22,4 @@ class grpc_server
     uint16_t port() const { return _port; }
     seastar::future<> close(std::function<seastar::future<>()> wait_calls);
 };
-} // namespace wimi::io
+} // namespace imm::io

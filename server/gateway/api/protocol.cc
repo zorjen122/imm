@@ -3,7 +3,7 @@
 #include <array>
 #include <stdexcept>
 
-namespace wimi::gateway_protocol
+namespace imm::gateway_protocol
 {
 namespace
 {
@@ -72,4 +72,4 @@ ClientEnvelope decode(std::string_view payload)
     route_for(envelope.request().operation());
     return envelope;
 }
-} // namespace wimi::gateway_protocol
+} // namespace imm::gateway_protocol

@@ -3,7 +3,7 @@
 #include "reactor/mysql_connection.hh"
 #include <variant>
 
-namespace wimi::message_io
+namespace imm::message_io
 {
 struct get_user_info {
     using result_type = db::UserInfo::Ptr;
@@ -199,4 +199,4 @@ using mysql_operations =
                  get_friend_apply_list, delete_friend, create_group, request_group_join, reply_group_join,
                  remove_group_member, pull_group, update_user_info_name, update_user_info_age, update_user_info_sex,
                  update_user_info_head_image_url>;
-} // namespace wimi::message_io
+} // namespace imm::message_io

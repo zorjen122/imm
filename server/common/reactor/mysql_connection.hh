@@ -8,7 +8,7 @@
 #include <optional>
 #include <variant>
 
-namespace wimi::io
+namespace imm::io
 {
 using mysql_parameter = std::variant<std::string, int64_t>;
 struct mysql_result {
@@ -51,4 +51,4 @@ class mysql_connection
     bool aborted() const { return _abort.abort_requested(); }
     seastar::future<> close();
 };
-} // namespace wimi::io
+} // namespace imm::io
