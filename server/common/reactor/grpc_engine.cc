@@ -14,6 +14,9 @@
 #include <pthread.h>
 #include <signal.h>
 #include <system_error>
+#include <arpa/inet.h>
+#include <charconv>
+#include "src/core/lib/event_engine/extensions/blocking_dns.h"
 
 namespace wimi::io
 {
@@ -32,6 +35,7 @@ struct observations {
     unsigned active_tasks{};
     unsigned dns_lookups{};
     unsigned resolvers{};
+    unsigned listeners{};
 };
 
 // 每个 reactor 线程独立统计。对象析构不等于已排队任务或挂起 I/O 完成，
@@ -162,6 +166,113 @@ class reactor_endpoint final : public ee::EventEngine::Endpoint
     std::shared_ptr<TelemetryInfo> GetTelemetryInfo() const override { return nullptr; }
 };
 
+class reactor_listener final : public ee::EventEngine::Listener
+{
+    struct state {
+        AcceptCallback accept;
+        absl::AnyInvocable<void(absl::Status)> shutdown;
+        std::unique_ptr<ee::MemoryAllocatorFactory> allocator;
+        std::vector<std::unique_ptr<seastar::pollable_fd>> sockets;
+        unsigned active{};
+        bool closing{};
+        bool started{};
+        absl::Status status;
+        void complete()
+        {
+            if (closing && active == 0 && shutdown) {
+                --observed.listeners;
+                auto callback = std::move(shutdown);
+                callback(status);
+            }
+        }
+    };
+    std::shared_ptr<state> _state;
+
+    static seastar::future<> accept(std::shared_ptr<state> listener, seastar::pollable_fd& socket)
+    {
+        try {
+            while (!listener->closing) {
+                auto [fd, address] = co_await socket.accept();
+                if (listener->closing) {
+                    break;
+                }
+                auto allocator = listener->allocator->CreateMemoryAllocator("seastar.grpc.accept");
+                auto endpoint = std::make_unique<reactor_endpoint>(std::move(fd), std::move(allocator));
+                listener->accept(std::move(endpoint),
+                                 listener->allocator->CreateMemoryAllocator("seastar.grpc.callback"));
+            }
+        } catch (const std::exception& error) {
+            if (!listener->closing) {
+                listener->status = absl::UnavailableError(error.what());
+            }
+        }
+        --listener->active;
+        --observed.active_io;
+        listener->complete();
+    }
+
+  public:
+    reactor_listener(AcceptCallback on_accept, absl::AnyInvocable<void(absl::Status)> on_shutdown,
+                     std::unique_ptr<ee::MemoryAllocatorFactory> allocator)
+        : _state(std::make_shared<state>())
+    {
+        _state->accept = std::move(on_accept);
+        _state->shutdown = std::move(on_shutdown);
+        _state->allocator = std::move(allocator);
+        ++observed.listeners;
+    }
+    ~reactor_listener() override
+    {
+        record("Listener.destroy");
+        _state->closing = true;
+        for (auto& socket : _state->sockets) {
+            socket->shutdown(SHUT_RDWR);
+        }
+        // accept 协程持有 state；shutdown 回调须等所有 accept 和其同步回调退出。
+        auto listener = std::move(_state);
+        listener->complete();
+    }
+    absl::StatusOr<int> Bind(const ee::EventEngine::ResolvedAddress& source) override
+    {
+        record("Listener.Bind");
+        if (_state->started || source.size() > sizeof(seastar::socket_address::u)) {
+            return absl::InvalidArgumentError("invalid listener bind");
+        }
+        try {
+            seastar::socket_address address;
+            std::memcpy(&address.u, source.address(), source.size());
+            address.addr_length = source.size();
+            auto fd = seastar::engine().make_pollable_fd(address, IPPROTO_TCP);
+            auto& raw = fd.get_file_desc();
+            raw.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1);
+            raw.bind(address.u.sa, address.addr_length);
+            raw.listen(1024);
+            auto bound = raw.get_address();
+            const int port =
+                bound.u.sa.sa_family == AF_INET ? ntohs(bound.u.in.sin_port) : ntohs(bound.u.in6.sin6_port);
+            _state->sockets.push_back(std::make_unique<seastar::pollable_fd>(std::move(fd)));
+            return port;
+        } catch (const std::exception& error) {
+            return absl::UnavailableError(error.what());
+        }
+    }
+    absl::Status Start() override
+    {
+        record("Listener.Start");
+        if (_state->started) {
+            return absl::FailedPreconditionError("listener already started");
+        }
+        _state->started = true;
+        for (auto& socket : _state->sockets) {
+            ++_state->active;
+            ++observed.active_io;
+            seastar::schedule(
+                seastar::make_task([listener = _state, socket = socket.get()] { (void)accept(listener, *socket); }));
+        }
+        return absl::OkStatus();
+    }
+};
+
 // 每 shard 的 resolver 在首次初始化时读取系统配置，所有 Channel 复用它。
 // 重连只新建协议状态，不能在运行期重复打开 hosts/resolver 配置文件。
 thread_local std::shared_ptr<dns_resolver> local_dns;
@@ -173,9 +284,55 @@ std::shared_ptr<dns_resolver> shard_dns()
     return local_dns;
 }
 
-class reactor_dns final : public ee::EventEngine::DNSResolver
+class reactor_dns final : public ee::EventEngine::DNSResolver, public ee::ResolverSupportsBlockingLookups
 {
   public:
+    void* QueryExtension(absl::string_view name) override
+    {
+        if (name == ee::ResolverSupportsBlockingLookups::EndpointExtensionName()) {
+            return static_cast<ee::ResolverSupportsBlockingLookups*>(this);
+        }
+        return nullptr;
+    }
+    absl::StatusOr<std::vector<ee::EventEngine::ResolvedAddress>>
+    LookupHostnameBlocking(absl::string_view input, absl::string_view default_port) override
+    {
+        // gRPC 建服务端监听时同步等待解析，即使输入是数字 IP。此扩展只做数字
+        // 地址转换，不执行 DNS/文件/网络访问；域名须由调用方先异步解析后再绑定。
+        std::string name(input);
+        auto separator = name.rfind(':');
+        std::string host = separator == std::string::npos ? name : name.substr(0, separator);
+        std::string port_text = separator == std::string::npos ? std::string(default_port) : name.substr(separator + 1);
+        if (host.starts_with('[') && host.ends_with(']')) {
+            host = host.substr(1, host.size() - 2);
+        }
+        unsigned port{};
+        const auto parsed = std::from_chars(port_text.data(), port_text.data() + port_text.size(), port);
+        if (parsed.ec != std::errc{} || parsed.ptr != port_text.data() + port_text.size() || port > 65535) {
+            return absl::InvalidArgumentError("listener requires numeric port");
+        }
+        sockaddr_in ipv4{};
+        ipv4.sin_family = AF_INET;
+        ipv4.sin_port = htons(port);
+        if (::inet_pton(AF_INET, host.c_str(), &ipv4.sin_addr) == 1) {
+            return std::vector<ee::EventEngine::ResolvedAddress>{{reinterpret_cast<sockaddr*>(&ipv4), sizeof(ipv4)}};
+        }
+        sockaddr_in6 ipv6{};
+        ipv6.sin6_family = AF_INET6;
+        ipv6.sin6_port = htons(port);
+        if (::inet_pton(AF_INET6, host.c_str(), &ipv6.sin6_addr) == 1) {
+            return std::vector<ee::EventEngine::ResolvedAddress>{{reinterpret_cast<sockaddr*>(&ipv6), sizeof(ipv6)}};
+        }
+        return absl::InvalidArgumentError("resolve listener hostname asynchronously before binding");
+    }
+    absl::StatusOr<std::vector<SRVRecord>> LookupSRVBlocking(absl::string_view) override
+    {
+        return absl::UnimplementedError("blocking SRV lookup is forbidden");
+    }
+    absl::StatusOr<std::vector<std::string>> LookupTXTBlocking(absl::string_view) override
+    {
+        return absl::UnimplementedError("blocking TXT lookup is forbidden");
+    }
     struct state {
         std::shared_ptr<dns_resolver> resolver{shard_dns()};
         bool closing{};
@@ -413,13 +570,13 @@ class reactor_engine final : public ee::EventEngine
         }
         return std::unique_ptr<DNSResolver>(new reactor_dns(_dns));
     }
-    absl::StatusOr<std::unique_ptr<Listener>> CreateListener(Listener::AcceptCallback,
-                                                             absl::AnyInvocable<void(absl::Status)>,
-                                                             const ee::EndpointConfig&,
-                                                             std::unique_ptr<ee::MemoryAllocatorFactory>) override
+    absl::StatusOr<std::unique_ptr<Listener>>
+    CreateListener(Listener::AcceptCallback on_accept, absl::AnyInvocable<void(absl::Status)> on_shutdown,
+                   const ee::EndpointConfig&, std::unique_ptr<ee::MemoryAllocatorFactory> allocator) override
     {
         require_owner("CreateListener");
-        return absl::UnimplementedError("client only");
+        return std::unique_ptr<Listener>(
+            new reactor_listener(std::move(on_accept), std::move(on_shutdown), std::move(allocator)));
     }
     size_t pending_count() const { return _timers.size() + _connections.size(); }
 };
@@ -453,7 +610,8 @@ seastar::future<> drain_local_grpc()
         co_await local_dns->close();
         local_dns.reset();
     }
-    while (observed.active_io || observed.active_tasks || observed.endpoints || observed.resolvers) {
+    while (observed.active_io || observed.active_tasks || observed.endpoints || observed.resolvers ||
+           observed.listeners) {
         co_await seastar::sleep(std::chrono::milliseconds(1));
     }
 }

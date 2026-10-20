@@ -19,9 +19,10 @@ message TopologyRequest {}
 message ServiceNode {
   string node_id = 1; // 稳定节点 ID
   string host = 2;    // 节点内网主机地址
-  int32 port = 3;     // Gateway-Message 流端口
+  int32 port = 3;     // Message shard 0 的内部流端口，其余 shard 依次递增
   string status = 4;  // 节点状态，如 active
   uint32 weight = 5;  // 预留路由权重
+  uint32 shard_count = 6; // Message shard 数，Gateway 据此选择所属端口
 }
 
 // 当前完整 Message 节点快照。

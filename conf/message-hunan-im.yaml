@@ -5,11 +5,11 @@ server:
   self:
     name : hunan-im
     host: 0.0.0.0
+    shards: 1
     rpcPort: 50055
   file:
     host: 127.0.0.1
     rpcPort: 51100
-    rpcCount: 1
   gateway:
     host: 127.0.0.1
     port: 18080
@@ -19,6 +19,7 @@ server:
   mysql:
     host: 127.0.0.1
     port: 33060
+    classicPort: 3306
     user: zorjen
     password: root
     schema: chatServ

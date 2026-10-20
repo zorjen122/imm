@@ -132,6 +132,22 @@ seastar::future<> mysql_connection::connect(std::string numeric_ip, const mysql_
 }
 seastar::future<mysql_result> mysql_connection::query(std::string sql, std::vector<mysql_parameter> parameters)
 {
+    auto rows = co_await query_rows(std::move(sql), std::move(parameters));
+    mysql_result result;
+    result.error = rows.error;
+    if (!rows.rows.empty()) {
+        for (auto& value : rows.rows.front()) {
+            if (!value || value->size() > 1024) {
+                throw std::runtime_error("invalid bounded query result");
+            }
+            result.row.push_back(std::move(*value));
+        }
+    }
+    co_return result;
+}
+seastar::future<mysql_rows_result> mysql_connection::query_rows(std::string sql,
+                                                                std::vector<mysql_parameter> parameters)
+{
     _statement = mysql_stmt_init(_mysql);
     if (!_statement) {
         throw std::runtime_error("MySQL statement allocation failed");
@@ -161,9 +177,10 @@ seastar::future<mysql_result> mysql_connection::query(std::string sql, std::vect
     while (pending) {
         pending = mysql_stmt_execute_cont(&status, _statement, co_await wait(pending));
     }
-    mysql_result result;
+    mysql_rows_result result;
     if (status != 0) {
         result.error = mysql_stmt_errno(_statement);
+        result.diagnostic = mysql_stmt_error(_statement);
         if (result.error != 1062) {
             check(status);
         }
@@ -187,20 +204,41 @@ seastar::future<mysql_result> mysql_connection::query(std::string sql, std::vect
             pending = mysql_stmt_store_result_cont(&status, _statement, co_await wait(pending));
         }
         check(status);
-        pending = mysql_stmt_fetch_start(&status, _statement);
-        while (pending) {
-            pending = mysql_stmt_fetch_cont(&status, _statement, co_await wait(pending));
-        }
-        if (status != MYSQL_NO_DATA) {
-            check(status);
-            for (unsigned index = 0; index < columns; ++index) {
-                if (nulls[index] || lengths[index] > storage[index].size()) {
-                    throw std::runtime_error("invalid bounded query result");
-                }
-                result.row.emplace_back(storage[index].data(), lengths[index]);
+        while (true) {
+            pending = mysql_stmt_fetch_start(&status, _statement);
+            while (pending) {
+                pending = mysql_stmt_fetch_cont(&status, _statement, co_await wait(pending));
             }
+            if (status == MYSQL_NO_DATA) {
+                break;
+            }
+            if (status != MYSQL_DATA_TRUNCATED) {
+                check(status);
+            }
+            std::vector<std::optional<std::string>> row;
+            row.reserve(columns);
+            for (unsigned index = 0; index < columns; ++index) {
+                if (nulls[index]) {
+                    row.emplace_back(std::nullopt);
+                } else if (lengths[index] <= storage[index].size()) {
+                    row.emplace_back(std::string(storage[index].data(), lengths[index]));
+                } else {
+                    std::string value(lengths[index], '\0');
+                    MYSQL_BIND column{};
+                    column.buffer_type = MYSQL_TYPE_STRING;
+                    column.buffer = value.data();
+                    column.buffer_length = value.size();
+                    // store_result 已异步读完结果；fetch_column 只拷贝当前行的
+                    // 已缓冲字节，不再访问网络。长文本和二进制字段不能截断。
+                    check(mysql_stmt_fetch_column(_statement, &column, index, 0));
+                    row.emplace_back(std::move(value));
+                }
+            }
+            result.rows.push_back(std::move(row));
         }
     }
+    result.affected_rows = columns ? result.rows.size() : mysql_stmt_affected_rows(_statement);
+    result.insert_id = mysql_stmt_insert_id(_statement);
     my_bool closed{};
     auto* statement = _statement;
     pending = mysql_stmt_close_start(&closed, statement);
@@ -210,6 +248,18 @@ seastar::future<mysql_result> mysql_connection::query(std::string sql, std::vect
     _statement = nullptr;
     check(closed);
     co_return result;
+}
+seastar::future<> mysql_connection::command(std::string sql)
+{
+    int status{};
+    int pending = mysql_real_query_start(&status, _mysql, sql.data(), sql.size());
+    while (pending) {
+        pending = mysql_real_query_cont(&status, _mysql, co_await wait(pending));
+    }
+    check(status);
+    if (mysql_field_count(_mysql)) {
+        throw std::runtime_error("MySQL command must not return rows");
+    }
 }
 seastar::future<> mysql_connection::close()
 {

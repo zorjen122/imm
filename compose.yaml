@@ -35,7 +35,9 @@ services:
 
   message:
     <<: *wimi-service
-    command: [/opt/wimi/bin/message, /etc/wimi/message.yaml, --log_level, info]
+    command: [/opt/wimi/bin/message, --log_level, info]
+    environment:
+      WIMI_CONFIG: /etc/wimi/message.yaml
     configs:
       - source: message-config
         target: /etc/wimi/message.yaml

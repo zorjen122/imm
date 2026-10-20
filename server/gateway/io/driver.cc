@@ -1,5 +1,6 @@
 #include "io/driver.hh"
 #include "io/message_link.hh"
+#include "message_route.hh"
 #include "Logger.h"
 #include "TcpMessageCodec.h"
 #include <google/protobuf/util/json_util.h>
@@ -105,21 +106,24 @@ seastar::future<> driver::grpc_control()
             std::set<message_node_id> retained;
             for (const auto& node : topology.nodes()) {
                 if (node.status() != "active" || node.node_id().empty() || node.host().empty() || node.port() <= 0 ||
-                    node.port() > 65535) {
+                    node.port() > 65535 || node.shard_count() == 0 ||
+                    static_cast<uint64_t>(node.port()) + node.shard_count() - 1 > 65535) {
                     continue;
                 }
                 retained.insert(node.node_id());
+                const auto port = static_cast<uint16_t>(
+                    node.port() + message_route::owner_shard(_options.gateway_id, node.shard_count()));
                 auto found = _message_links.find(node.node_id());
                 if (found != _message_links.end() &&
                     (found->second->finished() || found->second->address().host != node.host() ||
-                     found->second->address().port != node.port())) {
+                     found->second->address().port != port)) {
                     co_await found->second->close();
                     _message_links.erase(found);
                     found = _message_links.end();
                 }
                 if (found == _message_links.end()) {
-                    auto link = std::make_unique<message_link>(
-                        *this, _options, node.node_id(), endpoint{node.host(), static_cast<uint16_t>(node.port())});
+                    auto link =
+                        std::make_unique<message_link>(*this, _options, node.node_id(), endpoint{node.host(), port});
                     auto* active = link.get();
                     _message_links.emplace(node.node_id(), std::move(link));
                     active->start();

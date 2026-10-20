@@ -1,39 +1,19 @@
-cmake_minimum_required(VERSION 3.16)
-project(message LANGUAGES CXX)
+add_library(imMessageIo io/mysql_store.cc io/driver.cc io/options.cc)
+target_include_directories(imMessageIo PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(imMessageIo PUBLIC imReactorIo)
 
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+add_library(imMessageTransport transport/server.cc)
+target_include_directories(imMessageTransport PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(imMessageTransport PUBLIC imMessageIo)
 
-find_package(Threads REQUIRED)
-find_package(Protobuf REQUIRED)
-find_package(Boost REQUIRED COMPONENTS filesystem)
-find_package(gRPC MODULE REQUIRED)
+add_library(imMessageTransaction transaction/messages.cc transaction/friends.cc transaction/groups.cc
+    transaction/files.cc transaction/service.cc api/protocol.cc)
+target_include_directories(imMessageTransaction PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(imMessageTransaction PUBLIC imMessageTransport)
 
-file(GLOB SOURCE CONFIGURE_DEPENDS src/*.cc)
-list(REMOVE_ITEM SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
-add_library(imMessage ${SOURCE})
-add_executable(message src/main.cc)
+add_library(imMessage service.cc)
+target_include_directories(imMessage PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(imMessage PUBLIC imMessageTransaction)
 
-target_include_directories(imMessage PUBLIC ./include ../common/include)
-target_link_directories(imMessage PUBLIC ../common/build)
-
-target_link_libraries(
-  imMessage
-  PUBLIC imCommon
-         Threads::Threads
-         protobuf::libprotobuf
-         Boost::filesystem
-         gRPC::grpc++
-         fmt::fmt
-         yaml-cpp
-         spdlog
-         hiredis
-         redis++
-         mysqlcppconnx
-         jsoncpp)
-
-target_compile_options(imMessage PRIVATE -Wall -g)
-
+add_executable(message main.cc)
 target_link_libraries(message PRIVATE imMessage)
-
-target_compile_options(message PRIVATE -Wall)

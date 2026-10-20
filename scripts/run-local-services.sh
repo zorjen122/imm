@@ -196,7 +196,7 @@ start_service state "$ROOT_DIR/server/state" env WIMI_CONFIG="$WIMI_STATE_CONFIG
 start_service file "$ROOT_DIR/server/file" env WIMI_CONFIG="$WIMI_FILE_CONFIG" "$BUILD_DIR/file/file" --log_level "$WIMI_LOG_LEVEL"
 message_index=1
 for message_config in $WIMI_MESSAGE_CONFIGS; do
-  start_service "message-$message_index" "$ROOT_DIR/server/message" "$BUILD_DIR/message/message" "$message_config" --log_level "$WIMI_LOG_LEVEL"
+  start_service "message-$message_index" "$ROOT_DIR/server/message" env WIMI_CONFIG="$message_config" "$BUILD_DIR/message/message" --log_level "$WIMI_LOG_LEVEL"
   message_index=$((message_index + 1))
 done
 gateway_index=1
