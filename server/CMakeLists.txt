@@ -27,8 +27,3 @@ add_subdirectory(state)
 if(BUILD_TESTING OR IMM_BUILD_UNIT_TESTS)
     add_subdirectory(test)
 endif()
-
-option(IMM_BUILD_BENCHMARKS "Build protocol-aware performance clients" OFF)
-if(IMM_BUILD_BENCHMARKS)
-    add_subdirectory(bench)
-endif()
