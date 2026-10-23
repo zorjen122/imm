@@ -215,7 +215,8 @@ start_service() {
 
 for entry in "${nodes[@]}"; do
   read -r service node <<< "$entry"
-  start_service "$node" "$ROOT_DIR" env IMM_NODE="$node" "$BUILD_DIR/$service/$service" --log_level "$IMM_LOG_LEVEL"
+  start_service "$node" "$ROOT_DIR" env IMM_NODE="$node" "$BUILD_DIR/$service/$service" --log_level "$IMM_LOG_LEVEL" \
+    --memory 256M --overprovisioned
 done
 
 echo "Local services are running. Gate: http://127.0.0.1:18080"

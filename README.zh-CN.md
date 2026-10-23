@@ -16,7 +16,7 @@ IMM 提供注册登录、单聊与群聊、多设备会话、消息确认、增�
 但也带来了协调成本：访问数据需要同步，缓存行可能在 CPU 核之间来回移动，任务还需要跨线程交接。
 即使使用原子操作或无锁结构，跨核共享本身的成本仍然存在。并发越高，这些成本就越值得关注。
 
-IMM 的 Gate、Gateway 和 Message 基于 Seastar，采用尽量不共享资源的方式：每个 shard
+IMM 的 Gate、Gateway、Message、State 和 File 基于 Seastar，采用尽量不共享资源的方式：每个 shard
 在自己的 reactor 上管理连接、协议状态和在途请求，跨 shard 协作通过显式消息传递完成。
 常用数据和执行任务尽量留在所属核上，减少对共享锁、共享队列和跨核协调的依赖。
 
@@ -34,16 +34,17 @@ C++ 协程让接收、校验、存储和响应仍能按业务顺序书写，同�
   避免事务语句交错；跨 shard 投递则显式承担通信成本。
 
 减少共享，是为了降低并发处理中的协调开销；明确归属和限制，是为了让系统在繁忙时仍然可控。
-实际吞吐和延迟还取决于数据库、shard 数和负载，可通过
-[Gateway 性能测试](server/bench/gateway/README.md)在具体环境中测量。
+实际吞吐和延迟还取决于数据库、shard 数和负载。
+[独立客户端测试](benchmark/README.zh-CN.md)用于测试简单操作的往返时间和应用层吞吐。
 
 ## 本地运行
 
-先安装[服务端依赖](docs/requirements.zh-CN.md)，包括 Seastar 和支持 C++23 的编译器，
-然后在仓库根目录执行：
+在仓库根目录执行（Ubuntu 环境，详见[构建与本地运行](docs/requirements.zh-CN.md)）：
 
 ```bash
-./scripts/build-server.sh
+JOBS=8 ./scripts/install_dependency.sh
+sudo apt-get install -y mysql-server redis-server protobuf-compiler python3-protobuf
+JOBS=8 ./scripts/build-server.sh
 ./scripts/init-mysql.sh
 ./scripts/run-local-services.sh
 ```
@@ -70,5 +71,5 @@ smoke 需要先启动上述本地服务。双节点拓扑启动后，可运行
 
 - [服务端依赖与启动](docs/requirements.zh-CN.md)
 - [配置说明](docs/configuration.zh-CN.md)
-- [Gateway 性能测试](server/bench/gateway/README.md)：带宽、RTT、网络 I/O 吞吐及直接处理/转发 TPS
-- [服务端能力与验证状态](docs/server-feature-verification.zh-CN.md)
+- [独立客户端测试](benchmark/README.zh-CN.md)：Gateway、State、Message 和 File 测试
+- [服务端能力与验证状态](docs/verification.zh-CN.md)

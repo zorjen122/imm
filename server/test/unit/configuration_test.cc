@@ -10,6 +10,7 @@ void require(bool condition, const char* message)
         throw std::runtime_error(message);
     }
 }
+
 void rejected(const YAML::Node& base, const YAML::Node& extra, const std::string& id)
 {
     bool failed{};
@@ -21,10 +22,25 @@ void rejected(const YAML::Node& base, const YAML::Node& extra, const std::string
     require(failed, "invalid topology accepted");
 }
 } // namespace
+
 int main()
 {
-    const auto base = YAML::LoadFile(IMM_SOURCE_ROOT "/loopback/single.yaml");
-    const auto extra = YAML::LoadFile(IMM_SOURCE_ROOT "/loopback/cluster.yaml");
+    const auto base = YAML::Load(R"(
+shared:
+  mysql: {port: 3306}
+  redis: {masterName: test}
+nodes:
+  gate: {service: gate, host: localhost, port: 18080, shards: 2}
+  state: {service: state, host: localhost, port: 50052}
+  file: {service: file, host: localhost, port: 51100}
+  gateway-1: {service: gateway, host: localhost, port: 8090, shards: 2}
+  message-1: {service: message, host: localhost, port: 50055, machineId: 1}
+)");
+    const auto extra = YAML::Load(R"(
+nodes:
+  gateway-2: {service: gateway, host: localhost, port: 8091}
+  message-2: {service: message, host: localhost, port: 50056, machineId: 2}
+)");
     auto single = imm::configuration::select(base, {}, "state");
     auto cluster = imm::configuration::select(base, extra, "state");
     require(single["gateways"].size() == 1 && single["messages"].size() == 1, "single-node topology mismatch");
@@ -38,6 +54,14 @@ int main()
             "Message dependency/identity mismatch");
     message["mysql"]["port"] = 999;
     require(base["shared"]["mysql"]["port"].as<unsigned>() == 3306, "selected node mutated shared configuration");
+    for (const auto* id : {"gate", "gateway-1"}) {
+        require(imm::configuration::select(base, {}, id)["self"]["shards"].as<unsigned>() == 2,
+                "node shard count not preserved");
+        auto invalid = YAML::Clone(base);
+        invalid["nodes"][id]["shards"] = 0;
+        rejected(invalid, {}, id);
+    }
+
     rejected(base, extra, "absent");
     rejected(base, YAML::Load("nodes: {gateway-1: {}}"), "state");
     rejected(base, YAML::Load("nodes: {}\nshared: {}"), "state");

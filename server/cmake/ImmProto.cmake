@@ -1,4 +1,3 @@
-find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
 
 function(imm_generate_grpc_proto out_var proto_file)
   get_filename_component(proto_abs "${proto_file}" ABSOLUTE)
@@ -17,10 +16,10 @@ function(imm_generate_grpc_proto out_var proto_file)
     OUTPUT ${gen_srcs} ${gen_hdrs}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${gen_dir}"
     COMMAND
-      ${Protobuf_PROTOC_EXECUTABLE} --proto_path=${proto_dir}
+      $<TARGET_FILE:protobuf::protoc> --proto_path=${proto_dir}
       --cpp_out=${gen_dir} --grpc_out=${gen_dir}
-      --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN} ${proto_abs}
-    DEPENDS "${proto_abs}"
+      --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin> ${proto_abs}
+    DEPENDS "${proto_abs}" protobuf::protoc gRPC::grpc_cpp_plugin
     COMMENT "Generating gRPC sources for ${proto_file}"
     VERBATIM)
 

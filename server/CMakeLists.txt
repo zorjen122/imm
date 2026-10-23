@@ -11,7 +11,6 @@ include(ImmProto)
 
 option(BUILD_TESTING "Build tests" ON)
 option(BUILD_DEMOS "Build demo programs" OFF)
-option(IMM_BUILD_UNIT_TESTS "Build per-service unit tests" OFF)
 
 if(BUILD_TESTING)
     enable_testing()
@@ -24,6 +23,6 @@ add_subdirectory(gate)
 add_subdirectory(gateway)
 add_subdirectory(state)
 
-if(BUILD_TESTING OR IMM_BUILD_UNIT_TESTS)
+if(BUILD_TESTING)
     add_subdirectory(test)
 endif()

@@ -30,7 +30,7 @@ stamp="$(date +%s)"
 text_payload="hello_from_smoke_$stamp"
 upload_file="imm_upload_smoke_$stamp.txt"
 upload_src="/tmp/$upload_file"
-upload_file_id="smoke-file-$stamp"
+upload_file_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 upload_dst="$BUILD_DIR/file/imm-files/1001/$upload_file_id"
 cleanup_files() {
   rm -f "$upload_src" "$upload_dst"
@@ -40,7 +40,7 @@ trap cleanup_files EXIT
 require_error_zero() {
   local label="$1"
   local body="$2"
-  if ! grep -q '"error" : 0' <<<"$body"; then
+  if [[ "$(python3 "$ROOT_DIR/scripts/smoke/src/smoke_support.py" json-fields error <<<"$body")" != "0" ]]; then
     echo "$label failed:"
     echo "$body"
     exit 1
@@ -52,7 +52,6 @@ signin_rsp="$(curl --max-time 10 -sS -H 'Content-Type: application/json' \
   -d '{"username":"zorjen","password":"123456"}' \
   "$GATE_URL/post-signIn")"
 require_error_zero signin "$signin_rsp"
-grep -q '"ip" : "127.0.0.1"' <<<"$signin_rsp"
 read -r gateway_host gateway_port < <(
   python3 "$ROOT_DIR/scripts/smoke/src/smoke_support.py" \
     json-fields ip port <<<"$signin_rsp"

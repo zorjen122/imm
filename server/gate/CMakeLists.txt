@@ -5,8 +5,8 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
-find_package(Protobuf REQUIRED)
-find_package(gRPC MODULE REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
 set(Seastar_LTTNG ON)
 find_package(Seastar REQUIRED)
 
@@ -14,9 +14,9 @@ set(API_PROTO_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/api")
 add_custom_command(
   OUTPUT "${API_PROTO_DIR}/gate_api.pb.cc" "${API_PROTO_DIR}/gate_api.pb.h"
   COMMAND ${CMAKE_COMMAND} -E make_directory "${API_PROTO_DIR}"
-  COMMAND ${Protobuf_PROTOC_EXECUTABLE} --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/proto
+  COMMAND $<TARGET_FILE:protobuf::protoc> --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/proto
           --cpp_out=${API_PROTO_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/proto/gate_api.proto
-  DEPENDS proto/gate_api.proto
+  DEPENDS proto/gate_api.proto protobuf::protoc
   VERBATIM)
 add_library(imGateApi "${API_PROTO_DIR}/gate_api.pb.cc")
 target_include_directories(imGateApi PUBLIC "${API_PROTO_DIR}")

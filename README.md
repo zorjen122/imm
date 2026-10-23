@@ -23,7 +23,7 @@ between CPU cores, and tasks require handoffs. Atomic operations and lock-free
 structures can still incur cross-core sharing costs. Those costs matter more
 as concurrency grows.
 
-Gate, Gateway and Message use Seastar to keep resources local to each shard.
+Gate, Gateway, Message, State and File use Seastar to keep resources local to each shard.
 Each shard manages its connections, protocol state and in-flight requests on
 its own reactor, communicating explicitly when work crosses shard boundaries.
 Keeping frequently accessed data and its execution on the owning core reduces
@@ -51,16 +51,17 @@ This execution model also calls for clear ownership and responsibilities:
 Reducing sharing lowers the coordination work involved in concurrent processing.
 Clear ownership and limits make the system easier to control under load.
 Throughput and latency still depend on the database, shard count and workload;
-use the [Gateway performance tests](server/bench/gateway/README.md) to measure
-those properties in a specific environment.
+the [standalone client tests](benchmark/README.zh-CN.md) exercise the RPC paths and
+report round-trip times and application throughput for simple operations.
 
 ## Run locally
 
-Install the [server dependencies](docs/requirements.zh-CN.md), including Seastar
-and a C++23 compiler, then run from the repository root:
+From the repository root (Ubuntu; see [setup](docs/requirements.zh-CN.md)):
 
 ```bash
-./scripts/build-server.sh
+JOBS=8 ./scripts/install_dependency.sh
+sudo apt-get install -y mysql-server redis-server protobuf-compiler python3-protobuf
+JOBS=8 ./scripts/build-server.sh
 ./scripts/init-mysql.sh
 ./scripts/run-local-services.sh
 ```
@@ -90,5 +91,5 @@ The following guides are currently in Chinese:
 
 - [Server setup](docs/requirements.zh-CN.md)
 - [Configuration](docs/configuration.zh-CN.md)
-- [Gateway performance tests](server/bench/gateway/README.md): bandwidth, RTT, network I/O throughput and direct/forwarded TPS
-- [Server capabilities and verification](docs/server-feature-verification.zh-CN.md)
+- [Standalone client tests](benchmark/README.zh-CN.md): Gateway, State, Message and File checks
+- [Server capabilities and verification](docs/verification.zh-CN.md)

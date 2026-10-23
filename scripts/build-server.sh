@@ -8,6 +8,7 @@ set -euo pipefail
 #   ./scripts/build-server.sh
 # 可选环境变量：
 #   BUILD_DIR 指定构建目录，CC/CXX 指定编译器，JOBS 指定并行构建数量。
+#   IMM_DEPENDENCY_PREFIX 指定 install_dependency.sh 的安装位置。
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/imm-server}"
@@ -16,24 +17,10 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/imm-server}"
 : "${CXX:=g++}"
 export CC CXX
 
-# 清理构建时可保留依赖源码；有缓存时直接使用，避免重复下载。
-source_args=()
-for dependency in imm_absl imm_grpc imm_mariadb; do
-  source_dir="$ROOT_DIR/build/deps/$dependency"
-  if [[ -d "$source_dir" ]]; then
-    source_args+=("-DFETCHCONTENT_SOURCE_DIR_${dependency^^}=$source_dir")
-  fi
-done
-if [[ -d "$ROOT_DIR/build/deps/imm_grpc/third_party/grpc-proto/grpc" ]]; then
-  source_args+=("-DFETCHCONTENT_SOURCE_DIR_IMM_GRPC_PROTO=$ROOT_DIR/build/deps/imm_grpc/third_party/grpc-proto")
-fi
-
-if [[ -f "$ROOT_DIR/build/deps/protoc/usr/lib/x86_64-linux-gnu/libprotoc.a" ]]; then
-  source_args+=("-DProtobuf_PROTOC_LIBRARY=$ROOT_DIR/build/deps/protoc/usr/lib/x86_64-linux-gnu/libprotoc.a")
-fi
+dependency_prefix="${IMM_DEPENDENCY_PREFIX:-$HOME/.local/imm}"
 
 cmake -S "$ROOT_DIR/server" -B "$BUILD_DIR" \
-  "${source_args[@]}" \
+  -DCMAKE_PREFIX_PATH="$dependency_prefix${CMAKE_PREFIX_PATH:+;$CMAKE_PREFIX_PATH}" \
   -DCMAKE_C_COMPILER="$CC" \
   -DCMAKE_CXX_COMPILER="$CXX" \
   -DBUILD_TESTING=ON \

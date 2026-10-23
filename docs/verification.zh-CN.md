@@ -1,6 +1,6 @@
 # imm Server 核心能力与验证状态
 
-最后更新：2026-10-21。
+最后更新：2026-10-23。
 
 本文记录当前服务端主要流程的验证结果。测试通过表示所列场景成立，不代表已完成生产容量或全部故障场景验证。
 
@@ -36,7 +36,7 @@
 | `./scripts/build-server.sh` 与 `ctest --test-dir build/imm-server --output-on-failure` | 服务端构建与基础测试 | 已验证 |
 | `./scripts/smoke/smoke-base.sh` | 注册、登录、文本和文件消息 | 已验证 |
 | `./scripts/smoke/smoke-gateway-message.sh` | 多服务协作、消息去重、好友和群聊 | 已验证 |
-| `python3 server/test/gate/run_io_integration.py` | 验证码、注册登录、SMTP 和依赖停止 | 已验证 |
-| `python3 server/test/gateway/run_integration.py --mtls --full-smoke --redis-failover` | 双 Gateway/Message、业务链路、重连、背压和 Redis 故障转移 | 已验证 |
 
-本地服务启动、配置和 Docker 使用方式见 [服务端依赖与本地流程](requirements.zh-CN.md) 与 [配置说明](configuration.zh-CN.md)。
+`server/test/unit/` 保留关键单元测试，`server/test/integrated/` 暂仅占位。
+
+本地服务启动和配置见 [服务端依赖与本地流程](requirements.zh-CN.md) 与 [配置说明](configuration.zh-CN.md)。

@@ -30,16 +30,15 @@ git diff --check
 ./scripts/smoke/smoke-multi-chat.sh
 ```
 
-### 隔离的宿主机集成验证
+### 测试目录
 
-```bash
-python3 server/test/gate/run_io_integration.py
-python3 server/test/gateway/run_integration.py --mtls --full-smoke --redis-failover
-```
+`server/test/unit/` 保留配置、传输安全配置、协议校验、I/O 背压和文件存储等关键单元测试，统一通过 CTest 运行。
+`server/test/integrated/` 仅作占位，暂不维护集成用例；跨服务验证使用上述 `scripts/smoke/` 流程。
 
-两个脚本分别验证 Gate 的验证码、注册登录及 SMTP 链路，以及双 Gateway、双 Message 的完整业务链路。使用独立端口和临时数据库，退出时只清理自身资源。
-
-`build/` 可以清理；其中 `build/deps/` 可保留依赖源码缓存，构建脚本会自动使用。删除缓存后，CMake 会重新下载依赖。
+首次使用先运行 `./scripts/install_dependency.sh`；Ubuntu 系统开发包通过 apt 补齐，匹配的 gRPC、Protobuf、Abseil、RE2、MariaDB 和 Seastar
+默认安装在 `$HOME/.local/imm`。
+服务端构建只链接安装结果。`build/` 可以清理；`build/deps/` 是可选的安装源码缓存，
+`build/dependency/` 是安装构建缓存，不影响已经安装的库。
 
 ### 基础容器部署配置检查
 

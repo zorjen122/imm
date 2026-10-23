@@ -5,9 +5,10 @@ project(imCommon)
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
 # 仅用于clangd搜索
 find_package(Threads REQUIRED)
-find_package(Protobuf REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
 find_package(Boost REQUIRED)
-find_package(gRPC MODULE REQUIRED)
+find_package(gRPC 1.84 CONFIG REQUIRED)
+find_package(MariaDB CONFIG REQUIRED)
 
 # 添加 src 目录下的所有源文件
 file(GLOB SOURCES CONFIGURE_DEPENDS src/*.cc)
@@ -53,9 +54,7 @@ target_link_libraries(
 
 set(Seastar_LTTNG ON)
 find_package(Seastar REQUIRED)
-include(ReactorMysql)
 find_package(OpenSSL REQUIRED)
 add_library(imReactorIo STATIC reactor/dns_resolver.cc reactor/grpc_engine.cc reactor/grpc_server.cc reactor/redis_connection.cc reactor/mysql_connection.cc)
 target_include_directories(imReactorIo PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" include)
-target_include_directories(imReactorIo PRIVATE "${imm_grpc_SOURCE_DIR}")
-target_link_libraries(imReactorIo PUBLIC imCommon Seastar::seastar mariadbclient OpenSSL::SSL)
+target_link_libraries(imReactorIo PUBLIC imCommon Seastar::seastar MariaDB::client OpenSSL::SSL)
