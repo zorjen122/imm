@@ -1,5 +1,6 @@
 #include "configuration.hh"
 #include "Logger.h"
+#include "reactor/stop_signal.hh"
 #include "service.hh"
 #include <openssl/ssl.h>
 #include <seastar/core/app-template.hh>
@@ -20,6 +21,7 @@ seastar::future<> run(seastar::app_template& app)
                                                  co_await seastar::create_scheduling_group("transaction", 100),
                                                  co_await seastar::create_scheduling_group("io", 200)};
     seastar::sharded<imm::message::shard_service> services;
+    imm::io::stop_signal stop;
     bool constructed{};
     std::exception_ptr failure;
     try {
@@ -30,7 +32,7 @@ seastar::future<> run(seastar::app_template& app)
         });
         LOG_INFO(imm::logger, "[message/startup] ready node={} base_port={} shards={}", config.node_id,
                  config.listener.port, config.shards);
-        co_await seastar::engine().wait_for_stop(std::chrono::hours(24 * 365));
+        co_await stop.wait();
     } catch (...) {
         failure = std::current_exception();
     }

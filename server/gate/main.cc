@@ -1,9 +1,11 @@
 #include "configuration.hh"
 #include "Logger.h"
+#include "reactor/stop_signal.hh"
 #include "api/protocol.hh"
 #include "reactor/grpc_engine.hh"
 #include <seastar/core/sharded.hh>
 #include <openssl/ssl.h>
+#include <utility>
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/coroutine.hh>
@@ -72,11 +74,6 @@ handle_http_request(seastar::sharded<imm::gate_transaction::service>& services,
 seastar::future<> run_gate(seastar::app_template& app)
 {
     set_log_level(app.configuration()["log_level"].as<std::string>());
-    const char* configuredPath = std::getenv("IMM_CONFIG");
-    const std::string configPath = configuredPath == nullptr ? "loopback/single.yaml" : configuredPath;
-    if (!imm::configuration::load(configPath)) {
-        throw std::runtime_error("failed to load gate config");
-    }
 
     auto config = imm::configuration::server();
     if (!config || !config["self"] || !config["self"]["port"]) {
@@ -91,6 +88,7 @@ seastar::future<> run_gate(seastar::app_template& app)
                                                        co_await seastar::create_scheduling_group("transaction", 100),
                                                        co_await seastar::create_scheduling_group("io", 200)};
     seastar::sharded<imm::gate_transaction::service> services;
+    imm::io::stop_signal stop;
     bool services_constructed{};
     std::exception_ptr failure;
     seastar::httpd::http_server_control server;
@@ -121,9 +119,10 @@ seastar::future<> run_gate(seastar::app_template& app)
             }
         });
         co_await server.listen(seastar::socket_address(seastar::ipv4_addr(port)));
-        LOG_INFO(imm::logger, "[gate/startup] Seastar HTTP 服务已启动, port: {}", port);
+        LOG_INFO(imm::logger, "[gate/startup] Seastar HTTP 服务已启动, port: {}, shards={}", port,
+                 seastar::this_smp_shard_count());
 
-        co_await seastar::engine().wait_for_stop(std::chrono::hours(24 * 365));
+        co_await stop.wait();
     } catch (...) {
         failure = std::current_exception();
     }
@@ -153,10 +152,20 @@ seastar::future<> run_gate(seastar::app_template& app)
 int main(int argc, char** argv)
 {
     imm::Logger::instance().initialize(argv[0], imm::Logger::Service::Gate);
+    const char* path = std::getenv("IMM_CONFIG");
+    if (!imm::configuration::load(path ? path : "loopback/single.yaml")) {
+        LOG_ERROR(imm::logger, "Gate config load failed");
+        return EXIT_FAILURE;
+    }
+
     if (OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, nullptr) != 1 || mysql_library_init(0, nullptr, nullptr) != 0) {
         return EXIT_FAILURE;
     }
-    seastar::app_template app;
+
+    // SMP 默认值须在 reactor 启动前设置；显式 --smp 仍由 Seastar 优先处理。
+    seastar::app_template::seastar_options options;
+    options.smp_opts.smp.set_default_value(imm::configuration::server()["self"]["shards"].as<unsigned>(1));
+    seastar::app_template app(std::move(options));
     namespace bpo = boost::program_options;
     app.add_options()("log_level", bpo::value<std::string>()->default_value("info"), "imm log level");
     const int result = app.run(argc, argv, [&app] { return run_gate(app); });

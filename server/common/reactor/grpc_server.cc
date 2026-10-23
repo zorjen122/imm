@@ -37,13 +37,14 @@ class engine_option final : public grpc::ServerBuilderOption
 };
 } // namespace
 grpc_server::~grpc_server() { assert(!_server && !_engine); }
-void grpc_server::start(endpoint address, std::shared_ptr<grpc::ServerCredentials> credentials, grpc::Service& service)
+void grpc_server::start(endpoint address, std::shared_ptr<grpc::ServerCredentials> credentials, grpc::Service& service,
+                        bool reuse_port)
 {
     assert(!_server && !_engine);
     _engine = make_grpc_engine();
     grpc::ServerBuilder builder;
     builder.SetOption(std::make_unique<engine_option>(_engine));
-    builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
+    builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, reuse_port ? 1 : 0);
     const auto host = address.host.find(':') == std::string::npos ? address.host : "[" + address.host + "]";
     int port{};
     builder.AddListeningPort(host + ":" + std::to_string(address.port), credentials, &port);

@@ -1,35 +1,6 @@
-cmake_minimum_required(VERSION 3.16)
-project(state LANGUAGES CXX)
+add_library(imState options.cc service.cc)
+target_include_directories(imState PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(imState PUBLIC imReactorIo)
 
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-find_package(Threads REQUIRED)
-find_package(Protobuf REQUIRED)
-find_package(gRPC MODULE REQUIRED)
-
-file(GLOB SOURCE CONFIGURE_DEPENDS src/*.cc)
-list(REMOVE_ITEM SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cc")
-add_library(imState ${SOURCE})
-add_executable(state src/main.cc)
-
-target_include_directories(imState PUBLIC ./include ../common/include)
-target_link_directories(imState PUBLIC ../common/build)
-
-target_link_libraries(
-  imState
-  PUBLIC imCommon
-         Threads::Threads
-         protobuf::libprotobuf
-         gRPC::grpc++
-         fmt::fmt
-         yaml-cpp
-         spdlog
-         hiredis
-         jsoncpp)
-
-target_compile_options(imState PRIVATE -Wall -g)
-
+add_executable(state main.cc)
 target_link_libraries(state PRIVATE imState)
-
-target_compile_options(state PRIVATE -Wall)

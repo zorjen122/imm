@@ -14,7 +14,6 @@ server::server(gateway_io::options config, scheduling_groups groups, seastar::sh
 seastar::future<> server::start()
 {
     co_await _transaction.start([this](const gateway::ClientForwardEnvelope& forward) { return deliver(forward); });
-    co_await _transaction.wait_ready();
 }
 seastar::future<> server::listen()
 {

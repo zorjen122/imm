@@ -18,7 +18,8 @@ class grpc_server
 
   public:
     ~grpc_server();
-    void start(endpoint address, std::shared_ptr<grpc::ServerCredentials> credentials, grpc::Service& service);
+    void start(endpoint address, std::shared_ptr<grpc::ServerCredentials> credentials, grpc::Service& service,
+               bool reuse_port = false);
     uint16_t port() const { return _port; }
     seastar::future<> close(std::function<seastar::future<>()> wait_calls);
 };

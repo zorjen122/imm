@@ -1,5 +1,6 @@
 #include "reactor/grpc_engine.hh"
 #include <grpcpp/grpcpp.h>
+#include <grpc/impl/channel_arg_names.h>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
@@ -15,6 +16,7 @@
 #include <signal.h>
 #include <system_error>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include <charconv>
 #include "src/core/lib/event_engine/extensions/blocking_dns.h"
 
@@ -120,6 +122,8 @@ class reactor_endpoint final : public ee::EventEngine::Endpoint
           _peer(resolved(_state->fd.get_file_desc().get_remote_address())),
           _local(resolved(_state->fd.get_file_desc().get_address()))
     {
+        // gRPC 的帧可能拆成多个 slice 独立发送；禁用 Nagle，避免小片积压到对端延迟 ACK 后才发出。
+        _state->fd.get_file_desc().setsockopt(IPPROTO_TCP, TCP_NODELAY, 1);
         ++observed.endpoints;
     }
 
@@ -176,6 +180,7 @@ class reactor_listener final : public ee::EventEngine::Listener
         unsigned active{};
         bool closing{};
         bool started{};
+        bool reuse_port{};
         absl::Status status;
         void complete()
         {
@@ -221,12 +226,13 @@ class reactor_listener final : public ee::EventEngine::Listener
 
   public:
     reactor_listener(AcceptCallback on_accept, absl::AnyInvocable<void(absl::Status)> on_shutdown,
-                     std::unique_ptr<ee::MemoryAllocatorFactory> allocator)
+                     std::unique_ptr<ee::MemoryAllocatorFactory> allocator, bool reuse_port)
         : _state(std::make_shared<state>())
     {
         _state->accept = std::move(on_accept);
         _state->shutdown = std::move(on_shutdown);
         _state->allocator = std::move(allocator);
+        _state->reuse_port = reuse_port;
         ++observed.listeners;
     }
     ~reactor_listener() override
@@ -250,9 +256,14 @@ class reactor_listener final : public ee::EventEngine::Listener
             seastar::socket_address address;
             std::memcpy(&address.u, source.address(), source.size());
             address.addr_length = source.size();
-            auto fd = seastar::engine().make_pollable_fd(address, IPPROTO_TCP);
+            // io_uring 的 accept 会推测性调用 accept4；监听 fd 必须非阻塞，避免阻塞整个 reactor。
+            seastar::pollable_fd fd(seastar::file_desc::socket(
+                address.u.sa.sa_family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP));
             auto& raw = fd.get_file_desc();
             raw.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1);
+            if (_state->reuse_port) {
+                raw.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1);
+            }
             raw.bind(address.u.sa, address.addr_length);
             raw.listen(1024);
             auto bound = raw.get_address();
@@ -580,11 +591,12 @@ class reactor_engine final : public ee::EventEngine
     }
     absl::StatusOr<std::unique_ptr<Listener>>
     CreateListener(Listener::AcceptCallback on_accept, absl::AnyInvocable<void(absl::Status)> on_shutdown,
-                   const ee::EndpointConfig&, std::unique_ptr<ee::MemoryAllocatorFactory> allocator) override
+                   const ee::EndpointConfig& config, std::unique_ptr<ee::MemoryAllocatorFactory> allocator) override
     {
         require_owner("CreateListener");
         return std::unique_ptr<Listener>(
-            new reactor_listener(std::move(on_accept), std::move(on_shutdown), std::move(allocator)));
+            new reactor_listener(std::move(on_accept), std::move(on_shutdown), std::move(allocator),
+                                 config.GetInt(GRPC_ARG_ALLOW_REUSEPORT).value_or(0) != 0));
     }
     size_t pending_count() const { return _timers.size() + _connections.size(); }
 };

@@ -7,7 +7,6 @@
 #include <grpc/impl/channel_arg_names.h>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
-#include <seastar/core/with_timeout.hh>
 #include <seastar/util/file.hh>
 #include <seastar/util/defer.hh>
 #include <sys/syscall.h>
@@ -168,11 +167,10 @@ seastar::future<> driver::grpc_control()
 }
 seastar::future<> driver::wait_ready()
 {
-    co_await seastar::with_timeout(
-        std::chrono::steady_clock::now() + std::chrono::seconds(30), _grpc_changed.wait([this] {
-            return _stopping ||
-                   std::ranges::any_of(_message_links, [](const auto& entry) { return entry.second->healthy(); });
-        }));
+    co_await _grpc_changed.wait([this] {
+        return _stopping ||
+               std::ranges::any_of(_message_links, [](const auto& entry) { return entry.second->healthy(); });
+    });
     if (_stopping) {
         throw io::stopped();
     }
